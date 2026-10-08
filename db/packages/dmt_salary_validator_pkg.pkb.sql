@@ -70,7 +70,7 @@ AS
                '[PRE_VALIDATION] ASSIGNMENT_NUMBER is required '
                || '(salary references the assignment by number).'
         FROM   DMT_SALARY_STG_TBL s
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_SALARY_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id)
         AND    s.ASSIGNMENT_NUMBER IS NULL;
         l_bad := SQL%ROWCOUNT;

@@ -3396,9 +3396,8 @@
                 INTO   l_exp_src_name, l_exp_doc_name
                 FROM   DMT_PJC_EXPENDITURES_STG_TBL
                 WHERE  (v_scenario_id IS NULL OR SCENARIO_ID = v_scenario_id)
-                AND    (   (p_run_mode = 'NEW'    AND STG_STATUS IN ('NEW'))
-                        OR (p_run_mode = 'FAILED' AND STG_STATUS = 'FAILED')
-                        OR (p_run_mode = 'ALL') );
+                AND    DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, STG_STATUS, p_run_id,
+                           'DMT_PJC_EXPENDITURES_STG_TBL', STG_SEQUENCE_ID) = 'Y';
             END IF;
 
             -- Guard the no-usable-source/document case on the CHILD path only. A spawned

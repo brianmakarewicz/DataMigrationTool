@@ -94,7 +94,7 @@ AS
                        '[PRE_VALIDATION] Project ''' || e.PROJECT_NUMBER ||
                        ''' is not loaded — expenditure record skipped.'
                 FROM   DMT_PJC_EXPENDITURES_STG_TBL e
-                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, e.STG_STATUS) = 'Y'
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, e.STG_STATUS, p_run_id, 'DMT_PJC_EXPENDITURES_STG_TBL', e.STG_SEQUENCE_ID) = 'Y'
                 AND    (p_scenario_id IS NULL OR e.SCENARIO_ID = p_scenario_id)
                 AND    e.PROJECT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (

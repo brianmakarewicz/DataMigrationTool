@@ -324,7 +324,7 @@ AS
                 p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
                 p_package        => C_PKG,
                 p_procedure      => C_PROC);
-            GOTO echo_to_stg;
+            GOTO parse_done;
         END IF;
 
         -- Process rows from BIP XML — two-tier reconciliation
@@ -512,24 +512,9 @@ AS
             END;
         END IF;
 
-        <<echo_to_stg>>
-        -- Echo outcomes back to STG
-        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PJC_EXPENDITURES_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_PJC_EXPENDITURES_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_PJC_EXPENDITURES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        <<parse_done>>
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries
 
