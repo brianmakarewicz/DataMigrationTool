@@ -20,7 +20,7 @@
     -- --------------------------------------------------------
     -- PARSE_AND_UPDATE
     -- Parses BIP XML response (base64 reportBytes), updates
-    -- TFM rows, then echoes back to STG table.
+    -- TFM rows (nothing is copied back to STG, backlog #310).
     --
     -- The report's STATUS element is derived from positive presence in the base
     -- table EGP_ITEM_CATEGORIES ('PROCESSED' = present, 'REJECTED' = absent), not
@@ -118,24 +118,8 @@
             END IF;
         END LOOP;
 
-        -- Echo outcomes back to STG table
-        UPDATE DMT_EGP_ITEM_CAT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-
-        UPDATE DMT_EGP_ITEM_CAT_STG_TBL stg
-        SET    stg.STG_STATUS            = 'FAILED',
-               stg.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_EGP_ITEM_CAT_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_EGP_ITEM_CAT_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

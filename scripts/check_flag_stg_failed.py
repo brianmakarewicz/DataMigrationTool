@@ -415,6 +415,95 @@ def scan_stg_writebacks(pkg_dir=PKG_DIR):
     return found
 
 
+# ---------------------------------------------------------------------------
+# PART 3 -- STG-RETRY-SELECT (backlog #310)
+# ---------------------------------------------------------------------------
+# FAILED-mode row selection reads the run-stamped attempt record (TFM rows +
+# DMT_STG_TFM_ERROR_TBL), never STG_STATUS (DMT_DESIGN.html section 5: "run-mode
+# selection (NEW / FAILED / ALL) becomes predicates over this table and TFM, not
+# over an STG status column"). ALLOW-LIST -- the only sanctioned FAILED-mode
+# selectors:
+#   * DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, <a>.STG_STATUS, p_run_id,
+#         '<STG table>', <a>.STG_SEQUENCE_ID)       (the row-identity form), which
+#     delegates FAILED mode to
+#   * DMT_UTIL_PKG.FAILED_RETRY_SELECTED, the single reader of DMT_STG_ATTEMPT_V.
+# Violations, in every db/packages/*.pkb.sql (comments stripped):
+#   a. the two-argument status form STG_ROW_SELECTED(p_run_mode, <a>.STG_STATUS)
+#      (its FAILED branch is STG_STATUS='FAILED');
+#   b. a hand-rolled FAILED-mode status pick: "p_reprocess_errors AND ...STG_STATUS"
+#      or "p_run_mode = 'FAILED' AND ...STG_STATUS";
+#   c. a row-identity call whose '<STG table>' literal is not the STG table its
+#      alias (or, with no alias, the nearest FROM/UPDATE) names in that statement;
+#   d. DMT_STG_ATTEMPT_V read anywhere but DMT_UTIL_PKG.
+# Key: STG-RETRY-SELECT|<package>|<kind>   (one finding per package and kind; the
+# message lists every site as PROCEDURE:line)
+
+RETRY_ALLOWED_READER = "dmt_util_pkg"
+STATUS_FORM_RE = re.compile(
+    r"\bSTG_ROW_SELECTED\s*\(\s*p_run_mode\s*,\s*(?:\w+\.)?STG_STATUS\s*\)", re.I)
+HAND_PICK_RE = re.compile(
+    r"\b(?:p_reprocess_errors|p_run_mode\s*=\s*'FAILED')\s+AND\s+(?:\w+\.)?STG_STATUS\b", re.I)
+ROW_FORM_RE = re.compile(
+    r"\bSTG_ROW_SELECTED\s*\(\s*p_run_mode\s*,\s*(?:(\w+)\.)?STG_STATUS\s*,\s*p_run_id\s*,"
+    r"\s*'(\w+)'\s*,\s*(?:(\w+)\.)?STG_SEQUENCE_ID\s*\)", re.I)
+TBL_REF_RE = re.compile(
+    r"\b(?:FROM|UPDATE|JOIN)\s+(?:DMT_OWNER\.)?(DMT_\w+_STG_TBL)\b(?:[ \t]+(\w+))?", re.I)
+NOT_ALIAS_WORDS = {"WHERE", "SET", "ON", "JOIN", "LEFT", "INNER", "GROUP", "ORDER",
+                   "AND", "OR", "UNION", "CROSS", "USING"}
+
+
+def _stmt_table(text, pos, alias):
+    """STG table the alias (or the nearest FROM/UPDATE when alias is None) names in
+    the statement containing pos."""
+    st = text.rfind(";", 0, pos) + 1
+    best = None
+    for m in TBL_REF_RE.finditer(text[st:pos]):
+        a = m.group(2)
+        a = None if (a is None or a.upper() in NOT_ALIAS_WORDS) else a
+        if alias is None or (a and a.lower() == alias.lower()):
+            best = m.group(1).upper()
+    return best
+
+
+def scan_retry_selects(pkg_dir=PKG_DIR):
+    """One finding per (package, kind); the message lists every site (file:line)."""
+    sites = {}
+
+    def add(pkg, text, pos, kind, what):
+        line = text.count("\n", 0, pos) + 1
+        proc = _proc_at(text, pos)
+        sites.setdefault((pkg, kind), (what, []))[1].append("%s:%d" % (proc, line))
+
+    for path in sorted(glob.glob(os.path.join(pkg_dir, "*.pkb.sql"))):
+        pkg = os.path.basename(path)[:-len(".pkb.sql")]
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = _strip_comments_keep_lines(fh.read())
+        if pkg != RETRY_ALLOWED_READER:
+            for m in STATUS_FORM_RE.finditer(text):
+                add(pkg, text, m.start(), "status-form",
+                    "selects by the two-argument STG_ROW_SELECTED (FAILED mode = "
+                    "STG_STATUS); use the row-identity form")
+            for m in re.finditer(r"\bDMT_STG_ATTEMPT_V\b", text, re.I):
+                add(pkg, text, m.start(), "attempt-view-reader",
+                    "reads DMT_STG_ATTEMPT_V; only DMT_UTIL_PKG.FAILED_RETRY_SELECTED may")
+        for m in HAND_PICK_RE.finditer(text):
+            add(pkg, text, m.start(), "status-pick",
+                "picks FAILED-mode rows by STG_STATUS (%s)" % " ".join(m.group(0).split()))
+        for m in ROW_FORM_RE.finditer(text):
+            a1, lit, a2 = m.group(1), m.group(2).upper(), m.group(3)
+            tbl = _stmt_table(text, m.start(), a1)
+            if (a1 or "").lower() != (a2 or "").lower() or tbl != lit:
+                add(pkg, text, m.start(), "table-mismatch",
+                    "row-identity STG_ROW_SELECTED names '%s' but the statement's "
+                    "row source is %s" % (lit, tbl or "?"))
+    found = []
+    for (pkg, kind), (what, where) in sorted(sites.items()):
+        found.append(("STG-RETRY-SELECT|%s|%s" % (pkg, kind),
+                      "db/packages/%s.pkb.sql %s -- %d site(s): %s"
+                      % (pkg, what, len(where), ", ".join(where))))
+    return found
+
+
 def main():
     print("FLAG_STG_FAILED conformance check")
     print("=" * 60)
@@ -440,6 +529,10 @@ def main():
     print("\n" + "=" * 60)
     print("STG-WRITEBACK: no reconcile / Fusion outcome written back to a *_STG_TBL")
     wb = scan_stg_writebacks()
+    print("\n" + "=" * 60)
+    print("STG-RETRY-SELECT: FAILED mode selects through DMT_UTIL_PKG."
+          "FAILED_RETRY_SELECTED (TFM + error table), never STG_STATUS")
+    wb = wb + scan_retry_selects()
     wb_rc = known.report(CHECKER, wb)
 
     print("=" * 60)

@@ -73,8 +73,7 @@
                || ' (not truncated, to avoid a key collision).'
         FROM   DMT_AP_PAY_TERM_HDR_STG_TBL s
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_HDR_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
           )
         AND (p_scenario_id IS NULL
              OR s.SCENARIO_ID = p_scenario_id
@@ -137,9 +136,8 @@
                     SYSDATE
         FROM DMT_AP_PAY_TERM_HDR_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_HDR_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND NOT EXISTS (
             SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL t
@@ -157,9 +155,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_HDR_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND    EXISTS (
             SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL t
@@ -192,9 +189,8 @@
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_AP_PAY_TERM_HDR_STG_TBL s
                 WHERE  (
-                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                        /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_HDR_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+                        /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
                       )
                 AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                      OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
@@ -282,9 +278,8 @@
                     SYSDATE
         FROM DMT_AP_PAY_TERM_LINE_STG_TBL s
         WHERE (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_LINE_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND NOT EXISTS (
             SELECT 1 FROM DMT_AP_PAY_TERM_LINE_TFM_TBL t
@@ -301,9 +296,8 @@
         SET    s.STG_STATUS            = 'TRANSFORMED',
                s.LAST_UPDATED_DATE = SYSDATE
         WHERE  (
-            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-            /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-            OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED'))
+            DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_LINE_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+            /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
           )
         AND    EXISTS (
             SELECT 1 FROM DMT_AP_PAY_TERM_LINE_TFM_TBL t
@@ -336,9 +330,8 @@
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_AP_PAY_TERM_LINE_STG_TBL s
                 WHERE  (
-                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
-                        /* #44: NEW->NEW, FAILED->FAILED, ALL->whole scenario; RETRY retired */
-                        OR (p_reprocess_errors AND s.STG_STATUS IN ('FAILED','TRANSFORM_FAILED'))
+                        DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_AP_PAY_TERM_LINE_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+                        /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
                       )
                 AND (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id
                      OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))

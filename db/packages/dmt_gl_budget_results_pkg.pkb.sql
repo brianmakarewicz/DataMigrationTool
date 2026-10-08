@@ -212,14 +212,8 @@
             END LOOP;
         END IF;
 
-        -- Fan cell outcome back to the STG source rows for the cells this pass
-        -- turned terminal (same echo PARSE_AND_UPDATE does; safe to repeat).
-        UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='LOADED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_GL_BUDGET_INT_TFM_TBL
-                                  WHERE RUN_ID=p_run_id AND TFM_STATUS='LOADED');
-        UPDATE DMT_GL_BUDGET_INT_STG_TBL SET STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_GL_BUDGET_INT_TFM_TBL
-                                  WHERE RUN_ID=p_run_id AND TFM_STATUS='FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- Residual accounting: how many of this run's cells are STILL GENERATED
         -- (unaccounted) after this pass. This is the number that let the run-119
