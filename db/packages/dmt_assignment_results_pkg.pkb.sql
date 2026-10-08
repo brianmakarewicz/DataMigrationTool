@@ -27,14 +27,15 @@ AS
     --
     --   OBJECT_TYPE='WorkRelationship' -> DMT_WORK_REL_TFM_TBL, confirmed in
     --       PER_PERIODS_OF_SERVICE (via HRC_INTEGRATION_KEY_MAP), FUSION_ID = the
-    --       real PERSON_ID stamped into FUSION_PERSON_ID. RECON_KEY =
-    --       '<prefixed PERSON_NUMBER>_POS'.
+    --       real PERSON_ID stamped into FUSION_PERSON_ID. RECORD_KEY = the
+    --       WorkRelationship SourceSystemId = the person's worker TFM id
+    --       (backlog #289/#290), matched through that worker row.
     --   OBJECT_TYPE='Assignment'       -> DMT_ASSIGNMENT_TFM_TBL, confirmed in
     --       PER_ALL_ASSIGNMENTS_M (via HRC_INTEGRATION_KEY_MAP), FUSION_ID = the
-    --       real ASSIGNMENT_ID stamped into FUSION_ASSIGNMENT_ID. RECON_KEY =
-    --       '<ASSIGNMENT_NUMBER>_ASG' (the report also returns the '_TRM'
-    --       work-terms sibling; that key never matches an assignment TFM row's
-    --       RECON_KEY, so it corroborates only and is left for the sweep).
+    --       real ASSIGNMENT_ID stamped into FUSION_ASSIGNMENT_ID. RECORD_KEY =
+    --       '<ASSIGNMENT_NUMBER>_ASG' (the report also returns the WorkTerms
+    --       sibling '<TFM id>_TRM'; it matches no row and only corroborates).
+    -- The report (V2) selects rows by the HDL request id.
     --
     -- BASE/SUCCESS/FUSION_ID-not-null is the ONLY path to LOADED. An ERROR row
     -- with a real message -> FAILED on the exact message. This REPLACES the bulk
@@ -112,64 +113,36 @@ AS
                     -- Assignment -> ASSIGNMENT_NUMBER, each = BUSINESS_KEY). Every tier-1
                     -- hit short-circuits, so loaded outcomes are identical to before.
                     IF l_rows(i).OBJECT_TYPE = 'WorkRelationship' THEN
-                        UPDATE DMT_WORK_REL_TFM_TBL
-                        SET    TFM_STATUS           = 'LOADED',
-                               FUSION_PERSON_ID     = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_rc := SQL%ROWCOUNT;
-                        l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
-
-                        IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
-                            l_dff_seq := TO_NUMBER(
-                                REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
-                            IF l_dff_seq IS NOT NULL THEN
-                                UPDATE DMT_WORK_REL_TFM_TBL
-                                SET    TFM_STATUS           = 'LOADED',
-                                       FUSION_PERSON_ID     = l_rows(i).FUSION_ID,
-                                       RESULTS_UPDATED_DATE = SYSDATE,
-                                       LAST_UPDATED_DATE    = SYSDATE
-                                WHERE  RUN_ID    = p_run_id
-                                AND    TFM_SEQUENCE_ID = l_dff_seq
-                                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                                l_rc := SQL%ROWCOUNT;
-                                IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
-                            END IF;
-                        END IF;
-
-                        IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
-                            -- WorkRelationship business key is PERSON_NUMBER.
-                            UPDATE DMT_WORK_REL_TFM_TBL
-                            SET    TFM_STATUS           = 'LOADED',
-                                   FUSION_PERSON_ID     = l_rows(i).FUSION_ID,
-                                   RESULTS_UPDATED_DATE = SYSDATE,
-                                   LAST_UPDATED_DATE    = SYSDATE
-                            WHERE  RUN_ID    = p_run_id
-                            AND    PERSON_NUMBER = l_rows(i).BUSINESS_KEY
-                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                            l_rc := SQL%ROWCOUNT;
-                            IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
-                        END IF;
-
-                        l_loaded := l_loaded + l_rc;
-                        IF l_tier IN ('TIER2','TIER3') THEN
-                            DMT_UTIL_PKG.LOG(p_run_id,
-                                C_PROC || ': matched a LOADED WorkRelationship via ' || l_tier ||
-                                ' fallback (tier 1 stamped ref did not resolve). PERSON_ID '
-                                || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
-                        END IF;
+                        -- Backlog #289/#290: the WorkRelationship SourceSystemId is the
+                        -- person's worker TFM id (generated one-for-one from the worker
+                        -- row), so the work-relationship TFM row is matched through that
+                        -- worker row of the same run and person. Exact, no fallback tier.
+                        UPDATE DMT_WORK_REL_TFM_TBL r
+                        SET    r.TFM_STATUS           = 'LOADED',
+                               r.FUSION_PERSON_ID     = l_rows(i).FUSION_ID,
+                               r.RESULTS_UPDATED_DATE = SYSDATE,
+                               r.LAST_UPDATED_DATE    = SYSDATE
+                        WHERE  r.RUN_ID = p_run_id
+                        AND    r.TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                        AND    EXISTS (SELECT 1
+                                       FROM   DMT_WORKER_TFM_TBL w
+                                       WHERE  w.RUN_ID        = r.RUN_ID
+                                       AND    w.PERSON_NUMBER = r.PERSON_NUMBER
+                                       AND    TO_CHAR(w.TFM_SEQUENCE_ID) = l_rows(i).RECORD_KEY);
+                        l_loaded := l_loaded + SQL%ROWCOUNT;
 
                     ELSIF l_rows(i).OBJECT_TYPE = 'Assignment' THEN
+                        -- Exact match on the Assignment SourceSystemId the generator
+                        -- wrote (ASSIGNMENT_NUMBER || '_ASG'). The WorkTerms sibling
+                        -- ('<TFM id>_TRM', same key-map object) matches no row here and
+                        -- only corroborates.
                         UPDATE DMT_ASSIGNMENT_TFM_TBL
                         SET    TFM_STATUS           = 'LOADED',
                                FUSION_ASSIGNMENT_ID = l_rows(i).FUSION_ID,
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
-                        AND    RECON_KEY = l_rows(i).RECORD_KEY
+                        AND    ASSIGNMENT_NUMBER || '_ASG' = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
                         l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
@@ -293,26 +266,38 @@ AS
         l_request NUMBER := TO_NUMBER(p_request_id);
         l_failed  NUMBER := 0;
     BEGIN
-        -- DMT_WORK_REL_TFM_TBL: SourceSystemId = PERSON_NUMBER || '_POS'
+        -- DMT_WORK_REL_TFM_TBL: the WorkRelationship is generated one-for-one from the
+        -- person's worker row, so its SourceSystemId is that worker's TFM id
+        -- (DMT_WORKER_HDL_GEN_PKG, backlog #289/#290).
         UPDATE DMT_WORK_REL_TFM_TBL t
         SET    t.TFM_STATUS           = 'FAILED',
                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
-                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id, t.PERSON_NUMBER || '_POS')),
+                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id,
+                                                (SELECT TO_CHAR(MIN(w.TFM_SEQUENCE_ID))
+                                                 FROM   DMT_WORKER_TFM_TBL w
+                                                 WHERE  w.RUN_ID        = t.RUN_ID
+                                                 AND    w.PERSON_NUMBER = t.PERSON_NUMBER))),
                t.RESULTS_UPDATED_DATE = SYSDATE,
                t.LAST_UPDATED_DATE    = SYSDATE
         WHERE  t.RUN_ID     = p_run_id
         AND    t.TFM_STATUS = 'GENERATED'
         AND    EXISTS (SELECT 1
                        FROM   DMT_HDL_MESSAGE_GTT m
-                       WHERE  m.REQUEST_ID       = l_request
-                       AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_POS'));
+                       JOIN   DMT_WORKER_TFM_TBL  w
+                         ON   m.SOURCE_SYSTEM_ID = TO_CHAR(w.TFM_SEQUENCE_ID)
+                       WHERE  m.REQUEST_ID    = l_request
+                       AND    w.RUN_ID        = t.RUN_ID
+                       AND    w.PERSON_NUMBER = t.PERSON_NUMBER);
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- DMT_ASSIGNMENT_TFM_TBL: SourceSystemId = ASSIGNMENT_NUMBER || '_TRM' / ASSIGNMENT_NUMBER || '_ASG'
+        -- DMT_ASSIGNMENT_TFM_TBL: one row = two HDL records, WorkTerms
+        -- (SourceSystemId = TFM id || '_TRM') and Assignment (ASSIGNMENT_NUMBER || '_ASG').
         UPDATE DMT_ASSIGNMENT_TFM_TBL t
         SET    t.TFM_STATUS           = 'FAILED',
                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
-                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id, t.ASSIGNMENT_NUMBER || '_TRM', t.ASSIGNMENT_NUMBER || '_ASG')),
+                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id,
+                                                TO_CHAR(t.TFM_SEQUENCE_ID) || '_TRM',
+                                                t.ASSIGNMENT_NUMBER || '_ASG')),
                t.RESULTS_UPDATED_DATE = SYSDATE,
                t.LAST_UPDATED_DATE    = SYSDATE
         WHERE  t.RUN_ID     = p_run_id
@@ -320,7 +305,8 @@ AS
         AND    EXISTS (SELECT 1
                        FROM   DMT_HDL_MESSAGE_GTT m
                        WHERE  m.REQUEST_ID       = l_request
-                       AND    m.SOURCE_SYSTEM_ID IN (t.ASSIGNMENT_NUMBER || '_TRM', t.ASSIGNMENT_NUMBER || '_ASG'));
+                       AND    m.SOURCE_SYSTEM_ID IN (TO_CHAR(t.TFM_SEQUENCE_ID) || '_TRM',
+                                                     t.ASSIGNMENT_NUMBER || '_ASG'));
         l_failed := l_failed + SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(
@@ -438,6 +424,17 @@ AS
         -- procedure (one BEGIN/END per procedure). This REPLACES the former
         -- LOOKUP_FUSION_IDS positive path for Assignments.
         APPLY_CONTRACT_V1_ASSIGNMENTS(p_run_id, p_request_id);
+
+        -- Whole-document rejection (backlog #289, design section 5). This batch
+        -- always runs AFTER DMT_WORKER_RESULTS_PKG.RECONCILE_BATCH for the same
+        -- Worker.dat data set (RUN_WORKERS and the base-lag retry both call the two
+        -- in that order), so every person tier now has its per-record errors and
+        -- its base-table proof: HDL rejects the whole Worker object when one record
+        -- fails, so each still-open row of that person is FAILED quoting the real
+        -- error of the record that failed.
+        DMT_WORKER_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS(
+            p_run_id     => p_run_id,
+            p_request_id => p_request_id);
 
         -- Whole-file HDL rejections last, only on rows still open (backlog #288).
         APPLY_FILE_ERRORS(p_run_id, p_request_id);

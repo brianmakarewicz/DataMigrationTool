@@ -166,8 +166,10 @@ def main():
         #  class as the Items/MiscReceipts accumulation below).
         "DMT_WORKER_TFM_TBL",
         "DMT_PERSON_NAME_TFM_TBL",
+        "DMT_PERSON_EMAIL_TFM_TBL",
         "DMT_WORKER_STG_TBL",
         "DMT_PERSON_NAME_STG_TBL",
+        "DMT_PERSON_EMAIL_STG_TBL",
         "DMT_ASSIGNMENT_TFM_TBL",
         "DMT_WORK_REL_TFM_TBL",
         "DMT_ASSIGNMENT_STG_TBL",
@@ -2829,9 +2831,15 @@ def main():
     # transform/generator carry through unchanged — so seed the strings already in
     # HDL format (a DATE literal would implicitly become DD-MON-YY and be rejected).
     print("\n=== 41. Workers (HCM) ===")
+    # RT-WKR-XG1 (backlog #289, design section 5 cross-grain scenario): a valid
+    # worker, name, work relationship and assignment whose ONLY defect is its email
+    # (invalid EmailType). HCM Data Loader rejects the whole Worker object, so the
+    # email row is FAILED with its own error and every other row of the person is
+    # FAILED quoting it ("Rejected with document:").
     for pnum, action, dob, label in [
         ("RT-WKR-G1", "HIRE",      "1985/03/15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
         ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
+        ("RT-WKR-XG1", "HIRE",     "1986/04/16", "Cross-grain Worker: RT-WKR-XG1 (only the email is bad)"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_WORKER_STG_TBL (
@@ -2858,8 +2866,30 @@ def main():
             'RT-WKR-G1-NME', 'NEW'
         )
     """, label="GOOD Worker name: Regina Tester")
+    run_sql(cur, """
+        INSERT INTO DMT_PERSON_NAME_STG_TBL (
+            PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
+            LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', '2026/01/01', 'GLOBAL',
+            'US', 'Grain', 'Xavier',
+            'RT-WKR-XG1-NME', 'NEW'
+        )
+    """, label="Cross-grain Worker name: Xavier Grain")
+    # The cross-grain worker's only defect: an EmailType that is not a valid code.
+    run_sql(cur, """
+        INSERT INTO DMT_PERSON_EMAIL_STG_TBL (
+            PERSON_NUMBER, EMAIL_TYPE, EMAIL_ADDRESS, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', 'ZZ_NOT_A_TYPE', 'xavier.grain@example.com', 'Y',
+            'RT-WKR-XG1-EML-BAD', 'NEW'
+        )
+    """, label="Cross-grain Worker email: invalid EmailType [BAD-LKP]")
     tag_scenario(cur, "DMT_WORKER_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_PERSON_NAME_STG_TBL", scenario_id)
+    tag_scenario(cur, "DMT_PERSON_EMAIL_STG_TBL", scenario_id)
 
     # ====================================================================
     # 42. ASSIGNMENTS (HCM HDL) — needs a WorkRelationship row too, because the
@@ -2880,6 +2910,17 @@ def main():
             'RT-WKR-G1-WR', 'NEW'
         )
     """, label="Work relationship for RT-WKR-G1")
+    run_sql(cur, """
+        INSERT INTO DMT_WORK_REL_STG_TBL (
+            PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
+            LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG1', '2026/01/01', '2026/01/01',
+            'US1 Legal Entity', 'HIRE', 'E', 'Y',
+            'RT-WKR-XG1-WR', 'NEW'
+        )
+    """, label="Work relationship for cross-grain worker RT-WKR-XG1")
     # The generator now keys the Assignment SourceSystemId off the source
     # ASSIGNMENT_NUMBER (|| '_ASG'), NOT the person, so distinct assignment
     # numbers are distinct HDL records. RT-WKR-G1 gets TWO assignments to prove
@@ -2895,6 +2936,7 @@ def main():
         ("RT-WKR-G1",   "ET-RT-WKR-G1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "GOOD Assignment: RT-WKR-G1 (primary)"),
         ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "2026/02/01", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person, staggered date)"),
         ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "2026/01/01", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
+        ("RT-WKR-XG1",  "ET-RT-WKR-XG1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "Cross-grain Assignment: valid, rejected with RT-WKR-XG1's Worker document"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_ASSIGNMENT_STG_TBL (

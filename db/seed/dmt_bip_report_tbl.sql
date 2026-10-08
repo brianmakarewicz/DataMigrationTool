@@ -416,10 +416,13 @@ using (
     select 100000027                                            bip_report_id,
            'Workers'                                            cemli_code,
            'Worker'                                             object_type,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_RPT.xdo'     report_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                          interface_table,
-           'Worker HDL base-table reconciliation (Contract v1)' notes,
+           'Worker HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #289): '
+             || 'rows selected by the HDL request id; every person component (name, email, '
+             || 'phone, address, national id, legislative data) proven on its own key-map '
+             || 'row and base table. Deployed alongside V1, never overwriting it.' notes,
            1                                                    contract_version,
            'DMT_WORKER_TFM_TBL'                                 tfm_table,
            'FUSION_PERSON_ID'                                   fusion_id_column,

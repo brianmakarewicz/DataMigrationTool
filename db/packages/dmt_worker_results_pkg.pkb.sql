@@ -66,77 +66,91 @@ AS
     END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
-    -- STAMP_COMPONENT_FUSION_ID (private)  -- backlog #11
-    -- Write a person-component's OWN Fusion base id onto its component TFM row.
-    -- The Workers recon report returns one row per component with OBJECT_TYPE =
-    -- the HDL business-object name, RECORD_KEY = the suffixed SourceSystemId
-    -- (<prefixed person number>_<suffix>), and FUSION_ID = the component's base
-    -- primary key (SURROGATE_ID from HRC_INTEGRATION_KEY_MAP, confirmed present in
-    -- the component base table by the DM). The component TFM row is keyed on
-    -- PERSON_NUMBER = the prefixed person number (no suffix), so the 4-character
-    -- suffix (e.g. '_EML') is stripped to match. Only the mapped component's own
-    -- Fusion-id column is set; STATUS is never changed here (the cascade owns that).
-    -- Static UPDATEs, one per component type (compile-time-known table + column,
-    -- no dynamic SQL -- design section 7).
+    -- MARK_COMPONENT_LOADED (private)  -- backlog #289
+    -- A person component (name, email, phone, address, national identifier,
+    -- legislative data) is LOADED only from its OWN proof row in the Workers recon
+    -- report (V2): OBJECT_TYPE = the key-map object, RECORD_KEY = the exact
+    -- SourceSystemId the generator wrote for that component
+    -- (<PERSON_NUMBER>_NME/_EML/_PHN/_ADR/_NID/_LEG), FUSION_ID = the component's
+    -- own base-table id (key-map surrogate confirmed in its base table). The row is
+    -- matched on that exact SourceSystemId, never on its parent worker's verdict
+    -- (the former "parent LOADED, so component LOADED" cascade is gone). Static
+    -- UPDATEs, one per component table. Returns the number of rows marked.
     -- --------------------------------------------------------
-    PROCEDURE STAMP_COMPONENT_FUSION_ID (
+    FUNCTION MARK_COMPONENT_LOADED (
         p_run_id      IN NUMBER,
         p_object_type IN VARCHAR2,
         p_record_key  IN VARCHAR2,
         p_fusion_id   IN NUMBER
-    ) IS
-        -- The prefixed person number = the report RECORD_KEY minus its 4-char
-        -- component suffix ('_NME','_EML','_PHN','_ADR','_NID','_LEG').
-        l_person_number DMT_WORKER_TFM_TBL.PERSON_NUMBER%TYPE :=
-            SUBSTR(p_record_key, 1, LENGTH(p_record_key) - 4);
+    ) RETURN NUMBER IS
+        l_rc NUMBER := 0;
     BEGIN
-        CASE p_object_type
-            WHEN 'PersonName' THEN
+        CASE
+            WHEN p_object_type = 'PersonName' THEN
                 UPDATE DMT_PERSON_NAME_TFM_TBL
-                SET    FUSION_PERSON_NAME_ID = p_fusion_id,
+                SET    TFM_STATUS            = 'LOADED',
+                       FUSION_PERSON_NAME_ID = p_fusion_id,
+                       RESULTS_UPDATED_DATE  = SYSDATE,
                        LAST_UPDATED_DATE     = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_PERSON_NAME_ID IS NULL;
-            WHEN 'EmailAddress' THEN
+                AND    PERSON_NUMBER || '_NME' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
+            WHEN p_object_type = 'EmailAddress' THEN
                 UPDATE DMT_PERSON_EMAIL_TFM_TBL
-                SET    FUSION_EMAIL_ADDRESS_ID = p_fusion_id,
+                SET    TFM_STATUS              = 'LOADED',
+                       FUSION_EMAIL_ADDRESS_ID = p_fusion_id,
+                       RESULTS_UPDATED_DATE    = SYSDATE,
                        LAST_UPDATED_DATE       = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_EMAIL_ADDRESS_ID IS NULL;
-            WHEN 'Phone' THEN
+                AND    PERSON_NUMBER || '_EML' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
+            WHEN p_object_type = 'Phone' THEN
                 UPDATE DMT_PERSON_PHONE_TFM_TBL
-                SET    FUSION_PHONE_ID   = p_fusion_id,
-                       LAST_UPDATED_DATE = SYSDATE
+                SET    TFM_STATUS           = 'LOADED',
+                       FUSION_PHONE_ID      = p_fusion_id,
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_PHONE_ID IS NULL;
-            WHEN 'Address' THEN
+                AND    PERSON_NUMBER || '_PHN' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
+            WHEN p_object_type IN ('Address', 'PersonAddress') THEN
                 UPDATE DMT_PERSON_ADDR_TFM_TBL
-                SET    FUSION_ADDRESS_ID = p_fusion_id,
-                       LAST_UPDATED_DATE = SYSDATE
+                SET    TFM_STATUS           = 'LOADED',
+                       FUSION_ADDRESS_ID    = p_fusion_id,
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_ADDRESS_ID IS NULL;
-            WHEN 'NationalIdentifier' THEN
+                AND    PERSON_NUMBER || '_ADR' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
+            WHEN p_object_type = 'NationalIdentifier' THEN
                 UPDATE DMT_PERSON_NID_TFM_TBL
-                SET    FUSION_NATIONAL_IDENTIFIER_ID = p_fusion_id,
+                SET    TFM_STATUS                    = 'LOADED',
+                       FUSION_NATIONAL_IDENTIFIER_ID = p_fusion_id,
+                       RESULTS_UPDATED_DATE          = SYSDATE,
                        LAST_UPDATED_DATE             = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_NATIONAL_IDENTIFIER_ID IS NULL;
-            WHEN 'PersonLegislativeInfo' THEN
+                AND    PERSON_NUMBER || '_NID' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
+            WHEN p_object_type = 'PersonLegislativeInfo' THEN
                 UPDATE DMT_PERSON_LEGISL_TFM_TBL
-                SET    FUSION_PERSON_ID  = p_fusion_id,
-                       LAST_UPDATED_DATE = SYSDATE
+                SET    TFM_STATUS           = 'LOADED',
+                       FUSION_PERSON_ID     = p_fusion_id,
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    PERSON_NUMBER = l_person_number
-                AND    FUSION_PERSON_ID IS NULL;
+                AND    PERSON_NUMBER || '_LEG' = p_record_key
+                AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+                l_rc := SQL%ROWCOUNT;
             ELSE
-                NULL;  -- non-component object types are handled elsewhere
+                l_rc := 0;  -- not a person-component object type
         END CASE;
-    END STAMP_COMPONENT_FUSION_ID;
+        RETURN l_rc;
+    END MARK_COMPONENT_LOADED;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_WORKERS (private)
@@ -168,10 +182,17 @@ AS
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count is done statically here (not in the shared pkg),
-        -- and drives the shared fetch's keyset page-count cap.
-        SELECT COUNT(*) INTO l_gen_count
-        FROM   DMT_WORKER_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        -- and drives the shared fetch's keyset page-count cap. The V2 report
+        -- returns one row per person component too, so count every person tier.
+        SELECT (SELECT COUNT(*) FROM DMT_WORKER_TFM_TBL        WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_NAME_TFM_TBL   WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_EMAIL_TFM_TBL  WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_PHONE_TFM_TBL  WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_ADDR_TFM_TBL   WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_NID_TFM_TBL    WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_PERSON_LEGISL_TFM_TBL WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   DUAL;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code  => C_CEMLI,
@@ -295,22 +316,14 @@ AS
                       AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                       AND l_rows(i).FUSION_ID IS NOT NULL
                       AND l_rows(i).OBJECT_TYPE IN
-                          ('PersonName','EmailAddress','Phone','Address',
+                          ('PersonName','EmailAddress','Phone','Address','PersonAddress',
                            'NationalIdentifier','PersonLegislativeInfo') THEN
-                    -- Backlog #11: person-component base id capture. The Workers
-                    -- recon report now returns each person-component's OWN Fusion
-                    -- base id (from HRC_INTEGRATION_KEY_MAP.SURROGATE_ID, confirmed
-                    -- against the component's base table). The report RECORD_KEY is
-                    -- the suffixed SourceSystemId (<prefixed person number>_NME/_EML/
-                    -- _PHN/_ADR/_NID/_LEG); the component TFM row is keyed by
-                    -- PERSON_NUMBER (the same prefixed person number, no suffix), so
-                    -- strip the 4-char suffix to match. Each component gets its own
-                    -- Fusion-id column stamped -- not the parent's id. This is the
-                    -- ONLY thing this branch does: it never marks LOADED (the
-                    -- person-component cascade below sets LOADED from the parent
-                    -- worker's confirmed verdict), it back-fills the real base id
-                    -- onto rows already accounted.
-                    STAMP_COMPONENT_FUSION_ID(
+                    -- Backlog #289: a person component is LOADED only from its OWN
+                    -- proof row (key-map surrogate confirmed in the component's base
+                    -- table, report V2), matched on the exact SourceSystemId the
+                    -- generator wrote, and stamped with its own Fusion id. Never from
+                    -- the parent worker's verdict.
+                    l_loaded := l_loaded + MARK_COMPONENT_LOADED(
                         p_run_id      => p_run_id,
                         p_object_type => l_rows(i).OBJECT_TYPE,
                         p_record_key  => l_rows(i).RECORD_KEY,
@@ -342,145 +355,17 @@ AS
             END LOOP;
         END IF;
 
-        -- ============================================================
-        -- Person-component accounting (2026-09-17). PersonName, PersonEmail,
-        -- PersonPhone, PersonAddress, PersonNationalIdentifier and
-        -- PersonLegislativeData are COMPONENTS of the Worker business object: they
-        -- load in the same Worker.dat as part of the person, and have no
-        -- independent Fusion id / base-tier lookup of their own. So the ONLY honest
-        -- verdict for a component row is its parent worker's verdict, keyed by
-        -- PERSON_NUMBER (= the Worker RECON_KEY, the prefixed person number):
-        --   * parent worker LOADED  -> component LOADED (it loaded with the person;
-        --     parent-confirmed-in-base => component accounted, not fabrication).
-        --   * parent worker FAILED   -> component FAILED, carrying the parent error
-        --     context (the component could not have loaded without the person).
-        -- Without this, a component row stays GENERATED with no [FUSION_ERROR],
-        -- ACCOUNT_ROWS counts it "awaiting base", and the Workers gate defers then
-        -- fails "1 record unaccounted" even though the worker itself is LOADED.
-        -- Straight set-based UPDATEs (no new dynamic-SQL site); the Worker TFM row's
-        -- terminal status is the compile-time-known driver. WorkRelationship +
-        -- Assignment are accounted by their own Contract v1 base tiers
-        -- (DMT_ASSIGNMENT_RESULTS_PKG), so they are intentionally not touched here.
-        -- ============================================================
-        -- LOADED workers -> their component rows LOADED.
-        UPDATE DMT_PERSON_NAME_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PERSON_EMAIL_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PERSON_PHONE_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PERSON_ADDR_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PERSON_NID_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-        UPDATE DMT_PERSON_LEGISL_TFM_TBL c
-        SET    c.TFM_STATUS = 'LOADED', c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'LOADED');
-
-        -- FAILED workers -> their still-open component rows FAILED with parent context
-        -- (a person component cannot load without its person).
-        UPDATE DMT_PERSON_NAME_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
-        UPDATE DMT_PERSON_EMAIL_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
-        UPDATE DMT_PERSON_PHONE_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
-        UPDATE DMT_PERSON_ADDR_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
-        UPDATE DMT_PERSON_NID_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
-        UPDATE DMT_PERSON_LEGISL_TFM_TBL c
-        SET    c.TFM_STATUS = 'FAILED',
-               c.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(c.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT wk.ERROR_TEXT FROM DMT_WORKER_TFM_TBL wk
-                    WHERE  wk.RUN_ID = p_run_id
-                    AND    wk.PERSON_NUMBER = c.PERSON_NUMBER
-                    AND    wk.TFM_STATUS = 'FAILED'
-                    AND    ROWNUM = 1)),
-               c.RESULTS_UPDATED_DATE = SYSDATE, c.LAST_UPDATED_DATE = SYSDATE
-        WHERE  c.RUN_ID = p_run_id AND c.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND EXISTS (SELECT 1 FROM DMT_WORKER_TFM_TBL wk WHERE wk.RUN_ID = p_run_id
-                    AND wk.PERSON_NUMBER = c.PERSON_NUMBER AND wk.TFM_STATUS = 'FAILED');
+        -- Backlog #289: no parent-verdict cascade. Each person component is
+        -- LOADED only from its own proof row above; a component Fusion rejected
+        -- with its document is FAILED by PROPAGATE_DOCUMENT_ERRORS, quoting the
+        -- real error of the record that failed.
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | LOADED: ' || l_loaded
                            || ' | FAILED: ' || l_failed
-                           || ' | person components accounted by parent verdict.',
+                           || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
@@ -817,6 +702,217 @@ AS
                 p_procedure      => C_PROC);
             RAISE;
     END RECONCILE_BATCH;
+
+    -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (public) -- backlog #289
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain". HCM Data Loader rejects the whole Worker logical object (the person
+    -- with every component and assignment in Worker.dat) when one of its records
+    -- fails, but reports the error only on that record. Run AFTER both the Worker
+    -- and the Assignment RECONCILE_BATCH (per-record errors and base-table proof
+    -- applied), every row of such a person that is still GENERATED -- not proven in
+    -- Fusion and with no error of its own -- is marked FAILED quoting the real
+    -- error of the person's first failing record, named
+    --   [FUSION_ERROR] Rejected with document: <business object> <SourceSystemId>: <message>
+    -- (DMT_WORKER_DOC_ERROR_V, DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR). A LOADED row is
+    -- never touched, and a row keeps its own error as its own. Static SQL.
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        l_request NUMBER := TO_NUMBER(p_request_id);
+        l_failed  NUMBER := 0;
+    BEGIN
+        UPDATE DMT_WORKER_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_NAME_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_EMAIL_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_PHONE_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_ADDR_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_NID_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_PERSON_LEGISL_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_WORK_REL_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_ASSIGNMENT_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                                            (SELECT d.QUOTED_ERROR
+                                             FROM   DMT_WORKER_DOC_ERROR_V d
+                                             WHERE  d.RUN_ID        = t.RUN_ID
+                                             AND    d.REQUEST_ID    = l_request
+                                             AND    d.PERSON_NUMBER = t.PERSON_NUMBER)),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_WORKER_DOC_ERROR_V d
+                       WHERE  d.RUN_ID        = t.RUN_ID
+                       AND    d.REQUEST_ID    = l_request
+                       AND    d.PERSON_NUMBER = t.PERSON_NUMBER);
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rows FAILED with their rejected Worker document: '
+                           || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
 
 END DMT_WORKER_RESULTS_PKG;
 /

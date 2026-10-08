@@ -85,6 +85,10 @@ REPORTS = [
     ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
+    # Workers V2 (2026-10-07, backlog #289): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; every person component proven on its
+    # own key-map row and base table.
+    ("Workers",                 "DMT_WORKERS_RECON_V2_DM", "DMT_WORKERS_RECON_V2_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
     ("Salaries",                "DMT_SALARIES_RECON_DM", "DMT_SALARIES_RECON_RPT"),
     ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),

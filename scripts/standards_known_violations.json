@@ -114,13 +114,6 @@
       "detail": "DMT_VS_RECON_DM returns [record_key, import_status, source_type, fusion_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
     },
     {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|Workers|DMT_WORKERS_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/Workers/query.sql does not match the SQL of the deployed DMT_WORKERS_RECON_DM.xdm (query.sql names: DMT_WORKERS_RECON_DM)"
-    },
-    {
       "checker": "check_sweep_unaccounted",
       "key": "SWEEP-FUSION-ERROR-FORM|dmt_ap_pay_term_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
       "backlog": 161,
