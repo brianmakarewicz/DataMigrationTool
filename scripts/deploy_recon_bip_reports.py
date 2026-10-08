@@ -85,6 +85,11 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
+    # item's Fusion job ids and the Standard document style; the run-id LIKE on
+    # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
+    # overwritten).
+    ("PurchaseOrders",           "DMT_PO_RECON_V2_DM",         "DMT_PO_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
