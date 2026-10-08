@@ -70,8 +70,10 @@
         l_status       NUMBER;
     BEGIN
         l_base_url := RTRIM(DMT_UTIL_PKG.GET_CONFIG('FUSION_URL'), '/');
-        l_username := DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
-        l_password := DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD');
+        -- Central Fusion user for this object (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => C_CEMLI,
+                                           x_username   => l_username,
+                                           x_password   => l_password);
         l_url      := l_base_url || p_path;
 
         -- Attach a wallet only when a real one is configured; otherwise use the DB

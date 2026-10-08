@@ -5,7 +5,7 @@
 -- stack's own BIP catalog under /Custom/DMT2/ (never /Custom/DMT/ -- the
 -- frozen stack's catalog).
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000001,'ARInvoices','AR Invoice','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm','/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_RPT.xdo','RA_INTERFACE_LINES_ALL',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'AR AutoInvoice import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -199,10 +199,13 @@ using (
            'N/A (EPBCS internal)',
            'Planning budget import reconciliation - no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS - dormant)' from dual
     union all select 100000018, 'Expenditures', 'Expenditure',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_DM.xdm',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_RPT.xdo',
            'PJC_TXN_XFACE_STAGE_ALL',
-           'Project expenditure cost import reconciliation (Contract v1, nine-column)' from dual
+           'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
+           || 'prefix; called once per work item. Deployed alongside V1, never overwriting it.' from dual
     union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
@@ -701,13 +704,16 @@ using (
     select 100000032                                                    bip_report_id,
            'Assignments'                                                cemli_code,
            'Assignment'                                                 object_type,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_RPT.xdo'     report_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                                  interface_table,
            'Assignment HDL base-table reconciliation (Contract v1). ONE report, '
              || 'two base tiers via OBJECT_TYPE: WorkRelationship '
              || '(DMT_WORK_REL_TFM_TBL <- PER_PERIODS_OF_SERVICE) and Assignment '
-             || '(DMT_ASSIGNMENT_TFM_TBL <- PER_ALL_ASSIGNMENTS_M).'    notes,
+             || '(DMT_ASSIGNMENT_TFM_TBL <- PER_ALL_ASSIGNMENTS_M). V2 (2026-10-07, '
+             || 'backlog #287/#290): rows selected by the HDL request id, key map joined '
+             || 'on each row''s own SourceSystemOwner (no HRC_SQLLOADER literal). '
+             || 'Deployed alongside V1, never overwriting it.'          notes,
            1                                                            contract_version,
            'DMT_ASSIGNMENT_TFM_TBL'                                     tfm_table,
            'FUSION_ASSIGNMENT_ID'                                       fusion_id_column,
@@ -1474,13 +1480,20 @@ commit;
 -- '#IMPORT_REPORT#' and the real per-row text is harvested from the import report
 -- XML by the reconciler's Tier 3. This MERGE converges the four Contract v1
 -- columns on the BillingEvents row seeded earlier in this file.
+-- V2 (2026-10-07, owner decision): DMT_BILLING_EVENT_RECON_V2_DM finds rows only
+-- by the work item's Fusion job ids (base events by PJB_BILLING_EVENTS.REQUEST_ID =
+-- the import job id, interface rows by LOAD_REQUEST_ID = the load job id); the
+-- run prefix is never a search value. V1 (BILLING_EVENT_DM) stays deployed; BIP
+-- objects are never overwritten.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BillingEvents'                                        cemli_code,
-           '/Custom/DMT2/BillingEvents/BILLING_EVENT_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/BillingEvents/BILLING_EVENT_RPT.xdo'     report_catalog_path,
-           'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case)' notes,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_RPT.xdo' report_catalog_path,
+           'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
            1                                                      contract_version,
            'DMT_PJB_BILL_EVENTS_TFM_TBL'                          tfm_table,
            'FUSION_EVENT_ID'                                      fusion_id_column,
@@ -1547,6 +1560,11 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- ARInvoices — Contract v1 registration (design section 5), MULTI-TIER.
+-- V4 (2026-10-07, owner decision): DMT_AR_RECON_V4_DM finds rows only by the
+-- load's Fusion job ids -- base lines by REQUEST_ID = the AutoInvoiceImportEss
+-- request id, base distributions through their loaded line, interface rows and
+-- errors by LOAD_REQUEST_ID = the load request id; the run prefix is never a
+-- search value. V1-V3 stay deployed; BIP objects are never overwritten.
 -- Points the ARInvoices CEMLI at the nine-column Contract v1 report and sets
 -- CONTRACT_VERSION = 1 so the shared parser DMT_RECON_CONTRACT_PKG.FETCH_ROWS
 -- runs it (a NULL/absent CONTRACT_VERSION makes the shared fetch bail with
@@ -1576,12 +1594,13 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_RPT.xdo'       report_catalog_path,
-           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V3 (2026-10-07): '
-           || 'line RECORD_KEY = ATTRIBUTE1/ATTRIBUTE2, unique per line, so keyset paging '
-           || 'never drops a row; V2 scoped interface errors to the load. Deployed alongside '
-           || 'V1 and V2, never overwriting them.' notes,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_RPT.xdo'       report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V4 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base lines by the '
+           || 'AutoInvoice import REQUEST_ID, interface rows and errors by LOAD_REQUEST_ID), '
+           || 'never by the run prefix; called with each load''s own ids. V3 made the line '
+           || 'RECORD_KEY ATTRIBUTE1/ATTRIBUTE2. Deployed alongside V1-V3, never overwriting them.' notes,
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
            'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
@@ -1747,13 +1766,21 @@ commit;
 -- STG_SEQUENCE_ID)); the base tier (INV_MATERIAL_TXNS) and interface tier
 -- (INV_TRANSACTIONS_INTERFACE at PROCESS_FLAG = 3, real error inline) never
 -- overlap on that key.
+-- V2 (2026-10-07, owner decision, backlog #262): DMT_INV_TRX_RECON_V2_DM finds
+-- rows only by the work item's load job id (INV_MATERIAL_TXNS and
+-- INV_TRANSACTIONS_INTERFACE LOAD_REQUEST_ID = load id; serials through a
+-- transaction of that load). The 'DMT-' || run id TRANSACTION_REFERENCE is never
+-- a search value. V1 stays deployed (never overwritten).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'MiscReceipts'                                          cemli_code,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_RPT.xdo'   report_catalog_path,
-           'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier)' notes,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V2_RPT.xdo' report_catalog_path,
+           'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion load job id '
+           || '(LOAD_REQUEST_ID on the posted transaction and the rejected interface row), never by '
+           || 'the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_INV_TRX_TFM_TBL'                                   tfm_table,
            'FUSION_ID'                                             fusion_id_column,
@@ -1805,12 +1832,21 @@ commit;
 -- block can revert either. CMP_FUNCTION is the PKG.FUNC returning
 -- DMT_CMP_ROW_OBJ; read by the comparison framework (Task 5) and the per-object
 -- function's report-path lookup (Task 4). Every other object's CMP_* stays NULL.
+-- V2 (2026-10-07, owner decision, backlog #264): DMT_PO_RECON_V2_DM finds rows
+-- only by the work item's Fusion job ids and the Standard document style (base
+-- rows by REQUEST_ID = import id, interface headers by LOAD_REQUEST_ID = load id
+-- AND REQUEST_ID = import id, interface children by LOAD_REQUEST_ID under such a
+-- header, errors by REQUEST_ID = import id); the run id is never a search value.
+-- V1 (DMT_PO_RECON_DM) stays deployed; BIP objects are never overwritten.
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'PurchaseOrders'                                        cemli_code,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_RPT.xdo'      report_catalog_path,
-           'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions)' notes,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
+           || 'Standard document style, never by the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
@@ -1934,13 +1970,21 @@ commit;
 -- cascade. RECON_KEY (stamped by DMT_FA_ASSET_TRANSFORM_PKG, = the header report
 -- RECORD_KEY) = prefixed ASSET_NUMBER on both BASE and INTERFACE. The SQL*Loader
 -- all-or-nothing log path (ACCOUNT_ALL_OR_NOTHING) is unchanged.
+-- V2 (2026-10-07, owner decision): DMT_FA_ASSET_RECON_V2_DM finds rows only by
+-- the work item's load job id: base assets and distributions through their
+-- POSTED FA_MASS_ADDITIONS row (LOAD_REQUEST_ID = load id; FA_ADDITIONS_B has no
+-- request id), interface rejections by LOAD_REQUEST_ID. The run prefix is never
+-- a search value. V1 (DMT_FA_ASSET_RECON_DM) stays deployed; BIP objects are
+-- never overwritten. The Assets.Book / Assets.Assignment auditor rows point at V2 too.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Assets'                                              cemli_code,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'      report_catalog_path,
-           'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved)' notes,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved). '
+           || 'V2 (2026-10-07): rows found only by the work item''s load job id (base assets through their POSTED '
+           || 'FA_MASS_ADDITIONS row, interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
            1                                                      contract_version,
            'DMT_FA_ASSET_HDR_TFM_TBL'                            tfm_table,
            'FUSION_ASSET_ID'                                     fusion_id_column,
@@ -1962,12 +2006,21 @@ commit;
 -- ---------------------------------------------------------------------------
 -- PO family (continued): BlanketPOs (BPA) and Contracts (CPA) registry rows.
 -- ---------------------------------------------------------------------------
+-- BlanketPOs V2 (2026-10-07, owner decision, backlog #258):
+-- DMT_BLANKET_PO_RECON_V2_DM finds rows only by the work item's Fusion job ids
+-- and the Blanket style (base by REQUEST_ID = import id, interface headers by
+-- LOAD_REQUEST_ID = load id AND REQUEST_ID = import id, interface lines by
+-- LOAD_REQUEST_ID under such a header, errors by REQUEST_ID = import id); the
+-- run id is never a search value. V1 stays deployed (never overwritten).
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BlanketPOs'                                            cemli_code,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_DM.xdm'   dm_catalog_path,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_RPT.xdo'  report_catalog_path,
-           'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines)' notes,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V2_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V2_RPT.xdo' report_catalog_path,
+           'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
+           || 'Blanket document style, never by the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
@@ -2026,17 +2079,25 @@ commit;
 -- own TFM table, so APPLY_PROC is intentionally not set here. RECON_KEY (stamped by
 -- DMT_EXPENDITURE_TRANSFORM_PKG, = the report RECORD_KEY) = the run-prefixed
 -- ORIG_TRANSACTION_REFERENCE, which survives verbatim onto the base row.
+-- V2 (2026-10-07, owner decision): DMT_EXP_RECON_V2_DM finds rows only by the
+-- work item's Fusion job ids (base items by REQUEST_ID = import id, import
+-- rejections in PJC_TXN_XFACE_ALL by REQUEST_ID = import id, staging rows by
+-- LOAD_REQUEST_ID = load id); the run prefix is never a search value. V1
+-- (DMT_EXP_RECON_DM) stays deployed; BIP objects are never overwritten.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Expenditures'                                          cemli_code,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo'       report_catalog_path,
-           'Project expenditure cost import reconciliation (Contract v1, nine-column)' notes,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_DM.xdm'     dm_catalog_path,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_RPT.xdo'    report_catalog_path,
+           'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
+           || 'prefix; called once per work item. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PJC_EXPENDITURES_TFM_TBL'                          tfm_table,
            'FUSION_EXPENDITURE_ITEM_ID'                            fusion_id_column,
-           'ORIG_TRANSACTION_REFERENCE -- run-prefixed native reference, survives verbatim onto the base row (report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql
+           'ORIG_TRANSACTION_REFERENCE -- run-prefixed native reference, survives verbatim onto the base row (report RECORD_KEY matched to TFM.RECON_KEY; a match key only, never a row selector)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
@@ -2123,19 +2184,24 @@ commit;
 -- 2026-10-06: re-pointed to DMT_ITEM_RECON_V2_DM / _V2_RPT, deployed alongside
 -- the original (BIP objects are never overwritten). V2 fixes the Item Category
 -- tiers (run 236: rejected categories were left UNACCOUNTED).
+-- 2026-10-07 (owner decision): re-pointed to DMT_ITEM_RECON_V3_DM / _V3_RPT,
+-- deployed alongside V1/V2. V3 finds rows only by the work item's Fusion job ids:
+-- base items and base categories by REQUEST_ID = the Item Import id, interface
+-- rows and EGP_IMPORT_ERRORS by LOAD_REQUEST_ID = the load id or REQUEST_ID = the
+-- import id. Every LIKE on the run prefix is gone.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Items'                                             cemli_code,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V2_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V3_RPT.xdo'      report_catalog_path,
            'Item Import base-table reconciliation (Contract v1 -- nine columns, '
              || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
              || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
-             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V2 (2026-10-06): '
-             || 'category tiers also match request_id = P_IMPORT_ESS_ID and report '
-             || 'MESSAGE_NAME + text from both EGP interface tables; deployed alongside '
-             || 'the original DMT_ITEM_RECON_DM.'                               notes,
+             || '(DMT_EGP_ITEM_CAT_TFM_TBL <- EGP_ITEM_CATEGORIES). V3 (2026-10-07): '
+             || 'rows found only by the work item''s Fusion job ids (base by the Item '
+             || 'Import REQUEST_ID, interface and errors by LOAD_REQUEST_ID or REQUEST_ID), '
+             || 'never by the run prefix; deployed alongside V1 and V2.'        notes,
            1                                                    contract_version,
            'DMT_EGP_ITEM_TFM_TBL'                              tfm_table,
            'FUSION_INVENTORY_ITEM_ID'                          fusion_id_column,
@@ -3133,8 +3199,8 @@ using (
     select 100000060                                            bip_report_id,
            'Assets.Book'                                        cemli_code,
            'Asset Book'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-book tier -- AUDITOR registration only (backlog #91/#139). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
@@ -3191,8 +3257,8 @@ using (
     select 100000061                                            bip_report_id,
            'Assets.Assignment'                                        cemli_code,
            'Asset Assignment'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V2_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-assignment tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '

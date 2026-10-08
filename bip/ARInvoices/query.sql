@@ -1,8 +1,35 @@
 -- bip/ARInvoices/query.sql -- EXACT SQL text of the deployed data model
--- /Custom/DMT2/ARInvoices/DMT_AR_RECON_V3_DM.xdm (the CDATA body of
--- bip/ARInvoices/DMT_AR_RECON_V3_DM.xdm). Regenerate from the .xdm whenever
+-- /Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm (the CDATA body of
+-- bip/ARInvoices/DMT_AR_RECON_V4_DM.xdm). Regenerate from the .xdm whenever
 -- the data model changes; never edit separately.
 -- ============================================================
+-- DMT_AR_RECON_V4_DM (2026-10-07), deployed ALONGSIDE V1, V2 and V3
+-- (never overwritten). Change from V3: rows are FOUND only by the
+-- Fusion job ids of ONE AutoInvoice load (owner decision 2026-10-07,
+-- design section 5 "Reports find rows by Fusion job id"); the run
+-- prefix is no longer a search value anywhere.
+--   BASE lines: RA_CUSTOMER_TRX_LINES_ALL.REQUEST_ID = :P_IMPORT_ESS_ID.
+--     Fusion stamps the AutoInvoiceImportEss request id on the
+--     transaction header and its lines (known-good 10073584; DMT runs
+--     249/250: lines and headers carry 10074800 / 10074833).
+--   BASE distributions: through their loaded line (the line's
+--     REQUEST_ID = :P_IMPORT_ESS_ID).
+--   INTERFACE lines and distributions: LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID, unchanged. The import request is NOT added
+--     here: AutoInvoice leaves REQUEST_ID NULL on the interface lines
+--     it rejects (load 10073932, run 245), so it would hide the very
+--     rejections this tier reports. RA_INTERFACE_ERRORS_ALL has no
+--     REQUEST_ID column; its rows are scoped to this load's interface
+--     rows exactly as in V2/V3.
+--   "Did not load" (the INTERFACE tiers' NOT EXISTS) now means: no
+--     base line of THIS import carries the row's flexfield key. V3
+--     looked across every base line in the pod.
+-- The flexfield key (ATTRIBUTE1 / ATTRIBUTE2) is used only as
+-- RECORD_KEY, to match a returned row to its TFM row. Columns, keys,
+-- keyset paging and parameters are unchanged from V3. P_PREFIX and
+-- P_RUN_ID stay declared for contract symmetry only.
+-- ============================================================
+-- (V3 history follows.)
 -- DMT_AR_RECON_V3_DM (2026-10-07), deployed ALONGSIDE V1 and V2
 -- (never overwritten). Change from V2: the LINE RECORD_KEY is
 -- INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2, unique
@@ -61,20 +88,18 @@
 --   The base distribution carries no interface key, so it is
 --   confirmed transitively through its loaded parent line.
 --
--- Row selection:
---   BASE  line rows: RA_CUSTOMER_TRX_LINES_ALL where
---         INTERFACE_LINE_ATTRIBUTE1 LIKE :P_PREFIX || '%'. Joined to
---         RA_CUSTOMER_TRX_ALL for the header CUSTOMER_TRX_ID.
+-- Row selection (V4, by job id only):
+--   BASE  line rows: RA_CUSTOMER_TRX_LINES_ALL where REQUEST_ID =
+--         :P_IMPORT_ESS_ID. Joined to RA_CUSTOMER_TRX_ALL for the
+--         header CUSTOMER_TRX_ID.
 --   BASE  dist rows: RA_CUST_TRX_LINE_GL_DIST_ALL joined to the base
---         line by CUSTOMER_TRX_LINE_ID (confirmed transitively).
---   INTERFACE rows (both tiers): the interface rows that did NOT
---         load (no base row). AutoInvoice does NOT purge interface
---         rows, so success rows persist too and are handled by the
---         BASE tiers only -- the INTERFACE tiers return rejections
---         only, so no row is counted twice. Selected by the load ESS
---         request id :P_LOAD_REQUEST_ID.
---   :P_RUN_ID / :P_IMPORT_ESS_ID are declared for contract symmetry
---   and stamped into LOAD_REQUEST_ID for traceability.
+--         line by CUSTOMER_TRX_LINE_ID (confirmed transitively), the
+--         line selected by REQUEST_ID = :P_IMPORT_ESS_ID.
+--   INTERFACE rows (both tiers): the interface rows of the load
+--         :P_LOAD_REQUEST_ID that did NOT load in this import (no base
+--         line of :P_IMPORT_ESS_ID carries their key), so no row is
+--         counted twice.
+--   :P_RUN_ID / :P_PREFIX are declared for contract symmetry only.
 --
 -- FUSION_STATUS is normalized in this DM to exactly SUCCESS/ERROR:
 --   BASE  (row present in a Fusion base table)  => SUCCESS
@@ -85,15 +110,12 @@
 -- RA_INTERFACE_ERRORS_ALL, enriched with INVALID_VALUE, correlated
 -- per tier on INTERFACE_LINE_ID / INTERFACE_DISTRIBUTION_ID).
 --
--- RESIDUAL NOTE (honest): AR AutoInvoice is a known residual on the
--- demo instance -- AutoInvoice job-level aborts, so no AR line has
--- ever reached RA_CUSTOMER_TRX_LINES_ALL. The BASE tiers are
--- therefore expected to return zero rows against current data; they
--- are the correct SHAPE for when AutoInvoice runs clean. The
--- INTERFACE tiers return the interface rows that exist. This is the
--- job-level-abort failure shape: Fusion produced no per-row verdict,
--- so unloaded rows are honestly left as interface rejections, never
--- a fabricated SUCCESS.
+-- JOB-LEVEL ABORT (honest): when AutoInvoice aborts at job level it
+-- creates no transaction and writes no per-row error, so the BASE
+-- tiers return nothing and the INTERFACE tiers return the load's rows
+-- without an error message; the reconciler leaves them for the
+-- UNACCOUNTED sweep, never a fabricated outcome. Since the known-good
+-- fixes (runs 249/250) AutoInvoice creates DMT transactions on the pod.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
@@ -118,13 +140,14 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         bh.customer_trx_id                   AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        bl.request_id                        AS load_request_id,
         TO_CHAR(bl.customer_trx_line_id)     AS source_ref,
         bl.interface_line_attribute2         AS dmt_reference
     FROM   ra_customer_trx_lines_all bl
     JOIN   ra_customer_trx_all bh
            ON bh.customer_trx_id = bl.customer_trx_id
-    WHERE  bl.interface_line_attribute1 LIKE :P_PREFIX || '%'
+    -- V4: found by the AutoInvoice import job id, never by the prefix.
+    WHERE  bl.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
 
     UNION ALL
 
@@ -173,13 +196,14 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         gd.cust_trx_line_gl_dist_id          AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        bl.request_id                        AS load_request_id,
         gd.account_class || ':' || gd.cust_trx_line_gl_dist_id       AS source_ref,
         bl.interface_line_attribute2         AS dmt_reference
     FROM   ra_cust_trx_line_gl_dist_all gd
     JOIN   ra_customer_trx_lines_all bl
            ON bl.customer_trx_line_id = gd.customer_trx_line_id
-    WHERE  bl.interface_line_attribute1 LIKE :P_PREFIX || '%'
+    -- V4: through the loaded line of this import job, never by the prefix.
+    WHERE  bl.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
 
     UNION ALL
 
@@ -220,9 +244,11 @@ FROM (
     ) le ON le.interface_line_id = l.interface_line_id
     WHERE  l.load_request_id = :P_LOAD_REQUEST_ID
     AND    l.line_type = 'LINE'
+    -- V4: "did not load" = no base line of THIS import job carries the key.
     AND    NOT EXISTS (
         SELECT 1 FROM ra_customer_trx_lines_all bl
-        WHERE  bl.interface_line_attribute1 = l.interface_line_attribute1
+        WHERE  bl.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    bl.interface_line_attribute1 = l.interface_line_attribute1
         AND    NVL(bl.interface_line_context,'~') = NVL(l.interface_line_context,'~')
     )
 
@@ -282,9 +308,11 @@ FROM (
         GROUP BY e.interface_distribution_id
     ) de ON de.interface_distribution_id = d.interface_distribution_id
     WHERE  d.load_request_id = :P_LOAD_REQUEST_ID
+    -- V4: "did not load" = no base line of THIS import job carries the key.
     AND    NOT EXISTS (
         SELECT 1 FROM ra_customer_trx_lines_all bl
-        WHERE  bl.interface_line_attribute1 = d.interface_line_attribute1
+        WHERE  bl.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+        AND    bl.interface_line_attribute1 = d.interface_line_attribute1
         AND    NVL(bl.interface_line_context,'~') = NVL(d.interface_line_context,'~')
     )
 )
@@ -297,4 +325,3 @@ WHERE  (:P_AFTER_KEY IS NULL
         OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
 ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
-      
