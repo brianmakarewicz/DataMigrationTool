@@ -52,6 +52,10 @@ REPORTS = [
     # rows by Fusion job id only, real Payables rejection text only (#166).
     ("APInvoices",              "DMT_AP_RECON_V2_DM", "DMT_AP_RECON_V2_RPT"),
     ("Customers",               "DMT_CUST_RECON_V5_DM", "DMT_CUST_RECON_V5_RPT"),
+    # Customers V6 (2026-10-07, owner decision): alongside V5 (never overwritten);
+    # base rows by REQUEST_ID = the Fusion import batch id the load sent
+    # (P_FUSION_BATCH_ID), interface rows by LOAD_REQUEST_ID, never by the prefix.
+    ("Customers",               "DMT_CUST_RECON_V6_DM", "DMT_CUST_RECON_V6_RPT"),
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
     # ARInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # interface error aggregation scoped to the load (V1 hit ORA-01489).

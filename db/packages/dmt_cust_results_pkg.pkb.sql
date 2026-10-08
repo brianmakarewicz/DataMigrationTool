@@ -26,7 +26,7 @@
 -- own base id or its own interface row. Held rows are handled afterwards by
 -- PROPAGATE_DOCUMENT_ERRORS, which only ever quotes a real error.
 --
--- Per-row error attribution (V5 report, DMT_CUST_RECON_V5_DM): an INTERFACE/ERROR
+-- Per-row error attribution (V6 report, DMT_CUST_RECON_V6_DM): an INTERFACE/ERROR
 -- row is returned ONLY when the interface row has its OWN Fusion error -- its
 -- HZ_IMP_ERRORS rows joined on error_id + batch_id, full text resolved from
 -- FND_NEW_MESSAGES with tokens, e.g.
@@ -37,7 +37,7 @@
 -- quotes the real error of the row that held it back, and if there is none the shared
 -- sweep marks it UNACCOUNTED (V3 composed a status-code sentence for such rows and it was
 -- stamped [FUSION_ERROR] with no real error behind it -- removed). An ERROR row that
--- arrives with no message (a report defect, never expected from V5) is logged as a
+-- arrives with no message (a report defect, never expected from V6) is logged as a
 -- WARN and left for the sweep -- never given a fabricated verdict.
 --
 -- Outcomes are written to the seven TFM tables only: nothing is written back to
@@ -51,6 +51,7 @@
 --
 -- REVISIONS:
 --   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
+--   2026-10-07  BM  V6 report: base rows by the Fusion batch id this load sent.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_CUST_RESULTS_PKG';
@@ -127,6 +128,76 @@
     END CONFIRM_REFERENCE_ROUNDTRIP;
 
     -- --------------------------------------------------------
+    -- RESOLVE_SENT_BATCH_ID (private)
+    -- The Fusion import batch id the load being reconciled sent (owner decision
+    -- 2026-10-07): the TFM BATCH_ID the transform stamped (run prefix followed by
+    -- the source batch id) and the generator wrote into every HZ CSV. Fusion copies
+    -- it into REQUEST_ID on every HZ base row, and the V6 report selects base rows
+    -- by an exact match on it (P_FUSION_BATCH_ID).
+    --
+    -- RUN_CUSTOMERS generates, loads and reconciles one batch at a time, so the
+    -- batch of this load is the batch of the most recently generated customer FBDI
+    -- of the work item (the highest parties FBDI_CSV_ID; parties is the primary CSV
+    -- and is in every customer zip). A reconcile-only rerun of the work item uses the
+    -- last load's ids recorded on the queue row, which are that same batch's.
+    -- NULL when nothing was sent: the report then selects no base rows and the rows
+    -- stay for the unaccounted sweep (never a fabricated outcome). Static SQL.
+    -- --------------------------------------------------------
+    PROCEDURE RESOLVE_SENT_BATCH_ID (
+        p_run_id        IN  NUMBER,
+        p_work_queue_id IN  NUMBER,
+        x_batch_id      OUT NUMBER
+    ) IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'RESOLVE_SENT_BATCH_ID';
+        l_batches NUMBER;
+    BEGIN
+        x_batch_id := NULL;
+
+        SELECT COUNT(DISTINCT BATCH_ID)
+        INTO   l_batches
+        FROM   DMT_HZ_PARTIES_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    FBDI_CSV_ID IS NOT NULL
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+
+        IF l_batches = 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': no customer rows of this work item were sent; '
+                               || 'no Fusion batch id to select base rows by.',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        SELECT BATCH_ID
+        INTO   x_batch_id
+        FROM   DMT_HZ_PARTIES_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    FBDI_CSV_ID IS NOT NULL
+        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
+        ORDER BY FBDI_CSV_ID DESC, TFM_SEQUENCE_ID DESC
+        FETCH FIRST 1 ROW ONLY;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': Fusion batch id ' || TO_CHAR(x_batch_id, 'TM9')
+                           || ' (batches sent by this work item: ' || l_batches || ').',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END RESOLVE_SENT_BATCH_ID;
+
+    -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_CUSTOMERS (private)
     -- The Contract v1 base-tier positive proof for Customers (design section 5,
     -- Option A shape), copied from DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS,
@@ -142,8 +213,9 @@
     --   Customers.AccountSiteUses -> DMT_HZ_ACCT_SITE_USES_TFM_TBL  (FUSION_SITE_USE_ID)
     --
     -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the Customers
-    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and returns
-    -- the parsed rows -- no dynamic SQL, no TFM reference there. The APPLY here is
+    -- nine-column recon report over BIP (keyset paged; base rows selected by the
+    -- Fusion batch id this load sent, interface rows by the load request id) and
+    -- returns the parsed rows -- no dynamic SQL, no TFM reference there. The APPLY here is
     -- STATIC SQL against the compile-time-known seven Customer TFM tables:
     --   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ID into the
     --       record type's Fusion-id column. The ONLY path to LOADED.
@@ -158,10 +230,12 @@
     PROCEDURE APPLY_CONTRACT_V1_CUSTOMERS (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER DEFAULT NULL
+        p_import_ess_id IN NUMBER DEFAULT NULL,
+        p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_CUSTOMERS';
         l_gen_count NUMBER := 0;
+        l_batch_id  NUMBER;          -- the Fusion import batch id this load sent
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
@@ -188,15 +262,22 @@
         -- LOAD ESS request id (InterfaceLoaderController), NOT the import ess id. So
         -- P_LOAD_REQUEST_ID must be the load ess id or the INTERFACE tier matches
         -- nothing and held/rejected records (import_status_code W/E) never come back.
-        -- The BASE tier is prefix-scoped (no request filter), so it is unaffected.
-        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code    => C_CEMLI,
+        -- The BASE tier selects by REQUEST_ID = :P_FUSION_BATCH_ID: the HZ base
+        -- tables carry the bulk import batch id there, not an ESS request id.
+        RESOLVE_SENT_BATCH_ID(
             p_run_id        => p_run_id,
-            p_load_ess_id   => p_load_ess_id,
-            p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count,
-            x_rows          => l_rows,
-            x_error_code    => l_err_code);
+            p_work_queue_id => p_work_queue_id,
+            x_batch_id      => l_batch_id);
+
+        DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
+            p_cemli_code      => C_CEMLI,
+            p_run_id          => p_run_id,
+            p_load_ess_id     => p_load_ess_id,
+            p_import_ess_id   => p_import_ess_id,
+            p_row_cap         => l_gen_count,
+            x_rows            => l_rows,
+            x_error_code      => l_err_code,
+            p_fusion_batch_id => l_batch_id);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -222,7 +303,7 @@
                 l_rc   := 0;
                 l_tier := NULL;  -- backlog #65: reset per row (audit-log safety)
 
-                -- The V5 report returns an ERROR row only with the record's own
+                -- The V6 report returns an ERROR row only with the record's own
                 -- HZ_IMP_ERRORS text. If one ever arrives without a message, say so loudly
                 -- and leave the record for the sweep -- never invent a verdict.
                 IF l_rows(i).FUSION_STATUS = 'ERROR' AND l_rows(i).ERROR_MESSAGE IS NULL THEN
@@ -885,13 +966,14 @@
         -- Contract v1 base-tier positive proof: the shared fetch returns the
         -- nine-column recon report rows and the APPLY is STATIC SQL against this
         -- object's seven TFM tables, keyed on RECON_KEY. This is the ONLY path to
-        -- LOADED (a real base-table row). The load ESS id feeds the report's
-        -- LOAD_REQUEST_ID for traceability; run-scoped selection is by the stamped
-        -- prefix (see the report DM header). Rows already terminal are untouched.
+        -- LOADED (a real base-table row). The report selects base rows by the
+        -- Fusion batch id this load sent and interface rows by the load ESS id
+        -- (see the V6 report DM header). Rows already terminal are untouched.
         APPLY_CONTRACT_V1_CUSTOMERS(
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
-            p_import_ess_id => p_import_ess_id);
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => p_work_queue_id);
 
         -- Whole-document rejection (design section 5): rows the customer bulk
         -- import held back with a failed row carry that row's real error. Runs
