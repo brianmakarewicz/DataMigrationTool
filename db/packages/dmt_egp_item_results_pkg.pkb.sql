@@ -217,7 +217,8 @@
     --   OBJECT_TYPE='ItemCategory' -> DMT_EGP_ITEM_CAT_TFM_TBL  (FUSION_CATEGORY_ID)
     --
     -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the Items
-    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and
+    -- nine-column recon report over BIP (keyset paged; report V3 finds rows only
+    -- by this work item's load and import job ids, never by the run prefix) and
     -- returns the parsed rows -- no dynamic SQL, no TFM reference there. The APPLY
     -- here is STATIC SQL against the compile-time-known Items TFM tables:
     --   * BASE / SUCCESS / FUSION_ID NOT NULL -> LOADED, stamp FUSION_ID into the
@@ -533,10 +534,11 @@
         -- tables, keyed on RECON_KEY. This is the ONLY path to LOADED (a real
         -- base-table row). It runs FIRST so a genuinely-costed row is confirmed
         -- before the interface/import-report harvest below looks at what is left.
-        -- Rows already terminal are untouched. Item master rows are scoped by the
-        -- run prefix. Item category rows are scoped by the LOAD ESS id (the value
-        -- Fusion stamps on EGP_ITEM_CATEGORIES_INTERFACE.LOAD_REQUEST_ID) or the
-        -- import ESS id (stamped on its REQUEST_ID), so each is passed as itself;
+        -- Rows already terminal are untouched. Report V3 (owner decision
+        -- 2026-10-07) finds every row by this work item's own Fusion job ids:
+        -- base items and categories by the Item Import REQUEST_ID, interface rows
+        -- and errors by the LOAD ESS id (LOAD_REQUEST_ID) or the import ESS id
+        -- (REQUEST_ID), never by the run prefix. Each id is passed as itself;
         -- the old NVL(import, load) bind sent the import id as the load id and
         -- the category tier returned nothing (run 236).
         APPLY_CONTRACT_V1_ITEMS(
