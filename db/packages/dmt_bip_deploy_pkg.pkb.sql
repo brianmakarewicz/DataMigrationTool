@@ -18,11 +18,17 @@
     END fusion_base;
 
     -- --------------------------------------------------------
-    -- Private: return BIP username from config.
+    -- Private: the BIP user = the run-scoped default Fusion user from the
+    -- central resolver (backlog #309; catalog deploys are not object-scoped).
     -- --------------------------------------------------------
     FUNCTION bip_username RETURN VARCHAR2 IS
+        l_user VARCHAR2(500);
+        l_pass VARCHAR2(500);
     BEGIN
-        RETURN DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME');
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => NULL,
+                                           x_username   => l_user,
+                                           x_password   => l_pass);
+        RETURN l_user;
     END bip_username;
 
     -- --------------------------------------------------------
@@ -208,8 +214,14 @@
         l_env    CLOB;
         l_resp   CLOB;
         l_token  VARCHAR2(4000);
+        l_user   VARCHAR2(500);
+        l_pass   VARCHAR2(500);
     BEGIN
         l_url := fusion_base || '/xmlpserver/services/v2/SecurityService';
+        -- Run-scoped default user from the central resolver (backlog #309).
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => NULL,
+                                           x_username   => l_user,
+                                           x_password   => l_pass);
 
         l_env :=
             '<soapenv:Envelope'||
@@ -218,8 +230,8 @@
             '<soapenv:Header/>'||
             '<soapenv:Body>'||
             '<v2:login>'||
-            '<v2:userID>'|| DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME') ||'</v2:userID>'||
-            '<v2:password>'|| DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD') ||'</v2:password>'||
+            '<v2:userID>'|| l_user ||'</v2:userID>'||
+            '<v2:password>'|| l_pass ||'</v2:password>'||
             '</v2:login>'||
             '</soapenv:Body>'||
             '</soapenv:Envelope>';

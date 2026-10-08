@@ -132,22 +132,7 @@ AS
         p_accept         IN  VARCHAR2    DEFAULT 'application/json',
         p_send_auth      IN  BOOLEAN     DEFAULT TRUE,
         p_raise_on_error IN  BOOLEAN     DEFAULT TRUE,
-        p_auth_header    IN  VARCHAR2    DEFAULT NULL   -- override the Basic header (per-credential probes); NULL => global
-    );
-
-    -- --------------------------------------------------------
-    -- BIP â€” Fusion BI Publisher report fetch (xmlpserver REST)
-    -- --------------------------------------------------------
-
-    -- Fetch a BIP report and return its content as a CLOB.
-    -- p_params format: 'PARAM_NAME|VALUE~PARAM_NAME2|VALUE2'
-    -- Output is the decoded report content (CSV, XML, etc.)
-    PROCEDURE BIP_REQUEST (
-        p_report_path    IN  VARCHAR2,
-        p_params         IN  VARCHAR2    DEFAULT NULL,
-        p_output_format  IN  VARCHAR2    DEFAULT 'csv',
-        p_run_id IN  NUMBER      DEFAULT NULL,
-        x_report_data    OUT CLOB
+        p_auth_header    IN  VARCHAR2    DEFAULT NULL   -- Basic header built from GET_CEMLI_CREDENTIALS by the caller; NULL => default user
     );
 
     -- --------------------------------------------------------
@@ -193,20 +178,23 @@ AS
     -- Credential resolution â€” per-CEMLI overrides
     -- --------------------------------------------------------
 
-    -- Resolve Fusion credentials for a CEMLI.
-    -- Checks DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_USERNAME/PASSWORD first.
-    -- Falls back to DMT_CONFIG_TBL FUSION_USERNAME/PASSWORD if NULL.
-    -- HCM CEMLIs fall back to HCM_USERNAME/PASSWORD instead.
+    -- THE central Fusion user resolver (backlog #309): every Fusion call DMT
+    -- makes for an object gets its username and password here, as a PAIR.
+    -- The object's DMT_ERP_INTERFACE_OPTIONS_TBL row supplies both when it
+    -- names a FUSION_USERNAME; otherwise both come from the default user
+    -- (DMT_CONFIG_TBL FUSION_USERNAME / FUSION_PASSWORD). Never a mix.
+    -- p_cemli_code NULL = the run-scoped default user. Raises -20002 when the
+    -- resolved pair is incomplete (missing or still-masked password).
     PROCEDURE GET_CEMLI_CREDENTIALS (
         p_cemli_code IN  VARCHAR2,
         x_username   OUT VARCHAR2,
         x_password   OUT VARCHAR2
     );
 
-    -- Resolve Fusion credentials from an ESS request_id.
-    -- Looks up: request_id -> DMT_ESS_JOB_TBL -> CONVERSION_MASTER -> CEMLI
-    -- then calls GET_CEMLI_CREDENTIALS. Falls back to FUSION defaults if
-    -- the request_id can't be resolved.
+    -- Resolve Fusion credentials from an ESS request_id: request_id ->
+    -- DMT_ESS_JOB_TBL (else the DMT_WORK_QUEUE_TBL item that submitted it)
+    -- -> CEMLI -> GET_CEMLI_CREDENTIALS. A request DMT never recorded
+    -- resolves to the default user.
     PROCEDURE GET_CREDENTIALS_FOR_REQUEST (
         p_request_id IN  NUMBER,
         x_username   OUT VARCHAR2,
@@ -347,7 +335,8 @@ AS
     -- + b64_to_clob + <reportBytes> extraction (previously copy-pasted into 21 packages,
     -- each carrying the VARCHAR2(32767) truncation bug).
     --   p_cemli_code  : resolves REPORT_CATALOG_PATH from DMT_BIP_REPORT_TBL (unless
-    --                   p_report_path is supplied).
+    --                   p_report_path is supplied) AND the Fusion user the report
+    --                   runs as, through GET_CEMLI_CREDENTIALS (backlog #309).
     --   p_params      : 'NAME|VALUE~NAME2|VALUE2' (Contract v1:
     --                   'P_RUN_ID|1~P_LOAD_REQUEST_ID|2~P_IMPORT_ESS_ID|3~P_PREFIX|10001').
     -- PROCEDURE per the section 7 procedures-only contract (network call):
