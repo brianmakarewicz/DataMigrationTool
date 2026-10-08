@@ -31,13 +31,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|Contracts|DMT_CONTRACT_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/Contracts/query.sql does not match the SQL of the deployed DMT_CONTRACT_RECON_DM.xdm (query.sql names: none)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|GLBalances|DMT_GL_BAL_RECON_DM",
       "backlog": 215,
       "found": "2026-10-07",

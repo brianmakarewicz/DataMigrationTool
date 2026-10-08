@@ -43,6 +43,10 @@ REPORTS = [
     # DMT_BLANKET_PO_RECON_DM (never overwritten).
     ("BlanketPOs",              "DMT_BLANKET_PO_RECON_V2_DM", "DMT_BLANKET_PO_RECON_V2_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
+    # Contracts V2 (2026-10-07, backlog #259): rows found only by the work
+    # item's Fusion job ids and the Contract document style. Deployed alongside
+    # DMT_CONTRACT_RECON_DM (never overwritten).
+    ("Contracts",               "DMT_CONTRACT_RECON_V2_DM", "DMT_CONTRACT_RECON_V2_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # rows by Fusion job id only, real Payables rejection text only (#166).
