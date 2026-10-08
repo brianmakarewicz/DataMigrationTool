@@ -90,38 +90,40 @@ AS
             RETURN '{"error":"FUSION_URL not configured in DMT_CONFIG_TBL."}';
         END IF;
 
-        -- Credential selection, most specific first:
-        --   1. per-object override keyed by the object code (e.g. 'Requisitions_USERNAME')
-        --      — lets one object read Fusion as a specific data-owner user, for
-        --      resources that are data-security-scoped (Requisitions is only visible
-        --      to its preparer, calvin.roth, not to fin_impl);
-        --   2. the HCM credential set when AUTH_TYPE = 'HCM';
-        --   3. the default ERP user (FUSION_USERNAME / fin_impl).
-        -- Backward compatible: no object code has an HCM_/ERP_ prefix and ERP objects
-        -- have no <code>_USERNAME row, so existing objects resolve exactly as before.
-        -- Per-object credentials are keyed by the OBJECT code, not by whichever
-        -- registry row matched: the button passes a sub-object display label
-        -- (e.g. 'Req Headers') that may have its own row, so map it back to its
-        -- object code ('Requisitions') via the catalog for the credential lookup.
-        BEGIN
-            SELECT MIN(CEMLI_CODE) INTO l_obj_code
-            FROM   DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
-        EXCEPTION WHEN OTHERS THEN l_obj_code := NULL;
-        END;
+        -- Credential selection: verify reads Fusion as the SAME user the object's
+        -- load runs as, from the same central source the loader uses, so a record
+        -- is visible to the verify exactly when it was visible to the load
+        -- (Requisitions and purchase agreements are data-security-scoped to their
+        -- preparer/buyer, calvin.roth, and return count 0 to fin_impl):
+        --   * AUTH_TYPE = 'HCM' -> the HDL load user, resolved exactly as
+        --     DMT_HDL_UTIL_PKG.get_auth does (HCM_USERNAME, else FUSION_USERNAME);
+        --   * otherwise         -> DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS for the object
+        --     code, i.e. DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_USERNAME/PASSWORD with
+        --     the loader's own fallback to the global FUSION_USERNAME (fin_impl).
+        -- There is no verify-only credential override: the per-object user lives
+        -- in one seeded home, the ERP interface options row.
+        -- The button passes a sub-object display label (e.g. 'Req Headers') that
+        -- may have its own registry row, so map it back to its object code
+        -- ('Requisitions') via the catalog for the credential lookup.
+        SELECT MIN(CEMLI_CODE) INTO l_obj_code
+        FROM   DMT_V_CEMLI_TFM_TABLES WHERE DISPLAY_NAME = p_object_type;
         l_obj_code := NVL(l_obj_code, l_resolved_type);
 
-        l_username := COALESCE(
-            DMT_UTIL_PKG.GET_CONFIG(l_obj_code || '_USERNAME'),
-            CASE WHEN l_cfg_auth = 'HCM' THEN DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME') END,
-            DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-        l_password := COALESCE(
-            DMT_UTIL_PKG.GET_CONFIG(l_obj_code || '_PASSWORD'),
-            CASE WHEN l_cfg_auth = 'HCM' THEN DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD') END,
-            DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
+        IF l_cfg_auth = 'HCM' THEN
+            l_username := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME'),
+                              DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
+            l_password := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD'),
+                              DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
+        ELSE
+            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(
+                p_cemli_code => l_obj_code,
+                x_username   => l_username,
+                x_password   => l_password);
+        END IF;
 
         -- Basic header for the resolved credentials. HTTP_REQUEST uses the GLOBAL
         -- (fin_impl) auth unless an explicit header is passed, so build it here and
-        -- pass it as p_auth_header — otherwise the per-object override above is inert.
+        -- pass it as p_auth_header — otherwise the per-object load user above is inert.
         l_auth_header := DMT_UTIL_PKG.BASIC_AUTH_HEADER(l_username, l_password);
 
         -- Build the full URL:
