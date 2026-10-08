@@ -106,6 +106,33 @@ AS
                 OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         -- ProfileItem
+        -- SectionId per row (#451). A row whose section cannot be resolved -- no
+        -- PROFILE_SECTION_NAME_TO_SECTION_ID lookup row for <profile type>~<section
+        -- name>, or a row with no id because the name is ambiguous for that profile
+        -- type -- fails ON ITS OWN with a [TRANSFORM_ERROR]; it never halts the work
+        -- item, so the other rows still go to Fusion. The validator normally catches
+        -- these first with a [PRE_VALIDATION] error; in ALL mode the transform still
+        -- sees those STG rows, so rows that already carry an error in this run are
+        -- skipped here and below.
+        INSERT INTO DMT_STG_TFM_ERROR_TBL
+               (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
+        SELECT p_run_id, 'TalentProfiles', 'Profile Items', s.STG_SEQUENCE_ID,
+               '[TRANSFORM_ERROR] No unique profile section id for profile type ' ||
+               C_PROFILE_TYPE_CODE || ' and section ''' || s.SECTION_NAME ||
+               ''' (PROFILE_SECTION_NAME_TO_SECTION_ID lookup missing or ambiguous).'
+        FROM   DMT_TALENT_PROF_ITEM_STG_TBL s
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_TALENT_PROF_ITEM_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
+        AND    (p_scenario_id IS NULL
+                OR s.SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND s.SCENARIO_ID IS NULL))
+        AND    NOT EXISTS (SELECT 1 FROM DMT_LOOKUP_TBL l
+                           WHERE  l.LOOKUP_TYPE  = 'PROFILE_SECTION_NAME_TO_SECTION_ID'
+                           AND    l.LOOKUP_VALUE = C_PROFILE_TYPE_CODE || '~' || s.SECTION_NAME
+                           AND    l.RETURN_VALUE IS NOT NULL)
+        AND    NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
+                           WHERE  e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+                           AND    e.SUB_OBJECT = 'Profile Items');
+
         INSERT INTO DMT_TALENT_PROF_ITEM_TFM_TBL (
             TFM_SEQUENCE_ID,
             STG_SEQUENCE_ID,
@@ -120,6 +147,7 @@ AS
             PROFILE_CODE,
             INTEREST_LEVEL,
             SECTION_NAME,
+            SECTION_ID,
             RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
@@ -138,6 +166,13 @@ AS
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.PROFILE_CODE, 30),  -- run-prefixed business key (#451): a profile code is unique in Fusion
             s.INTEREST_LEVEL,
             s.SECTION_NAME,
+            -- SectionId for the HDL line (#451): the instance's section id for this
+            -- profile type and section name, from the lookup refreshed at preflight.
+            -- Unresolvable rows were errored above and are excluded below, so this
+            -- read always finds exactly one non-null id.
+            (SELECT TO_NUMBER(l.RETURN_VALUE) FROM DMT_LOOKUP_TBL l
+             WHERE  l.LOOKUP_TYPE  = 'PROFILE_SECTION_NAME_TO_SECTION_ID'
+             AND    l.LOOKUP_VALUE = C_PROFILE_TYPE_CODE || '~' || s.SECTION_NAME),
             -- RECON_KEY = the child ProfileItem.dat SourceSystemId = prefixed
             -- PERSON_NUMBER || '_TPITM' (see DMT_TALENT_PROF_HDL_GEN_PKG). Stamped
             -- for consistency and future child base-tier proof; the current
@@ -158,9 +193,26 @@ AS
             FROM   DMT_TALENT_PROF_ITEM_TFM_TBL t
             WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
             AND    t.RUN_ID  = p_run_id
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM   DMT_STG_TFM_ERROR_TBL e
+            WHERE  e.RUN_ID = p_run_id
+            AND    e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            AND    e.SUB_OBJECT = 'Profile Items'
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
+
+        -- Rows rejected in this run (pre-validation or the section check above)
+        -- end FAILED, so FAILED-mode reruns select them.
+        UPDATE DMT_TALENT_PROF_ITEM_STG_TBL
+        SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
+        WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
+                                   WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Profile Items')
+        AND    STG_STATUS IN ('NEW','TRANSFORMED')
+        AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
+                OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
 
         UPDATE DMT_TALENT_PROF_ITEM_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE

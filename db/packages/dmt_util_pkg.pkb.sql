@@ -1402,7 +1402,9 @@
     -- BATCH_SOURCE_NAME_TO_TRX_SOURCE_ID (AutoInvoice transaction-source id),
     -- PJC_TXN_SOURCE_NAME_TO_ID and PJC_DOC_NAME_TO_ID (PPM Import and Process
     -- Cost Transactions transaction-source id / document entry id),
-    -- BUYER_NAME_TO_BUYER_ID (procurement buyer name -> agent_id, backlog #78).
+    -- BUYER_NAME_TO_BUYER_ID (procurement buyer name -> agent_id, backlog #78),
+    -- PROFILE_SECTION_NAME_TO_SECTION_ID (profile type code ~ section name ->
+    -- talent-profile section id, NULL when ambiguous; backlog #451).
     -- --------------------------------------------------------
     PROCEDURE REFRESH_LOOKUPS IS
         C_PKG  CONSTANT VARCHAR2(30) := 'DMT_UTIL_PKG';
@@ -1533,6 +1535,33 @@
 '<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
 '</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
 
+        -- Profile-section DM (backlog #451): resolves a talent-profile section NAME
+        -- to its SectionId for one profile type, read from the instance's profile
+        -- setup (hrt_profile_typ_sections_vl joined to hrt_profile_types_b), never
+        -- hardcoded. HDL ProfileItem accepts the section only as SectionId, and a
+        -- name repeats across profile types ('Languages' is a person, job,
+        -- position and organization section, each with its own id), so the key is
+        -- <profile type code>~<section name>, e.g. 'PERSON~Languages'. If one
+        -- profile type ever has two sections of the same name, RETURN_VALUE is
+        -- NULL for that key: the row is kept so the TalentProfiles validator can
+        -- fail the item as ambiguous instead of DMT picking one of the ids.
+        C_PROFILE_SECTION_XDM CONSTANT CLOB :=
+'<?xml version="1.0" encoding="utf-8"?>'||CHR(10)||
+'<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1" defaultDataSourceRef="ApplicationDB_FSCM">'||CHR(10)||
+'<dataProperties><property name="include_parameters" value="true"/><property name="include_null_Element" value="true"/><property name="include_rowsettag" value="false"/><property name="xml_tag_case" value="upper"/></dataProperties>'||CHR(10)||
+'<dataSets><dataSet name="profile_section_lookups" type="complex"><sql dataSourceRef="ApplicationDB_FSCM"><![CDATA['||
+'SELECT ''PROFILE_SECTION_NAME_TO_SECTION_ID'' AS LOOKUP_TYPE, t.profile_type_code || ''~'' || s.name AS LOOKUP_VALUE, '||
+'CASE WHEN COUNT(*) = 1 THEN TO_CHAR(MIN(s.section_id)) END AS RETURN_VALUE '||
+'FROM hrt_profile_typ_sections_vl s, hrt_profile_types_b t '||
+'WHERE t.profile_type_id = s.profile_type_id AND s.name IS NOT NULL '||
+'GROUP BY t.profile_type_code, s.name ORDER BY 2'||
+']]></sql></dataSet></dataSets>'||CHR(10)||
+'<output rootName="DATA_DS" uniqueRowName="false"><nodeList name="data-structure"><dataStructure tagName="DATA_DS"><group name="G_LKP" label="G_LKP" source="profile_section_lookups">'||
+'<element name="LOOKUP_TYPE" value="LOOKUP_TYPE" dataType="xsd:string" tagName="LOOKUP_TYPE"/>'||
+'<element name="LOOKUP_VALUE" value="LOOKUP_VALUE" dataType="xsd:string" tagName="LOOKUP_VALUE"/>'||
+'<element name="RETURN_VALUE" value="RETURN_VALUE" dataType="xsd:string" tagName="RETURN_VALUE"/>'||
+'</group></dataStructure></nodeList></output><eventTriggers/><lexicals/><valueSets/><bursting/></dataModel>';
+
     BEGIN
         LOG(p_message => C_PROC || ' start.', p_package => C_PKG, p_procedure => C_PROC);
 
@@ -1545,12 +1574,13 @@
         DELETE FROM DMT_LOOKUP_TBL WHERE LOOKUP_TYPE IN ('BU','LEDGER');
         COMMIT;
 
-        l_dms.EXTEND(5);
+        l_dms.EXTEND(6);
         l_dms(1).dm_name := 'DMT_BU_LKP_DM';         l_dms(1).xdm_xml := C_BU_XDM;
         l_dms(2).dm_name := 'DMT_LEDGER_LKP_DM';     l_dms(2).xdm_xml := C_LEDGER_XDM;
         l_dms(3).dm_name := 'DMT_AR_SOURCE_LKP_DM';  l_dms(3).xdm_xml := C_AR_SOURCE_XDM;
         l_dms(4).dm_name := 'DMT_PJC_SOURCE_LKP_DM'; l_dms(4).xdm_xml := C_PJC_SOURCE_XDM;
         l_dms(5).dm_name := 'DMT_BUYER_LKP_DM';      l_dms(5).xdm_xml := C_BUYER_XDM;
+        l_dms(6).dm_name := 'DMT_PROFILE_SECTION_LKP_DM'; l_dms(6).xdm_xml := C_PROFILE_SECTION_XDM;
 
         FOR i IN 1..l_dms.COUNT LOOP
             LOG(p_message => C_PROC || ': running ' || l_dms(i).dm_name,

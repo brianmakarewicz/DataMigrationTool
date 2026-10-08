@@ -27,10 +27,13 @@ AS
     -- the parent profile is ProfileId (referenced by the profile's SourceSystemId),
     -- and the content is ContentType / ContentItem / RatingLevelCode1. The former
     -- TalentProfileId(SourceSystemId), ContentTypeName, ContentItemName and Rating
-    -- are unknown to V2, so Fusion rejected the whole TalentProfile.dat. SectionName
-    -- is required (proof run 295: 'You must supply a valid value for ... SectionId').
+    -- are unknown to V2, so Fusion rejected the whole TalentProfile.dat. The profile
+    -- section is required and Fusion accepts it only as SectionId (proof run 296
+    -- rejected SectionName 'Languages'). The transform resolves SECTION_ID from the
+    -- PROFILE_SECTION_NAME_TO_SECTION_ID lookup (profile type ~ section name), and
+    -- the validator fails the row first when that lookup is missing or ambiguous.
     C_PROFILEITEM_COLS CONSTANT VARCHAR2(4000) :=
-        'SourceSystemOwner|SourceSystemId|ProfileId(SourceSystemId)|ContentType|ContentItem|SectionName|DateFrom|DateTo|RatingLevelCode1|InterestLevel';
+        'SourceSystemOwner|SourceSystemId|ProfileId(SourceSystemId)|ContentType|ContentItem|SectionId|DateFrom|DateTo|RatingLevelCode1|InterestLevel';
 
 
 
@@ -156,7 +159,7 @@ AS
                           pv(r.PERSON_NUMBER) || '_TPROF'      || '|' ||  -- ProfileId(SourceSystemId)
                           pv(r.CONTENT_TYPE_NAME)              || '|' ||  -- ContentType
                           pv(r.CONTENT_ITEM_NAME)              || '|' ||  -- ContentItem
-                          pv(r.SECTION_NAME)                   || '|' ||  -- SectionName (required: the profile section)
+                          pv(TO_CHAR(r.SECTION_ID))            || '|' ||  -- SectionId (required: the profile section, resolved at transform)
                           pv(r.DATE_FROM)                      || '|' ||
                           pv(r.DATE_TO)                        || '|' ||
                           pv(r.RATING)                         || '|' ||  -- RatingLevelCode1

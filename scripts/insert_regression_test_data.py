@@ -3055,6 +3055,20 @@ def main():
             '2026/01/01', 'RT-WKR-G1_PROF', 'RT-WKR-G1_PROF-IT', 'NEW'
         )
     """, label="GOOD Talent Profile item: Spanish (LANGUAGE)")
+    # BAD item (backlog #451): a section name that no person-profile section has.
+    # SectionId is resolved per profile type from the instance's profile setup, so
+    # DMT rejects this row before generation with its own named error rather than
+    # sending Fusion a guessed id. It never reaches the .dat, so it cannot collide
+    # with the GOOD item's PERSON_NUMBER-based SourceSystemId.
+    run_sql(cur, """
+        INSERT INTO DMT_TALENT_PROF_ITEM_STG_TBL (
+            PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME, SECTION_NAME,
+            DATE_FROM, PROFILE_CODE, SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-G1', 'LANGUAGE', 'French', 'DMT Unknown Section',
+            '2026/01/01', 'RT-WKR-G1_PROF', 'RT-WKR-G1_PROF-BIT', 'NEW'
+        )
+    """, label="BAD Talent Profile item: section not defined for PERSON profiles [BAD-LKP]")
     tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
 
