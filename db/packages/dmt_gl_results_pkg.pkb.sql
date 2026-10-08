@@ -28,7 +28,10 @@
 --                    Fusion records no error for it) => left GENERATED,
 --                    settled UNACCOUNTED by the shared sweep
 --   INTERFACE + ERROR + message (Journal Import rejection, the message
---                    is GL_INTERFACE.STATUS: STATUS_DESCRIPTION) => FAILED
+--                    is GL_INTERFACE.STATUS, plus ': ' STATUS_DESCRIPTION
+--                    when Fusion wrote one) => FAILED
+--   other lines of a rejected journal (one GROUP_ID per journal) => FAILED
+--                    quoting that error (PROPAGATE_DOCUMENT_ERRORS)
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE/FUSION_ID row).
 -- Rows with no match and no error STAY GENERATED (unaccounted) — the
@@ -41,6 +44,17 @@
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_GL_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'GLBalances';
+
+    -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #173).
+    -- Working set: "journal DOC_KEY (its GROUP_ID) has line SOURCE_SEQ with its
+    -- own real Fusion error, so every other line of that journal must carry
+    -- QUOTED_ERROR".
+    TYPE T_DOC_PAIR IS RECORD (
+        DOC_KEY      NUMBER,           -- the journal's GROUP_ID
+        SOURCE_SEQ   NUMBER,           -- the source line's TFM_SEQUENCE_ID
+        QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
+    );
+    TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_GL_BALANCES (private) — the Contract v1 apply.
@@ -180,7 +194,7 @@
             ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                   AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
                 -- A real, specific Fusion error (a Journal Import rejection:
-                -- STATUS: STATUS_DESCRIPTION) -> FAILED on the exact message (never composed),
+                -- STATUS[: STATUS_DESCRIPTION]) -> FAILED on the exact message (never composed),
                 -- appended tagged [FUSION_ERROR]; never overwrite. Static UPDATE.
                 UPDATE DMT_GL_INTERFACE_TFM_TBL
                 SET    TFM_STATUS           = 'FAILED',
@@ -218,6 +232,82 @@
     END APPLY_CONTRACT_V1_GL_BALANCES;
 
     -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #173). Journal Import rejects
+    -- a journal all-or-nothing: each journal is its own GROUP_ID (set at
+    -- transform) and one rejected line keeps every line of that group out of
+    -- the base tables. Those other lines stay in GL_INTERFACE with status P and
+    -- no error of their own, so the report returns nothing for them. This quotes
+    -- the rejected line's real Fusion error onto every other not-LOADED line of
+    -- the same journal (design section 5, "Whole-document rejection carries the
+    -- real error to every grain"), in the shared format
+    -- '[FUSION_ERROR] Rejected with document: line <key>: <real message>'.
+    -- Only a line whose own error is a real [FUSION_ERROR] (not itself a quote)
+    -- is a source. Idempotent: a line already carrying the quote is skipped.
+    -- Scoped to the run and work item; static SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_lines  NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting rejected journal lines for run ' || p_run_id;
+        SELECT l.GROUP_ID,
+               l.TFM_SEQUENCE_ID,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'line', l.RECON_KEY,
+                   DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
+        BULK COLLECT INTO l_pairs
+        FROM   DMT_GL_INTERFACE_TFM_TBL l
+        WHERE  l.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                OR l.WORK_QUEUE_ID = p_work_queue_id)
+        AND    l.TFM_STATUS = 'FAILED'
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG) > 0
+        AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
+        AND    l.GROUP_ID IS NOT NULL;
+
+        l_step := 'appending quoted document errors to journal lines';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_GL_INTERFACE_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.GROUP_ID = l_pairs(i).DOC_KEY
+            AND    t.TFM_SEQUENCE_ID <> l_pairs(i).SOURCE_SEQ
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_lines := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rejected journal lines: ' || l_pairs.COUNT
+                           || ' | other lines given a quoted document error: ' || l_lines || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — the reconcile entry point (RECON dispatch style).
     -- Delegates straight to the Contract v1 apply. The load ESS id is the
     -- Contract v1 P_LOAD_REQUEST_ID; the import ESS id is P_IMPORT_ESS_ID.
@@ -241,6 +331,12 @@
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id,
             p_work_queue_id => p_work_queue_id);
+
+        -- Lines rejected with their journal (Journal Import rejects a journal
+        -- all-or-nothing) carry the real error of the line that caused it. Runs
+        -- after the per-row apply and BEFORE the shared unaccounted sweep
+        -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
 
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' complete.', 'INFO', C_PKG, C_PROC);

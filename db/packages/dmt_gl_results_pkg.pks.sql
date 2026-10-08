@@ -25,7 +25,10 @@
 --                    Fusion records no error for it) => left GENERATED,
 --                    settled UNACCOUNTED by the shared sweep
 --   INTERFACE + ERROR + message (Journal Import rejection, the message
---                    is GL_INTERFACE.STATUS: STATUS_DESCRIPTION) => FAILED
+--                    is GL_INTERFACE.STATUS, plus ': ' STATUS_DESCRIPTION
+--                    when Fusion wrote one) => FAILED
+--   other lines of a rejected journal (one GROUP_ID per journal) => FAILED
+--                    quoting that error (PROPAGATE_DOCUMENT_ERRORS)
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE row with a real FUSION_ID).
 -- The FUSION_ID captured on LOADED is the per-line composite

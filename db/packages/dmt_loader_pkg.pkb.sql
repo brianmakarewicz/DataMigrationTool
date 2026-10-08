@@ -5852,10 +5852,15 @@
             END;
 
             -- JournalImportLauncher: 7 args -- DAS_ID, Source, LedgerID, GroupID, N, N, N.
+            -- GroupID = ALL (backlog #173): every journal carries its own GROUP_ID
+            -- (set at transform), and ONE Import Journals job with GroupID ALL
+            -- processes each group independently, so a rejected line fails only
+            -- its own journal (proven 2026-10-07, probe load 10075714). ALL also
+            -- picks up any other pending group of this source and ledger.
             l_gl_param := NVL(l_gl_das_id, '#NULL') || ',' ||
                           l_gl_source || ',' ||
                           l_gl_ledger_id || ',' ||
-                          TO_CHAR(p_run_id) || ',N,N,N';
+                          'ALL,N,N,N';
 
             DMT_UTIL_PKG.LOG(p_run_id,
                 'GL ParameterList for ' || led_rec.LEDGER_NAME || ': ' || l_gl_param,
