@@ -1540,13 +1540,24 @@ commit;
 -- Projects interface tables carry NO error-text column, so ERROR rows return the
 -- literal '#IMPORT_REPORT#' marker; the reconciler leaves those GENERATED and the
 -- import-report harvest (child ImportProjectReportJob) supplies the real text.
+-- V2 (2026-10-07, owner-approved exception, design section 5): Fusion stamps no
+-- job id on the project base tables, so DMT_PROJECT_RECON_V2_DM selects the work
+-- item's base projects by PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%'
+-- (the source reference the transform stamps; P_WQ_ID is sent for Projects only),
+-- tasks / team members / transaction controls through their project, interface
+-- rows by LOAD_REQUEST_ID. Never by the run prefix. V1 stays deployed (BIP objects
+-- are never overwritten); the three auditor rows below point at V2 too.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Projects'                                             cemli_code,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'      report_catalog_path,
-           'Project import reconciliation (Contract v1, multi-tier, 4 tiers)' notes,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Project import reconciliation (Contract v1, multi-tier, 4 tiers). V2 (2026-10-07, '
+           || 'owner-approved exception): base projects found by PM_PROJECT_REFERENCE LIKE '
+           || '''<run_id>:<work_queue_id>:%'' (Fusion stamps no job id on the project base '
+           || 'tables), other base tiers through their project, interface rows by '
+           || 'LOAD_REQUEST_ID; called once per work item. Deployed alongside V1.' notes,
            1                                                       contract_version,
            'DMT_PJF_PROJECTS_TFM_TBL'                             tfm_table,
            'FUSION_PROJECT_ID'                                    fusion_id_column,
@@ -3326,8 +3337,8 @@ using (
     select 100000062                                            bip_report_id,
            'Projects.Task'                                        cemli_code,
            'Project Task'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJF_TASKS_XFACE'                                        interface_table,
            'Projects project-task tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3377,8 +3388,8 @@ using (
     select 100000063                                            bip_report_id,
            'Projects.TeamMember'                                        cemli_code,
            'Project Team Member'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJF_PROJ_TEAM_MEMBERS_XFACE'                                        interface_table,
            'Projects project-team-member tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3428,8 +3439,8 @@ using (
     select 100000064                                            bip_report_id,
            'Projects.TxnControl'                                        cemli_code,
            'Project Transaction Control'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJC_TXN_CONTROLS_XFACE'                                        interface_table,
            'Projects project-txn-control tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
