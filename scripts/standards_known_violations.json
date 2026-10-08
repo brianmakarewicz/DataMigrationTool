@@ -52,13 +52,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|Salaries|DMT_SALARIES_RECON_DM",
-      "backlog": 216,
-      "found": "2026-10-07",
-      "detail": "registered data model bip/Salaries/DMT_SALARIES_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|SupplierAddresses|SUP_ADDR_DM",
       "backlog": 217,
       "found": "2026-10-07",
