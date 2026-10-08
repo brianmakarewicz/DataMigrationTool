@@ -66,7 +66,8 @@ AS
     FUNCTION gen_expenditures_csv (
         p_run_id     IN NUMBER,
         p_txn_source IN VARCHAR2 DEFAULT NULL,
-        p_document   IN VARCHAR2 DEFAULT NULL
+        p_document   IN VARCHAR2 DEFAULT NULL,
+        p_batch_name IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
         l_csv CLOB;
@@ -217,6 +218,9 @@ AS
             -- that group's rows go into the CSV; both null = the whole run.
             AND    (p_txn_source IS NULL OR t.USER_TRANSACTION_SOURCE = p_txn_source)
             AND    (p_document   IS NULL OR t.DOCUMENT_NAME           = p_document)
+            -- and only its own Expenditure Batch (backlog #412: the source batch
+            -- name also partitions the loads).
+            AND    (p_batch_name IS NULL OR t.BATCH_NAME              = p_batch_name)
             ORDER BY t.TFM_SEQUENCE_ID
                     ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -236,7 +240,8 @@ AS
         x_filename       OUT VARCHAR2,
         x_fbdi_csv_id    OUT NUMBER,
         p_txn_source     IN  VARCHAR2 DEFAULT NULL,
-        p_document       IN  VARCHAR2 DEFAULT NULL
+        p_document       IN  VARCHAR2 DEFAULT NULL,
+        p_batch_name     IN  VARCHAR2 DEFAULT NULL
     )
     IS
         l_zip              BLOB;
@@ -278,10 +283,11 @@ AS
                LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_txn_source IS NULL OR USER_TRANSACTION_SOURCE = p_txn_source)
-        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document);
+        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document)
+        AND    (p_batch_name IS NULL OR BATCH_NAME              = p_batch_name);
 
         -- Generate CSV (scoped to the partition when a child passes source/document)
-        l_exp_csv := gen_expenditures_csv(p_run_id, p_txn_source, p_document);
+        l_exp_csv := gen_expenditures_csv(p_run_id, p_txn_source, p_document, p_batch_name);
 
         -- AD#20: Skip gracefully if no rows generated
         IF (l_exp_csv IS NULL OR DBMS_LOB.GETLENGTH(l_exp_csv) = 0) THEN
@@ -317,7 +323,8 @@ AS
                WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_txn_source IS NULL OR USER_TRANSACTION_SOURCE = p_txn_source)
-        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document);
+        AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document)
+        AND    (p_batch_name IS NULL OR BATCH_NAME              = p_batch_name);
 
         -- Free temporary CLOBs
         DBMS_LOB.FREETEMPORARY(l_exp_csv);

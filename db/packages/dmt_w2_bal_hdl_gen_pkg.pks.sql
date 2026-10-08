@@ -21,7 +21,8 @@ AS
 -- every line references the header by BatchName. Lines carry the person /
 -- payroll / balance detail -- worker records are NOT repeated.
 --
--- One run = ONE batch. BatchName = <prefix>_W2BAL, and that BatchName is the
+-- One run = ONE batch. BatchName = run prefix || work-queue id (the work-queue
+-- id alone with USE_PREFIX = N; backlog #413), and that BatchName is the
 -- reconciliation key: the loaded batch appears in PAY_BAL_BATCH_HEADERS with
 -- BATCH_NAME = the BatchName and BATCH_ID as the Fusion id.
 --

@@ -8,9 +8,11 @@ AS
 --
 -- CORRECTED MODEL (2026-09-17): W2Balances loads as the "Balance Initialization"
 -- HDL object -- two objects in one zip, InitializeBalanceBatchHeader and
--- InitializeBalanceBatchLine, keyed by BatchName (<prefix>_W2BAL). The batch
+-- InitializeBalanceBatchLine, keyed by BatchName (run prefix || work-queue id,
+-- backlog #413). The batch
 -- header lands in PAY_BAL_BATCH_HEADERS; the reconciler confirms LOADED from that
--- base table matched on BATCH_NAME = the run's BatchName = the TFM RECON_KEY.
+-- base table matched on BATCH_NAME = the run's BatchName = the TFM RECON_KEY,
+-- selected by that exact value (report V2, P_FUSION_BATCH_ID).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_W2_BAL_RESULTS_PKG';
@@ -25,7 +27,7 @@ AS
     -- here is STATIC SQL against the compile-time-known W2Balances TFM table. It
     -- confirms each migrated balance-initialization batch in the Fusion payroll
     -- balance base table PAY_BAL_BATCH_HEADERS by the BatchName business key
-    -- (PAY_BAL_BATCH_HEADERS.BATCH_NAME = the run's <prefix>_W2BAL = RECON_KEY) and
+    -- (PAY_BAL_BATCH_HEADERS.BATCH_NAME = the run's BatchName = RECON_KEY) and
     -- marks that W2Balances TFM row LOADED with the real Fusion BATCH_ID stamped
     -- into FUSION_BALANCE_ID; any ERROR row is marked
     -- FAILED with the real Fusion error. This REPLACES the bulk LOOKUP_FUSION_IDS
@@ -45,6 +47,7 @@ AS
         l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
+        l_batch_name DMT_W2_BAL_TFM_TBL.RECON_KEY%TYPE;  -- backlog #413: exact BatchName
     BEGIN
         -- Generated-row count is done statically here (not in the shared pkg),
         -- and drives the shared fetch's keyset page-count cap.
@@ -52,13 +55,22 @@ AS
         FROM   DMT_W2_BAL_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
+        -- Backlog #413: the report finds the batch by the EXACT BatchName this
+        -- run's generator wrote (the TFM RECON_KEY: run prefix || work-queue id),
+        -- never by a prefix pattern. PAY_BAL_BATCH_HEADERS carries no request id,
+        -- so the name is the only exact selector. Sent as P_FUSION_BATCH_ID.
+        SELECT MAX(RECON_KEY) INTO l_batch_name
+        FROM   DMT_W2_BAL_TFM_TBL
+        WHERE  RUN_ID = p_run_id;
+
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code      => C_CEMLI,
+            p_run_id          => p_run_id,
+            p_load_ess_id     => TO_NUMBER(p_request_id),
+            p_row_cap         => l_gen_count,
+            x_rows            => l_rows,
+            x_error_code      => l_err_code,
+            p_fusion_batch_id => TO_NUMBER(l_batch_name DEFAULT NULL ON CONVERSION ERROR));
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.

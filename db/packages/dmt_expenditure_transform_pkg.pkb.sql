@@ -165,16 +165,15 @@
             s.DOCUMENT_ID,
             s.DOC_ENTRY_NAME,
             s.DOC_ENTRY_ID,
-            -- BATCH_NAME is (re)stamped by dmt_loader_pkg to the run's single
-            -- work-queue-id just before FBDI generation, so all of this run's rows share
-            -- ONE globally-unique batch: that groups them and lets the Expenditure Batch
-            -- filter (arg 8) import exactly this run's rows, isolated from other runs'
-            -- pending interface rows. (An earlier design used a per-row-unique batch on
-            -- the theory that a shared batch collided on PJC_UNIQUE_BATCH_NAME -- proven
-            -- false 2026-07-22: a unique-per-run work-queue-id batch does not collide.)
-            -- This per-row value is only a fallback if the loader stamp is ever skipped.
-            NVL(s.BATCH_NAME,
-                DMT_UTIL_PKG.PREFIXED(l_dep_prefix, s.ORIG_TRANSACTION_REFERENCE)),
+            -- BATCH_NAME carries the SOURCE batch name unchanged (NULL when the
+            -- source has none). It is one part of the spawn partition key
+            -- (DMT_EXPENDITURE_RESULTS_PKG.GET_PARTITION_KEYS), and DMT_LOADER_PKG
+            -- .RUN_EXPENDITURES restamps it just before FBDI generation to the value
+            -- sent to Fusion: the run prefix followed by this source name, or by the
+            -- work-queue id when it is NULL (owner decision 2026-10-07, backlog #412).
+            -- The old per-row prefixed-reference fallback never reached Fusion and
+            -- discarded nothing useful; removed.
+            s.BATCH_NAME,
             s.BATCH_ENDING_DATE,
             s.BATCH_DESCRIPTION,
             s.EXPENDITURE_ITEM_DATE,

@@ -4,6 +4,18 @@
 -- ============================================================
 -- DMT_EGP_ITEM_TRANSFORM_PKG Body
 -- All ~130 business columns copied from STG to TFM.
+--
+-- TFM BATCH_ID = the Item Import batch id DMT sends Fusion (owner decision
+-- 2026-10-07, same rule as Customers PR #657): the run prefix followed by the
+-- source BATCH_ID (prefix 93460 + source 8101 = 934608101); the prefix followed
+-- by the work-queue id when the source has none; the source BATCH_ID unchanged
+-- with USE_PREFIX = N. Each run's Item Import therefore never shares a batch
+-- with leftover interface rows of an earlier run. The source BATCH_ID still
+-- partitions the loads (constant prefix within a run). EGP interface BATCH_ID is
+-- NUMBER: a 5-digit prefix leaves 13 digits for the source batch id.
+--
+-- REVISIONS:
+--   2026-10-08  BM  TFM BATCH_ID = prefix || NVL(source BATCH_ID, work-queue id) (#411).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_EGP_ITEM_TRANSFORM_PKG';
@@ -246,7 +258,12 @@
                     p_run_id,
                     -- Identity
                     s.TRANSACTION_TYPE,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: user's BATCH_ID (ESS arg1 + partition key); run id as fallback (always non-null at transform time — g_work_queue_id is NULL during the parent transform-only pass), never the prefix
+                    -- Fusion batch id (owner decision 2026-10-07, backlog #411): the run
+                    -- prefix followed by the source BATCH_ID, else by the work-queue id
+                    -- (run id outside the queue); the source BATCH_ID unchanged when
+                    -- USE_PREFIX = N. ESS arg 1 + partition key + import-job lookup key,
+                    -- so no two runs ever share an Item Import batch.
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.ITEM_NUMBER),

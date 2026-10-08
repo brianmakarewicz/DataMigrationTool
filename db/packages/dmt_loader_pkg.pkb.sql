@@ -3316,7 +3316,7 @@
         l_job_name      VARCHAR2(500);
         l_ifd           NUMBER;
         l_param_list    VARCHAR2(500);
-        l_ex_batch      VARCHAR2(60);
+        l_ex_batch      VARCHAR2(240);
         l_ex_zip        BLOB;
         l_ex_filename   VARCHAR2(200);
         l_ex_csv_id     NUMBER;
@@ -3331,6 +3331,10 @@
         -- legacy standalone path.
         l_ex_src        VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'USER_TRANSACTION_SOURCE');
         l_ex_doc        VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'DOCUMENT_NAME');
+        -- The child's SOURCE Expenditure Batch name (backlog #412): the third part
+        -- of the composite key; NULL when the source rows carry none.
+        l_ex_src_batch  VARCHAR2(240) := DMT_LOADER_PKG.DECODE_PARTITION_KEY(g_partition_key, 'BATCH_NAME');
+        l_ex_prefix     DMT_PIPELINE_RUN_TBL.PREFIX%TYPE;
     BEGIN
         resolve_scenario(p_scenario_name, v_scenario_id);
         DMT_UTIL_PKG.LOG(p_run_id,
@@ -3434,16 +3438,34 @@
                 END;
             END IF;
 
-            -- Expenditure Batch (arg 8): one batch name per (source, document) partition.
-            -- Globally unique (a work-queue id) so it never collides on
+            -- Expenditure Batch (arg 8), owner decision 2026-10-07 (backlog #412, same
+            -- rule as Customers PR #657 and GL PR #662): the run prefix followed by the
+            -- SOURCE BATCH_NAME of this child's partition, or by the work-queue id when
+            -- the source has none; the source BATCH_NAME unchanged when USE_PREFIX = N
+            -- (NULL prefix). The prefix makes it unique per run, so it never collides on
             -- PJC_UNIQUE_BATCH_NAME and it isolates THIS child's rows from other pending
-            -- interface rows at costing time. Same value stamped onto BATCH_NAME in this
-            -- child's generated CSV rows below. Use g_work_queue_id (THIS child's queue
-            -- id); fall back to the max queue id on the legacy/standalone path.
-            IF g_work_queue_id IS NOT NULL THEN
-                l_ex_batch := TO_CHAR(g_work_queue_id);
+            -- interface rows at costing time; the source name survives into Fusion
+            -- (PJC_EXP_ITEMS_ALL.USER_BATCH_NAME). Same value stamped onto BATCH_NAME in
+            -- this child's generated CSV rows below. Work-queue id = g_work_queue_id
+            -- (THIS child's queue id); on the legacy/standalone path the max queue id,
+            -- and the first source batch name seen.
+            SELECT PREFIX INTO l_ex_prefix FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = p_run_id;
+            IF g_partition_key IS NULL THEN
+                SELECT MAX(BATCH_NAME) INTO l_ex_src_batch
+                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+                WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
+            END IF;
+            IF l_ex_src_batch IS NOT NULL THEN
+                IF LENGTH(l_ex_prefix || l_ex_src_batch) > 240 THEN
+                    RAISE_APPLICATION_ERROR(-20058,
+                        'Expenditures: batch name ' || l_ex_prefix || l_ex_src_batch ||
+                        ' is longer than 240 characters (DMT_PJC_EXPENDITURES_TFM_TBL.BATCH_NAME).');
+                END IF;
+                l_ex_batch := l_ex_prefix || l_ex_src_batch;
+            ELSIF g_work_queue_id IS NOT NULL THEN
+                l_ex_batch := l_ex_prefix || TO_CHAR(g_work_queue_id);
             ELSE
-                SELECT TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
+                SELECT l_ex_prefix || TO_CHAR(MAX(QUEUE_ID)) INTO l_ex_batch
                 FROM   DMT_WORK_QUEUE_TBL
                 WHERE  RUN_ID = p_run_id AND CEMLI_CODE = C_CEMLI;
             END IF;
@@ -3463,27 +3485,36 @@
                 || '~ORA_PJC_DETAIL';
         END;
 
-        -- Stamp the run's single work-queue-id batch onto every one of this partition's
-        -- rows' BATCH_NAME so the generated CSV carries it and it matches the arg-8
-        -- Expenditure Batch filter. Scoped to this (source, document) partition.
+        -- Stamp this partition's Expenditure Batch onto every one of its rows'
+        -- BATCH_NAME so the generated CSV carries it and it matches the arg-8
+        -- Expenditure Batch filter. Scoped to this (source, document, source batch)
+        -- partition: on a spawned child only the rows whose source BATCH_NAME is the
+        -- child's (both NULL counts as equal); the legacy standalone path stamps the
+        -- whole staged set, as before.
         UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
         SET    BATCH_NAME = l_ex_batch
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc)
+        AND    (g_partition_key IS NULL
+                OR BATCH_NAME = l_ex_src_batch
+                OR (BATCH_NAME IS NULL AND l_ex_src_batch IS NULL));
 
         -- Phase 3: generate one FBDI zip for this partition's STAGED rows
-        -- (rows move STAGED -> GENERATED).
+        -- (rows move STAGED -> GENERATED); only the rows just stamped with this
+        -- child's batch.
         DMT_EXPENDITURE_FBDI_GEN_PKG.GENERATE_FBDI(
             p_run_id, l_ex_zip, l_ex_filename, l_ex_csv_id,
-            p_txn_source => l_ex_src, p_document => l_ex_doc);
+            p_txn_source => l_ex_src, p_document => l_ex_doc,
+            p_batch_name => l_ex_batch);
 
         -- Count only THIS partition's just-generated rows so an empty group skips cleanly.
         SELECT COUNT(*) INTO l_ex_rows
         FROM   DMT_PJC_EXPENDITURES_TFM_TBL
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
         AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+        AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc)
+        AND    BATCH_NAME = l_ex_batch;
 
         IF l_ex_zip IS NULL OR DBMS_LOB.GETLENGTH(l_ex_zip) = 0 OR l_ex_rows = 0 THEN
             DMT_UTIL_PKG.LOG(p_run_id,
@@ -3529,7 +3560,8 @@
                    LAST_UPDATED_DATE = SYSDATE
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
             AND    (l_ex_src IS NULL OR USER_TRANSACTION_SOURCE = l_ex_src)
-            AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc);
+            AND    (l_ex_doc IS NULL OR DOCUMENT_NAME           = l_ex_doc)
+            AND    BATCH_NAME = l_ex_batch;
             COMMIT;
             RETURN;
         END IF;
