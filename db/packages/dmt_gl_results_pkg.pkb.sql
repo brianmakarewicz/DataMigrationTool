@@ -30,8 +30,8 @@
 --   INTERFACE + ERROR + message (Journal Import rejection, the message
 --                    is GL_INTERFACE.STATUS, plus ': ' STATUS_DESCRIPTION
 --                    when Fusion wrote one) => FAILED
---   other lines of a rejected journal (one GROUP_ID per journal) => FAILED
---                    quoting that error (PROPAGATE_DOCUMENT_ERRORS)
+--   other lines of a rejected import group (GROUP_ID = work queue id, per
+--                    ledger) => FAILED quoting that error (PROPAGATE_DOCUMENT_ERRORS)
 --   INTERFACE with no error is corroborating only, never LOADED on its
 --   own (LOADED requires a BASE/FUSION_ID row).
 -- Rows with no match and no error STAY GENERATED (unaccounted) — the
@@ -46,11 +46,11 @@
     C_CEMLI CONSTANT VARCHAR2(30) := 'GLBalances';
 
     -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #173).
-    -- Working set: "journal DOC_KEY (its GROUP_ID) has line SOURCE_SEQ with its
-    -- own real Fusion error, so every other line of that journal must carry
-    -- QUOTED_ERROR".
+    -- Working set: "import group DOC_KEY (GROUP_ID~LEDGER_NAME) has line SOURCE_SEQ
+    -- with its own real Fusion error, so every other line of that group must
+    -- carry QUOTED_ERROR".
     TYPE T_DOC_PAIR IS RECORD (
-        DOC_KEY      NUMBER,           -- the journal's GROUP_ID
+        DOC_KEY      VARCHAR2(400),    -- GROUP_ID || '~' || LEDGER_NAME
         SOURCE_SEQ   NUMBER,           -- the source line's TFM_SEQUENCE_ID
         QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
     );
@@ -232,13 +232,14 @@
     END APPLY_CONTRACT_V1_GL_BALANCES;
 
     -- --------------------------------------------------------
-    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #173). Journal Import rejects
-    -- a journal all-or-nothing: each journal is its own GROUP_ID (set at
-    -- transform) and one rejected line keeps every line of that group out of
-    -- the base tables. Those other lines stay in GL_INTERFACE with status P and
-    -- no error of their own, so the report returns nothing for them. This quotes
-    -- the rejected line's real Fusion error onto every other not-LOADED line of
-    -- the same journal (design section 5, "Whole-document rejection carries the
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #173). Journal Import holds a
+    -- whole import group (source + GROUP_ID + ledger) when any line errors:
+    -- proven with one group of 2 good journals + 1 bad journal (probe load
+    -- 10075834) -- the good journals were rolled back and left in GL_INTERFACE
+    -- with status P and no error of their own. GROUP_ID is the work queue id,
+    -- so the document is the load for one ledger. This quotes the rejected
+    -- line's real Fusion error onto every other not-LOADED line of the same
+    -- group and ledger (design section 5, "Whole-document rejection carries the
     -- real error to every grain"), in the shared format
     -- '[FUSION_ERROR] Rejected with document: line <key>: <real message>'.
     -- Only a line whose own error is a real [FUSION_ERROR] (not itself a quote)
@@ -256,8 +257,8 @@
         l_lines  NUMBER := 0;
         l_step   VARCHAR2(200);
     BEGIN
-        l_step := 'collecting rejected journal lines for run ' || p_run_id;
-        SELECT l.GROUP_ID,
+        l_step := 'collecting rejected lines for run ' || p_run_id;
+        SELECT l.GROUP_ID || '~' || l.LEDGER_NAME,
                l.TFM_SEQUENCE_ID,
                DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
                    'line', l.RECON_KEY,
@@ -272,7 +273,7 @@
         AND    DBMS_LOB.INSTR(l.ERROR_TEXT, l_marker) = 0
         AND    l.GROUP_ID IS NOT NULL;
 
-        l_step := 'appending quoted document errors to journal lines';
+        l_step := 'appending quoted group errors to the other lines';
         FORALL i IN 1 .. l_pairs.COUNT
             UPDATE DMT_GL_INTERFACE_TFM_TBL t
             SET    t.TFM_STATUS           = 'FAILED',
@@ -282,7 +283,7 @@
             WHERE  t.RUN_ID = p_run_id
             AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
                     OR t.WORK_QUEUE_ID = p_work_queue_id)
-            AND    t.GROUP_ID = l_pairs(i).DOC_KEY
+            AND    t.GROUP_ID || '~' || t.LEDGER_NAME = l_pairs(i).DOC_KEY
             AND    t.TFM_SEQUENCE_ID <> l_pairs(i).SOURCE_SEQ
             AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
             AND    t.FBDI_CSV_ID IS NOT NULL
@@ -292,8 +293,9 @@
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
-            p_message   => C_PROC || ' complete. Rejected journal lines: ' || l_pairs.COUNT
-                           || ' | other lines given a quoted document error: ' || l_lines || '.',
+            p_message   => C_PROC || ' complete. Rejected lines: ' || l_pairs.COUNT
+                           || ' | other lines of their import group given a quoted error: '
+                           || l_lines || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
     EXCEPTION
@@ -332,8 +334,9 @@
             p_import_ess_id => p_import_ess_id,
             p_work_queue_id => p_work_queue_id);
 
-        -- Lines rejected with their journal (Journal Import rejects a journal
-        -- all-or-nothing) carry the real error of the line that caused it. Runs
+        -- Lines rejected with their import group (Journal Import holds the whole
+        -- group when any line errors) carry the real error of the line that
+        -- caused it. Runs
         -- after the per-row apply and BEFORE the shared unaccounted sweep
         -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
         PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);

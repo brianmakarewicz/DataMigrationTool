@@ -1400,7 +1400,7 @@ def main():
 
     # ====================================================================
     # 20. GL JOURNALS (DMT_GL_INTERFACE_STG_TBL)
-    #     GOOD: 1 balanced journal (2 lines: DR/CR)
+    #     GOOD: 2 balanced journals (G1, G2; 2 lines each)
     #     BAD:  1 journal of 2 lines; line 1 is on natural account 99999, which is not in the
     #           chart's value set: Journal Import rejects it with its own error
     #           (GL_INTERFACE.STATUS EF04 + STATUS_DESCRIPTION 'FLEX-VALUE DOES NOT
@@ -1408,6 +1408,11 @@ def main():
     #           earlier unbalanced journal (backlog #173): Journal Import ACCEPTS an
     #           unbalanced journal on this ledger and records no error for it, so it
     #           was never a Fusion rejection.
+    #     All lines of one load share one GROUP_ID (the work queue id), and Journal
+    #     Import holds the WHOLE group when any line errors (proven, probe load
+    #     10075834): the good journals are rejected with the bad one, so every line
+    #     of this load ends FAILED -- BAD1 line 1 with its own error, every other
+    #     line FAILED_WITH_DOCUMENT quoting it (backlog #173).
     # ====================================================================
     print("\n=== 20. GL Journals ===")
     gl_lines = [
@@ -1418,10 +1423,16 @@ def main():
          "78630", 5000.00, None,    "RT-JNL-G1", "RT good journal - debit",  "04-26"),
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
          "77600", None,    5000.00, "RT-JNL-G1", "RT good journal - credit", "04-26"),
+        # GOOD: second balanced journal in the same load (accounts 60540 / 62510,
+        # valid per objects/GLBalances/README.md).
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "60540", 1200.00, None,    "RT-JNL-G2", "RT good journal 2 - debit",  "04-26"),
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "62510", None,    1200.00, "RT-JNL-G2", "RT good journal 2 - credit", "04-26"),
         # BAD journal (2 lines, balanced): line 1 is on natural account 99999,
         # which does not exist (Journal Import EF04, its own real error); line 2
-        # is valid and is rejected only because Journal Import rejects a journal
-        # all-or-nothing (FAILED_WITH_DOCUMENT, quoting line 1's error).
+        # is valid and is rejected only because Journal Import holds the whole
+        # group (FAILED_WITH_DOCUMENT, quoting line 1's error).
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
          "99999", 9999.99, None,    "RT-JNL-BAD1", "BAD: invalid natural account 99999", "04-26"),
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",

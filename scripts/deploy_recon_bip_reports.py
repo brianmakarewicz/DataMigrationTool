@@ -67,6 +67,9 @@ REPORTS = [
     # GLBalances V3 (backlog #173): alongside V1; real Journal Import error
     # (STATUS[: STATUS_DESCRIPTION]) only, rows selected by job id.
     ("GLBalances",              "DMT_GL_BAL_RECON_V3_DM", "DMT_GL_BAL_RECON_V3_RPT"),
+    # GLBalances V4 (backlog #173): GROUP_ID = work queue id, never ALL; base rows
+    # by the import job's own GroupID/LedgerID arguments.
+    ("GLBalances",              "DMT_GL_BAL_RECON_V4_DM", "DMT_GL_BAL_RECON_V4_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
     # item's load job id (LOAD_REQUEST_ID). Deployed alongside
