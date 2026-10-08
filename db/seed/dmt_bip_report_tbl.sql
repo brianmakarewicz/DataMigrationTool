@@ -2010,12 +2010,21 @@ when matched then update set
     t."FUSION_ID_COLUMN"    = s.fusion_id_column,
     t."RECON_KEY_SQL"       = s.recon_key_sql;
 
+-- Contracts V2 (2026-10-07, owner decision, backlog #259):
+-- DMT_CONTRACT_RECON_V2_DM finds rows only by the work item's Fusion job ids
+-- and the Contract style (base by REQUEST_ID = import id, interface headers by
+-- LOAD_REQUEST_ID = load id AND REQUEST_ID = import id, errors by REQUEST_ID =
+-- import id); the run id is never a search value. V1 stays deployed (never
+-- overwritten).
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Contracts'                                             cemli_code,
-           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_RPT.xdo'     report_catalog_path,
-           'Contract purchase agreement import reconciliation (Contract v1, headers only)' notes,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V2_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V2_RPT.xdo'  report_catalog_path,
+           'Contract purchase agreement import reconciliation (Contract v1, headers only). '
+           || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
+           || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID) and the Contract '
+           || 'document style, never by the run id. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PO_HEADERS_INT_TFM_TBL'                            tfm_table,
            'FUSION_PO_HEADER_ID'                                   fusion_id_column,
