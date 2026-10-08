@@ -3040,16 +3040,21 @@ def main():
         """, {"pnum": pnum, "pcode": pcode, "status": status, "src": f"RT-{pcode}"},
         label=label)
 
-    # One competency item for the GOOD profile
+    # One language item for the GOOD profile (backlog #451). A COMPETENCY item also
+    # needs evaluator qualifiers (QualifierId1/QualifierId2 per the gold fixture),
+    # which the item staging table cannot carry yet; LANGUAGE items on this pod
+    # carry no qualifiers (1,575 existing person-profile items, all without), and
+    # 'Spanish' is a shipped LANGUAGE content item. The COMPETENCY qualifier gap is
+    # tracked under backlog #299.
     run_sql(cur, """
         INSERT INTO DMT_TALENT_PROF_ITEM_STG_TBL (
-            PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME,
+            PERSON_NUMBER, CONTENT_TYPE_NAME, CONTENT_ITEM_NAME, SECTION_NAME,
             DATE_FROM, PROFILE_CODE, SOURCE_ID, STG_STATUS
         ) VALUES (
-            'RT-WKR-G1', 'COMPETENCY', 'Oral Communication',
+            'RT-WKR-G1', 'LANGUAGE', 'Spanish', 'Languages',
             '2026/01/01', 'RT-WKR-G1_PROF', 'RT-WKR-G1_PROF-IT', 'NEW'
         )
-    """, label="GOOD Talent Profile item: Oral Communication")
+    """, label="GOOD Talent Profile item: Spanish (LANGUAGE)")
     tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
 

@@ -87,13 +87,6 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|TalentProfiles|DMT_TALENTPROFILES_RECON_DM",
-      "backlog": 216,
-      "found": "2026-10-07",
-      "detail": "registered data model bip/TalentProfiles/DMT_TALENTPROFILES_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|Taxes|DMT_ZX_RECON_DM",
       "backlog": 130,
       "found": "2026-10-07",

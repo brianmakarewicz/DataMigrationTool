@@ -167,12 +167,36 @@ def deploy_apex(target):
     return rc == 0
 
 # ---------------------------------------------------------------- prefix leapfrog
-def next_prefix_from_atp():
-    """Consume ATP.DMT_RUN_PREFIX_SEQ.NEXTVAL - the single source of truth."""
-    con = _oracle("atp"); cur = con.cursor()
-    cur.execute("select DMT_RUN_PREFIX_SEQ.NEXTVAL from dual")
+def local_max_used_prefix():
+    """Highest numeric prefix any LOCAL run has already used. Local runs (manual
+    proof runs, not only regressions) also write prefixed records to the shared
+    Fusion pod, so a drawn prefix must be above this (backlog #450)."""
+    con = _oracle("local"); cur = con.cursor()
+    cur.execute("select nvl(max(to_number(prefix default null on conversion error)), 0) "
+                "from DMT_PIPELINE_RUN_TBL")
     v = int(cur.fetchone()[0]); con.close()
-    print(f"[prefix] drew v={v} from ATP DMT_RUN_PREFIX_SEQ (source of truth)")
+    return v
+
+def next_prefix_from_atp():
+    """Consume ATP.DMT_RUN_PREFIX_SEQ.NEXTVAL - the single source of truth - until
+    the value is above every prefix already used locally. Backlog #450: run 293
+    drew 93322 from ATP while local run 266 had already used 93322 against the
+    shared Fusion pod, so its Workers collided with run 266's records."""
+    floor = local_max_used_prefix()
+    con = _oracle("atp"); cur = con.cursor()
+    draws = 0
+    while True:
+        cur.execute("select DMT_RUN_PREFIX_SEQ.NEXTVAL from dual")
+        v = int(cur.fetchone()[0]); draws += 1
+        if v > floor:
+            break
+        if draws >= 5000:
+            con.close()
+            raise SystemExit(f"[prefix] ATP DMT_RUN_PREFIX_SEQ still at {v} after {draws} draws, "
+                             f"below local max used prefix {floor}; refusing to reuse a prefix")
+    con.close()
+    print(f"[prefix] drew v={v} from ATP DMT_RUN_PREFIX_SEQ (source of truth; "
+          f"{draws} draw(s), local max used prefix {floor})")
     return v
 
 def force_local_prefix(v):
