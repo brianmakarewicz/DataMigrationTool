@@ -2273,8 +2273,18 @@ def main():
     #      eCommerce Catalog allows multiple assignments, so assigning one (or a second,
     #      on a re-run) never collides and the GOOD rows genuinely reach the base table
     #      EGP_ITEM_CATEGORIES. The three codes below (Canned_Fruit, Industrial,
-    #      eCom_Bus_Prod) are standard SCM demo seed categories present on every pod and
+    #      eCom_Gloves) are standard SCM demo seed categories present on every pod and
     #      valid for the eCommerce Catalog category set, so the fixture stays portable.
+    #
+    #      LEAF CATEGORIES ONLY: Fusion only accepts item assignments to a LEAF category.
+    #      The lot item used to target eCom_Bus_Prod, which is a parent node (children
+    #      eCom_Gloves and eCom_Servers), so Fusion rejected the "GOOD" row for real with
+    #      EGP_ITEM_NON_LEAF_CATEGORY (PR #645, proof run 265). It now targets the leaf
+    #      eCom_Gloves ("Medical Gloves", category_id 300000047481490), verified read-only
+    #      2026-10-07 via EGP_CATEGORY_SET_VALID_CATS: zero children in set
+    #      300000047481425, enabled, no end date. Canned_Fruit and Industrial were
+    #      verified as leaves in the same query. Affects FUTURE scenarios only; existing
+    #      write-once scenarios still carry eCom_Bus_Prod.
     # ====================================================================
     print("\n=== 32b. Item Categories ===")
     # Category BATCH_ID matches its item's batch so an item and its category land
@@ -2284,7 +2294,7 @@ def main():
          "GOOD: eCommerce Catalog (multi-assign) category for plain item"),
         ("DMT-RT-SERIAL-001", MASTER_ORG, "eCommerce Catalog", "Industrial",    "Industrial", 8102,
          "GOOD: eCommerce Catalog (multi-assign) category for serial item"),
-        ("DMT-RT-LOT-001",    MASTER_ORG, "eCommerce Catalog", "eCom_Bus_Prod", "Business Products", 8102,
+        ("DMT-RT-LOT-001",    MASTER_ORG, "eCommerce Catalog", "eCom_Gloves",   "Medical Gloves", 8102,
          "GOOD: eCommerce Catalog (multi-assign) category for lot item"),
         ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
          "BAD: nonexistent item + fake category set [BAD-UPS]"),

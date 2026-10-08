@@ -61,10 +61,20 @@ This job bundles two CSVs in one ZIP:
 Both are submitted under `ItemImportJobDef` in a single ESS call.
 
 ## Reconciliation
-BIP report at `/Custom/DMT/Items/ITEM_DM.xdm`.
-Queries `EGP_SYSTEM_ITEMS_INTERFACE` by BATCH_ID.
-Match key: ITEM_NUMBER + ORGANIZATION_CODE.
-PROCESS_FLAG null/0 = success, 7 = error.
+Contract v1 report `/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm` (since 2026-10-07; V1 and V2
+stay deployed). One report returns both record types (`Item`, `ItemCategory`). It is called once
+per item batch (one child work item = one load = one Item Import) with that batch's own load id
+and Item Import id, and finds rows only by those job ids:
+- base items: `EGP_SYSTEM_ITEMS_B.REQUEST_ID` = the Item Import id;
+- base category assignments: `EGP_ITEM_CATEGORIES.REQUEST_ID` = the Item Import id;
+- interface rows and `EGP_IMPORT_ERRORS`: `LOAD_REQUEST_ID` = the load id or `REQUEST_ID` = the
+  import id (Fusion stamps both).
+The run prefix is never a search value. Match keys (RECORD_KEY = TFM RECON_KEY):
+ITEM_NUMBER~ORGANIZATION_CODE and ITEM_NUMBER~ORGANIZATION_CODE~CATEGORY_SET_NAME~CATEGORY_CODE.
+
+Caveat: Fusion rewrites `EGP_SYSTEM_ITEMS_B.REQUEST_ID` when a later import touches the item (a
+category assignment does). A row already LOADED is never re-read, so this only matters if an item
+is touched by another import before its own batch is reconciled.
 
 ### Settle + re-read before failing a late-committing item (Backlog #147)
 
@@ -171,6 +181,14 @@ interface row in a state the reconciler reads as "not loaded." Verify the interf
 PROCESS_FLAG for those specific rows in run 155 before treating this as an item-attribute bug.
 
 ## History
+- 2026-10-07: recon report V3 (backlog #241) finds rows only by each work item's own Fusion
+  job ids (see Reconciliation). Proof run 265 (prefix 93321, scenario RegressionTest2610071920):
+  batch 8101 load 10075509 / import 10075520, batch 8102 load 10075506 / import 10075515, each
+  matching what Fusion stamped; items 3 LOADED + 1 FAILED (bad org), categories 2 LOADED + 2
+  FAILED (bad category set; non-leaf category), 0 UNACCOUNTED, same as run 238. A
+  reconcile-only rerun left both TFM tables byte-identical. The non-leaf category row
+  (`eCom_Bus_Prod`) is a real Fusion rejection of the test data and still shows as a
+  GOOD-FAILED in dmt_regression_run.py, as it did before.
 - DDL deployed initially.
 - 2026-05-21: All packages built (validator, transformer, FBDI gen, results, runner).
 - 2026-05-21: Wired into dmt_loader_pkg + dmt_scheduler_pkg P2P sequence.
