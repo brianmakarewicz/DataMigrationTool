@@ -61,16 +61,16 @@ row.
   normally returns nothing; the real per-row message still comes from the BudgetsXfaceBIP
   report output.
 
-Proof run 267 (prefix 93323, scenario RegressionTest2610071920, STANDALONE:ProjectBudgets):
-work item 1631 recorded load 10075564 / import 10075571 (ImportBudgetsInterfaceData; its
-BudgetsXfaceBIP report job is 10075574). Plan version 100002667522295 (93323RT-PJB-GOOD1 on
-CFIT022) carries REQUEST_ID 10075571. RT-PJB-GOOD1 LOADED; RT-PJB-BAD1 FAILED with its own
+Proof run 275 (prefix 93331, scenario RegressionTest2610071920, STANDALONE:ProjectBudgets):
+work item 1642 recorded load 10075774 / import 10075778 (ImportBudgetsInterfaceData; its
+BudgetsXfaceBIP report job is 10075782). Plan version 100002667587274 (93331RT-PJB-GOOD1 on
+CFIT022) carries REQUEST_ID 10075778. RT-PJB-GOOD1 LOADED; RT-PJB-BAD1 FAILED with its own
 Fusion error ("The project number NOPROJ999 doesn't exist ..."); 0 UNACCOUNTED. Dollars tie
 out: 70,000 loaded = 70,000 TC raw cost on the Fusion plan lines; 70,000 failed. A
-reconcile-only rerun left both TFM rows byte-identical. `dmt_regression_run.py` PASS with two
-review items that are not this object's (no REST lookup is configured for Project Budget Lines;
-a heartbeat ORA-06508 logged while another session recompiled packages); Playwright
-click-through PASS.
+reconcile-only rerun left both TFM rows byte-identical. `dmt_regression_run.py` PASS with one
+review item that is not about reconciliation (no REST lookup is configured for Project Budget
+Lines); Playwright click-through PASS. (Run 267 showed the same outcomes before this branch was
+rebased onto main.)
 
 ## Pipeline
 - Module: Projects
