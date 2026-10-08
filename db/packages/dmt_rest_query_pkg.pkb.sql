@@ -34,6 +34,7 @@ AS
     ) RETURN CLOB
     IS
         l_lookup_json  CLOB;
+        l_retry_json   CLOB;
         l_result       CLOB;
         l_error_msg    VARCHAR2(4000);
         l_primary_key  VARCHAR2(400);
@@ -60,15 +61,23 @@ AS
         );
         l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
 
+        -- The retry is a second chance, never a replacement verdict: if it does
+        -- not find the record either (or errors, e.g. HTTP 500 because an id-keyed
+        -- filter such as RequisitionHeaderId= was handed the display number), the
+        -- FIRST lookup's "not found" is the honest answer and is what we return.
         IF l_error_msg IS NOT NULL
            AND INSTR(LOWER(l_error_msg), 'not found') > 0
            AND p_display_key IS NOT NULL
            AND p_display_key <> l_primary_key THEN
-            l_lookup_json := DMT_REST_LOOKUP_PKG.LOOKUP_RECORD(
+            l_retry_json := DMT_REST_LOOKUP_PKG.LOOKUP_RECORD(
                 p_object_type => p_sub_object,
                 p_key_value   => p_display_key
             );
-            l_error_msg := JSON_VALUE(l_lookup_json, '$.error');
+            IF l_retry_json IS NOT NULL
+               AND JSON_VALUE(l_retry_json, '$.error') IS NULL THEN
+                l_lookup_json := l_retry_json;
+                l_error_msg   := NULL;
+            END IF;
         END IF;
 
         IF l_lookup_json IS NULL THEN
