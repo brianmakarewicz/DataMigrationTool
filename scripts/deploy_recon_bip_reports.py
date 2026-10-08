@@ -118,6 +118,10 @@ REPORTS = [
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
     # overwritten).
     ("PurchaseOrders",           "DMT_PO_RECON_V2_DM",         "DMT_PO_RECON_V2_RPT"),
+    # Expenditures V2 (2026-10-07, owner decision): rows found only by the work
+    # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
+    # the run prefix. Deployed alongside DMT_EXP_RECON_DM (never overwritten).
+    ("Expenditures",             "DMT_EXP_RECON_V2_DM",        "DMT_EXP_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/

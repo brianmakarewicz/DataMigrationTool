@@ -65,6 +65,44 @@ stamped with the run prefix), so ALL-mode reruns never collide. The transform al
 the run prefix onto ORIG_TRANSACTION_REFERENCE (the base-table verification key). Source
 is no longer required to supply a batch name.
 
+## Reconciliation by Fusion job id, one call per work item (2026-10-07)
+
+Owner decision: the reconciliation report finds rows only by the Fusion job ids, never by
+searching on the run prefix. The prefixed ORIG_TRANSACTION_REFERENCE is used only to match a
+row Fusion returned back to its TFM row.
+
+- **Report V2** `DMT_EXP_RECON_V2_DM` / `_RPT` (deployed alongside V1, which is never
+  overwritten): costed items by `PJC_EXP_ITEMS_ALL.REQUEST_ID = :P_IMPORT_ESS_ID`; rows the
+  import rejected by `PJC_TXN_XFACE_ALL.REQUEST_ID = :P_IMPORT_ESS_ID` (status other than P);
+  rows left in staging by `PJC_TXN_XFACE_STAGE_ALL.LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID`. No
+  `LIKE` anywhere. Keyset ordering and comparison pinned to BINARY. Registry repointed by the
+  seed and `db/migrations/2026-10-07_expenditures_recon_v2_registry.sql`.
+- **One call per work item.** Each (transaction source, document) partition is one work item
+  with one load and one separately submitted Import Costs job (argument 8 = the work item's
+  queue id), so `RECONCILE_BATCH` passes that item's own load id and import id to `FETCH_ROWS`.
+  Under V1 the report was run-wide: in run 238 work item 1577 (the Time Card document) loaded
+  the two costed items that belong to work item 1576.
+- The old header comment saying rejected interface rows keep no request id was wrong: rows the
+  import rejects stay in `PJC_TXN_XFACE_ALL` with the import job's `REQUEST_ID`, and their
+  messages are in `PJC_TXN_ERRORS` (joined on `SOURCE_TXN_ID = TXN_INTERFACE_ID`). The real
+  per-row message still comes from the Import Costs report output of the same import job.
+- The README's "Pipeline" section names `ImportAndProcessTxnsJob`; the job actually submitted
+  (and verified in `ESS_REQUEST_HISTORY`) is `ImportProcessParallelEssJob` with 13 arguments.
+
+Proof run 260 (prefix 93316, scenario RegressionTest2610071920, STANDALONE:Expenditures):
+work item 1620 (document Timecard) recorded load 10075412 / import 10075418 and work item 1621
+(document Time Card) load 10075407 / import 10075414; Fusion shows import 10075418 with
+argument 8 = 1620 and 10075414 with argument 8 = 1621, the two costed items 765737 and 765738
+carry REQUEST_ID 10075418, and the rejected E2DATE and E3RATE rows carry REQUEST_ID 10075418 in
+`PJC_TXN_XFACE_ALL`. Work item 1621's report call now returns zero rows (V1 returned the other
+item's two). Outcomes match run 238: the two GOOD rows LOADED; BAD1, E2DATE, E3RATE, E4DOC,
+E5ORG and E6AWARD FAILED with their own Fusion errors; 0 UNACCOUNTED. Quantity ties out (24
+hours sent, 24 hours in Fusion). The amounts sent (2,500 + 1,500) are re-costed by Fusion at the
+person's labor rate (2,560 + 1,280), with Fusion's own warning PJC_DENOM_RAW_COST_WIPED; that is
+Fusion costing, not a DMT difference. A reconcile-only rerun of both work items left all 8 TFM
+rows byte-identical. `dmt_regression_run.py` PASS with one review item (below); Playwright
+click-through PASS.
+
 ## CSV Format Notes
 - First field is TRANSACTION discriminator: 'LABOR' or 'NONLABOR' (FILLER in CTL, used as WHEN clause)
 - TRANSACTION_TYPE column is NOT in CSV -- set as CONSTANT by CTL based on WHEN clause
@@ -86,6 +124,14 @@ is no longer required to supply a batch name.
 None in this folder.
 
 ## Known Issues
+- **The Record Detail "Verify in Fusion" REST lookup for Expenditures fails (backlog #314).**
+  The call filters `ExpenditureItemId=<recon key>` (the text reference, not the numeric
+  FUSION_EXPENDITURE_ITEM_ID), and the `DMT_REST_LOOKUP_TBL` row asks `projectExpenditureItems`
+  for fields (ProjectNumber, TaskNumber, ExpenditureType, ItemDate, Quantity, Amount) the
+  resource does not expose (Fusion answers 400 "URL request parameter fields ... is not
+  valid"). The item itself is there (a plain query by ExpenditureItemId returns 200).
+  Pre-existing; it is the review item in `dmt_regression_run.py` for this object (run 238 shows
+  it too).
 - TRANSACTION_TYPE in STG must be 'LABOR' or 'NONLABOR'. 'Miscellaneous' caused the original ORA-06502 (Fusion tried to process NULL QUANTITY/PERSON_NUMBER).
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - `expenditure_item_id` does NOT exist on `PJC_TXN_XFACE_STAGE_ALL` interface table — removed from BIP query and results package.

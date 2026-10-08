@@ -199,10 +199,13 @@ using (
            'N/A (EPBCS internal)',
            'Planning budget import reconciliation - no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS - dormant)' from dual
     union all select 100000018, 'Expenditures', 'Expenditure',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_DM.xdm',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_RPT.xdo',
            'PJC_TXN_XFACE_STAGE_ALL',
-           'Project expenditure cost import reconciliation (Contract v1, nine-column)' from dual
+           'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
+           || 'prefix; called once per work item. Deployed alongside V1, never overwriting it.' from dual
     union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
            '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
@@ -2076,17 +2079,25 @@ commit;
 -- own TFM table, so APPLY_PROC is intentionally not set here. RECON_KEY (stamped by
 -- DMT_EXPENDITURE_TRANSFORM_PKG, = the report RECORD_KEY) = the run-prefixed
 -- ORIG_TRANSACTION_REFERENCE, which survives verbatim onto the base row.
+-- V2 (2026-10-07, owner decision): DMT_EXP_RECON_V2_DM finds rows only by the
+-- work item's Fusion job ids (base items by REQUEST_ID = import id, import
+-- rejections in PJC_TXN_XFACE_ALL by REQUEST_ID = import id, staging rows by
+-- LOAD_REQUEST_ID = load id); the run prefix is never a search value. V1
+-- (DMT_EXP_RECON_DM) stays deployed; BIP objects are never overwritten.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Expenditures'                                          cemli_code,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_RPT.xdo'       report_catalog_path,
-           'Project expenditure cost import reconciliation (Contract v1, nine-column)' notes,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_DM.xdm'     dm_catalog_path,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V2_RPT.xdo'    report_catalog_path,
+           'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
+           || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
+           || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
+           || 'prefix; called once per work item. Deployed alongside V1, never overwriting it.' notes,
            1                                                        contract_version,
            'DMT_PJC_EXPENDITURES_TFM_TBL'                          tfm_table,
            'FUSION_EXPENDITURE_ITEM_ID'                            fusion_id_column,
-           'ORIG_TRANSACTION_REFERENCE -- run-prefixed native reference, survives verbatim onto the base row (report RECORD_KEY matched to TFM.RECON_KEY)' recon_key_sql
+           'ORIG_TRANSACTION_REFERENCE -- run-prefixed native reference, survives verbatim onto the base row (report RECORD_KEY matched to TFM.RECON_KEY; a match key only, never a row selector)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
