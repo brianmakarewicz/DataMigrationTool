@@ -15,7 +15,7 @@ linkage references are correctly stamped by the transform — are rejected by Fu
 own value-compare validation. No tier is unwired or mis-generated, so no code change:
 per the mission, a real rejection is a correct outcome, not something to "fix" by
 editing data. The `DMT_BIP_REPORT_TBL` Customers row is already converged onto the
-DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V5_*` since 2026-10-07, CONTRACT_VERSION = 1,
+DMT2 catalog (`/Custom/DMT2/Customers/DMT_CUST_RECON_V6_*` since 2026-10-07, CONTRACT_VERSION = 1,
 FUSION_ID_COLUMN + RECON_KEY_SQL populated) and the V2 report is deployed additively
 at `/Custom/DMT2/Customers/` (the frozen `/Custom/DMT/` is left untouched); the seed
 is idempotent (re-run twice clean, 0 invalid objects).
@@ -49,7 +49,8 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - ParameterList (RESOLVED 2026-07-11): four values —
   `<Batch ID>,<Batch Name>,Customer and Consumer,<Source System>` — which
   auto-creates the `HZ_IMP_BATCH_SUMMARY` import batch the bulk import then consumes.
-  The Batch ID is the user's uploaded `BATCH_ID` (run id only as NVL fallback); the
+  The Batch ID is the run prefix followed by the user's uploaded `BATCH_ID` (owner
+  decision 2026-10-07; see "Fusion batch id and recon V6" below); the
   Source System comes from the user's data, never hard-coded `'DMT'`. An empty Batch
   Name loads 0 rows. The earlier positional `NEW,N,<run_id>` form did NOT work — the
   bulk import never mapped slot 3 to its internal `Batch_Id`. Proven live 2026-07-11:
@@ -74,10 +75,12 @@ DMT_LOADER_PKG.RUN_CUSTOMERS / RECON_PROC DMT_CUST_RESULTS_PKG.RECONCILE_BATCH).
 - Transformer: `db/packages/dmt_cust_transform_pkg.*` (7 TRANSFORM_* procedures)
 - FBDI Generator: `db/packages/dmt_cust_fbdi_gen_pkg.*` (one GENERATE_FBDI, builds the 7-CSV zip)
 - Results/Reconciliation: `db/packages/dmt_cust_results_pkg.*` (Contract v1, shared transport)
-- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V5_DM.xdm` + `DMT_CUST_RECON_V5_RPT.xdo`
+- BIP Data Model/Report: `bip/Customers/DMT_CUST_RECON_V6_DM.xdm` + `DMT_CUST_RECON_V6_RPT.xdo`
   (deploy target `/Custom/DMT2/Customers/`; deployed by `scripts/deploy_recon_bip_reports.py Customers`).
-  V5 is the live one the `DMT_BIP_REPORT_TBL` seed row points at (migration
-  `db/migrations/2026-10-07_customers_recon_v5_registry.sql`). An INTERFACE row is returned as
+  V6 is the live one the `DMT_BIP_REPORT_TBL` seed row points at (migration
+  `db/migrations/2026-10-07_customers_recon_v6_registry.sql`). V6 selects every base tier by
+  `REQUEST_ID = :P_FUSION_BATCH_ID` (the batch id the load sent) instead of V5's prefix match on the
+  orig-system reference; everything below is unchanged from V5. An INTERFACE row is returned as
   ERROR only when it has its OWN Fusion error: its own `HZ_IMP_ERRORS` rows joined on
   `error_id`+`batch_id`, with the full `FND_NEW_MESSAGES` text (tokens substituted). A row Fusion
   held or rejected with no error of its own is not returned, so the shared sweep marks it
@@ -308,7 +311,63 @@ status and no ERROR_TEXT byte (`PROPAGATE_DOCUMENT_ERRORS`: 20 pairs, 0 rows upd
 sanctioned `RERUN_RUN` re-opened nothing. Click-through `dmt_console_verify.py --run-id 257
 --cemlis Customers`: PASS.
 
+## Fusion batch id and recon V6 (2026-10-07, backlog #238)
+
+**Owner decision 2026-10-07.** The batch id DMT sends the customer bulk import is the run prefix
+followed by the source `BATCH_ID`: prefix 93335 and source batch 5001 give `933355001`. With
+`USE_PREFIX = N` (cutover, NULL prefix) the source batch is sent unchanged. When the source has no
+batch id, DMT sends the prefix followed by the **work-queue id** (one Customers work item makes the
+loads of a run, and the work-queue id never repeats inside one database; outside a work item, as in
+the offline golden test, the run id is used). The transform stamps this value as the TFM `BATCH_ID`
+(`DMT_CUST_TRANSFORM_PKG`), so the generator writes it into every HZ CSV and `RUN_CUSTOMERS` sends it
+in the ParameterList. The source `BATCH_ID` still decides the partitioning: the prefix is the same
+for the whole run, so one source batch is exactly one Fusion batch and one load.
+
+**Why.** The regression seed always uses batch 5001 (`CUST_BATCH_ID` in
+`scripts/insert_regression_test_data.py`), and Fusion copies the batch id into `REQUEST_ID` on every
+HZ base row, so every earlier test run carried 5001 and the report could only find its rows by
+searching on the prefix. That breaks the design rule that reports find rows by Fusion job or batch
+id (design document section 5).
+
+**What Fusion stamps (verified 2026-10-07, read-only queries).** All Fusion batch columns are
+`NUMBER(18)`: `HZ_IMP_BATCH_SUMMARY.BATCH_ID`, `HZ_IMP_*_T.BATCH_ID`, `HZ_IMP_ERRORS.BATCH_ID`, and
+`REQUEST_ID` on `HZ_PARTIES`, `HZ_LOCATIONS`, `HZ_PARTY_SITES`, `HZ_PARTY_SITE_USES`,
+`HZ_CUST_ACCOUNTS`, `HZ_CUST_ACCT_SITES_ALL`, `HZ_CUST_SITE_USES_ALL` and `HZ_ORIG_SYS_REFERENCES`.
+A 5-digit prefix leaves 13 digits for the source batch id. Every one of those base tables carries
+the batch id in its own `REQUEST_ID` (run 257: every base row = 5001; run 279: 22 base rows =
+933355001, exactly the 22 LOADED rows), so V6 selects each tier directly and never goes through a
+parent.
+
+**Report V6.** Base rows: `<base table>.REQUEST_ID = TO_NUMBER(:P_FUSION_BATCH_ID)`, joined to
+`HZ_ORIG_SYS_REFERENCES` only to build the RECORD_KEY (party site uses use their parent party
+site's reference + `SITE_USE_TYPE`). Interface and error rows: `LOAD_REQUEST_ID =
+:P_LOAD_REQUEST_ID`, unchanged. No `LIKE` anywhere. `P_FUSION_BATCH_ID` is a seventh, optional
+report parameter: `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` sends it only when the caller passes
+`p_fusion_batch_id`, so no other object's report call changed. `DMT_CUST_RESULTS_PKG` resolves the
+batch id with `RESOLVE_SENT_BATCH_ID`: the TFM `BATCH_ID` of the most recently generated customer
+FBDI of the work item (the highest parties `FBDI_CSV_ID`). `RUN_CUSTOMERS` generates, loads and
+reconciles one batch at a time, so that is the batch of the load being reconciled. Cross-grain
+propagation (`PROPAGATE_DOCUMENT_ERRORS`) is unchanged.
+
+**Proof run 279** (prefix 93335, scenario `RegressionTest2610071942`, `STANDALONE:Customers`): the
+ParameterList sent `933355001,Batch ID 933355001 LEG1,CUSTOMER,LEG1`; Fusion created batch
+933355001 and stamped it on the 7 interface parties rows of load 10075855 and on all 22 base rows.
+Outcomes match run 257 exactly: 22 LOADED, 8 FAILED with their own error, 20 FAILED quoting their
+document, 0 UNACCOUNTED; all 50 listed rows met their expected outcome. A reconcile-only rerun
+(`DMT_QUEUE_WORKER_PKG.RECONCILE_VIA_REGISTRY` with the recorded ids) left all 50 TFM rows
+byte-identical (same MD5 over status, Fusion ids, batch, work item and ERROR_TEXT; 0 rows updated).
+`dmt_regression_run.py`: PASS with the same 6 REST spot-check review items as run 257.
+`dmt_console_verify.py --run-id 279 --cemlis Customers`: PASS.
+
 ## Known Issues
+- **Several source batches in one work item (not exercised by the regression).** The reconciler
+  takes the batch of the most recently generated customer FBDI. That is right for the inline
+  reconcile of each batch and for a reconcile-only rerun of the last batch, but if the LAST batch's
+  load failed, a reconcile-only rerun would use the queue row's ids (the previous batch) with the
+  last batch's id. The rerun only touches UNACCOUNTED rows, and the inline reconcile is correct.
+- **Keyset paging past one page (backlog #414).** `DMT_UTIL_PKG.RUN_BIP_REPORT` splits the parameter
+  string on `~`, and Customers RECORD_KEYs contain `~`, so a second page's `P_AFTER_KEY` is cut
+  short. Only a Customers load with more than `BIP_CHUNK_SIZE` (5,000) report rows is affected.
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
   `HZ_IMP_BATCH_SUMMARY` batch to consume; the positional `NEW,N,<run_id>` form
