@@ -94,6 +94,9 @@ REPORTS = [
     # own key-map row and base table.
     ("Workers",                 "DMT_WORKERS_RECON_V2_DM", "DMT_WORKERS_RECON_V2_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
+    # SalaryBases V2 (2026-10-08, backlog #292): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; salary basis confirmed in CMP_SALARY_BASES.
+    ("SalaryBases",             "DMT_SALARYBASES_RECON_V2_DM", "DMT_SALARYBASES_RECON_V2_RPT"),
     ("Salaries",                "DMT_SALARIES_RECON_DM", "DMT_SALARIES_RECON_RPT"),
     # Salaries V2 (2026-10-07, backlog #291): alongside V1 (never overwritten).
     # Rows selected by the HDL request id; salary confirmed in CMP_SALARY.

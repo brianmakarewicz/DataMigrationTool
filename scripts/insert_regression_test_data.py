@@ -176,6 +176,8 @@ def main():
         "DMT_WORK_REL_STG_TBL",
         "DMT_SALARY_TFM_TBL",
         "DMT_SALARY_STG_TBL",
+        "DMT_SAL_BASIS_TFM_TBL",
+        "DMT_SAL_BASIS_STG_TBL",
         "DMT_PAY_REL_TFM_TBL",
         "DMT_PAY_REL_STG_TBL",
         "DMT_TALENT_PROF_ITEM_TFM_TBL",
@@ -3031,6 +3033,43 @@ def main():
               "src": f"RT-SAL-{pnum}"},
         label=label)
     tag_scenario(cur, "DMT_SALARY_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 43a. SALARY BASES (HCM HDL) -> CMP_SALARY_BASES. Standalone config object
+    #      (no worker needed). Backlog #292. The GOOD rows copy a real salary
+    #      basis on the pod, read-only via scripts/fusion_bip_query.py on
+    #      2026-10-08: the earlier DMT basis "90262 DMT Annual Salary" (SALARY_BASIS_ID
+    #      300000331542894) uses element "Regular Salary" (300000048007880), input
+    #      value "Amount" (300000048007964), code ANNUAL, annualization factor 1,
+    #      legislative data group "US Legislative Data Group" (300000046974970).
+    #      The transform prefixes the name with the run prefix, so each run makes
+    #      new bases. The BAD row names an element that does not exist, so HDL
+    #      rejects it on its own line with a real ElementTypeId error.
+    # ====================================================================
+    print("\n=== 43a. Salary Bases (HCM) ===")
+    for name, element, src, descr, label in [
+        ("DMT RT Annual Basis",   "Regular Salary",          "RT-SB-G1",   "DMT regression annual salary basis",
+         "GOOD Salary Basis: DMT RT Annual Basis"),
+        ("DMT RT Annual Basis 2", "Regular Salary",          "RT-SB-G2",   "DMT regression annual salary basis 2",
+         "GOOD Salary Basis: DMT RT Annual Basis 2"),
+        ("DMT RT BAD Basis",      "DMT NONEXISTENT ELEMENT", "RT-SB-BAD1", "DMT regression bad salary basis",
+         "BAD Salary Basis: element does not exist [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_SAL_BASIS_STG_TBL (
+                SALARY_BASIS_NAME, ELEMENT_NAME, INPUT_VALUE_NAME,
+                SALARY_BASIS_CODE, ANNUALIZATION_FACTOR,
+                LEGISLATIVE_DATA_GROUP_NAME, DESCRIPTION,
+                SOURCE_ID, STG_STATUS
+            ) VALUES (
+                :name, :element, 'Amount',
+                'ANNUAL', '1',
+                'US Legislative Data Group', :descr,
+                :src, 'NEW'
+            )
+        """, {"name": name, "element": element, "descr": descr, "src": src},
+        label=label)
+    tag_scenario(cur, "DMT_SAL_BASIS_STG_TBL", scenario_id)
 
     # ====================================================================
     # 44. PAYROLL RELATIONSHIPS (HCM HDL) → PAY_PAY_RELATIONSHIPS_F. One row.

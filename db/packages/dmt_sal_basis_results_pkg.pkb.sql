@@ -18,7 +18,8 @@ AS
     -- and returns the parsed rows (no dynamic SQL, no TFM reference there); the
     -- APPLY here is STATIC SQL against the compile-time-known SalaryBases TFM table.
     -- It confirms each migrated salary basis in the Fusion base table
-    -- (CMP_SALARY_BASES) by its prefixed name and marks that SalaryBases TFM row
+    -- (CMP_SALARY_BASES), selected by the HDL request id and matched by the exact
+    -- SourceSystemId the generator wrote (TFM_SEQUENCE_ID), and marks that SalaryBases TFM row
     -- LOADED with the real Fusion salary basis id stamped into
     -- FUSION_SALARY_BASIS_ID; any ERROR row is marked FAILED with the real Fusion
     -- error. The HDL data set request id is the Contract v1 P_LOAD_REQUEST_ID.
@@ -34,9 +35,6 @@ AS
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
-        l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
-        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
-        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count is done statically here (not in the shared pkg),
         -- and drives the shared fetch's keyset page-count cap.
@@ -73,79 +71,23 @@ AS
                 p_procedure => C_PROC);
         ELSE
             FOR i IN 1 .. l_rows.COUNT LOOP
-                l_rc   := 0;     -- backlog #65: reset per row so a prior row's tier
-                l_tier := NULL;  -- cannot mislabel this row's audit log line.
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                    AND l_rows(i).FUSION_ID IS NOT NULL THEN
                     -- Positive proof: salary basis found in CMP_SALARY_BASES with a
-                    -- real id. The ONLY path to LOADED.
-                    --
-                    -- Backlog #65 three-tier match (owner order on PR #481), mirroring
-                    -- DMT_WORKER_RESULTS_PKG. Tier 1 is the stamped Slot A reference
-                    -- (RECON_KEY = RECORD_KEY, exactly as before). Only if tier 1 matches
-                    -- NO TFM row do we fall through: tier 2 (the Slot C DFF stamp:
-                    -- TFM_SEQUENCE_ID = the trailing segment of DFF_KEY) -- for HDL
-                    -- SalaryBases there is NO DFF carrier so DFF_KEY is null and tier 2 is
-                    -- skipped -- and then tier 3 (the business key: SALARY_BASIS_NAME =
-                    -- BUSINESS_KEY, the SourceSystemId the report returns). Every tier-1
-                    -- hit short-circuits, so loaded outcomes are identical to before.
-                    -- Static UPDATEs.
+                    -- real id, by the request-id report (V2, backlog #292). The ONLY
+                    -- path to LOADED. Matched on the exact SourceSystemId the
+                    -- generator wrote (the row's own TFM_SEQUENCE_ID), never on
+                    -- RECON_KEY or the business name. Static UPDATE.
                     UPDATE DMT_SAL_BASIS_TFM_TBL
                     SET    TFM_STATUS             = 'LOADED',
                            FUSION_SALARY_BASIS_ID = l_rows(i).FUSION_ID,
                            RESULTS_UPDATED_DATE   = SYSDATE,
                            LAST_UPDATED_DATE      = SYSDATE
                     WHERE  RUN_ID    = p_run_id
-                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TO_CHAR(TFM_SEQUENCE_ID) = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                    l_rc := SQL%ROWCOUNT;
-                    l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
-
-                    -- Tier 2 (DFF): only when tier 1 matched nothing and a DFF stamp is
-                    -- present. HDL SalaryBases have no DFF carrier, so this is normally a
-                    -- no-op; kept uniform with the shared three-tier template.
-                    IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
-                        l_dff_seq := TO_NUMBER(
-                            REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
-                        IF l_dff_seq IS NOT NULL THEN
-                            UPDATE DMT_SAL_BASIS_TFM_TBL
-                            SET    TFM_STATUS             = 'LOADED',
-                                   FUSION_SALARY_BASIS_ID = l_rows(i).FUSION_ID,
-                                   RESULTS_UPDATED_DATE   = SYSDATE,
-                                   LAST_UPDATED_DATE      = SYSDATE
-                            WHERE  RUN_ID    = p_run_id
-                            AND    TFM_SEQUENCE_ID = l_dff_seq
-                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                            l_rc := SQL%ROWCOUNT;
-                            IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
-                        END IF;
-                    END IF;
-
-                    -- Tier 3 (business key): last resort, only when tiers 1 and 2 both
-                    -- matched nothing. The salary basis's business key is
-                    -- SALARY_BASIS_NAME, equal to the SourceSystemId the report returns
-                    -- as BUSINESS_KEY.
-                    IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
-                        UPDATE DMT_SAL_BASIS_TFM_TBL
-                        SET    TFM_STATUS             = 'LOADED',
-                               FUSION_SALARY_BASIS_ID = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE   = SYSDATE,
-                               LAST_UPDATED_DATE      = SYSDATE
-                        WHERE  RUN_ID    = p_run_id
-                        AND    SALARY_BASIS_NAME = l_rows(i).BUSINESS_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_rc := SQL%ROWCOUNT;
-                        IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
-                    END IF;
-
-                    l_loaded := l_loaded + l_rc;
-                    IF l_tier IN ('TIER2','TIER3') THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            C_PROC || ': matched a LOADED SalaryBasis via ' || l_tier ||
-                            ' fallback (tier 1 stamped ref did not resolve). SALARY_BASIS_ID '
-                            || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
-                    END IF;
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
 
                 ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
                       AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
@@ -159,7 +101,7 @@ AS
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID    = p_run_id
-                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    AND    TO_CHAR(TFM_SEQUENCE_ID) = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
 
@@ -209,11 +151,11 @@ AS
         l_request NUMBER := TO_NUMBER(p_request_id);
         l_failed  NUMBER := 0;
     BEGIN
-        -- DMT_SAL_BASIS_TFM_TBL: SourceSystemId = SALARY_BASIS_NAME
+        -- DMT_SAL_BASIS_TFM_TBL: SourceSystemId = TO_CHAR(TFM_SEQUENCE_ID) (backlog #292)
         UPDATE DMT_SAL_BASIS_TFM_TBL t
         SET    t.TFM_STATUS           = 'FAILED',
                t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
-                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id, t.SALARY_BASIS_NAME)),
+                                            DMT_HDL_UTIL_PKG.ROW_ERRORS(p_request_id, TO_CHAR(t.TFM_SEQUENCE_ID))),
                t.RESULTS_UPDATED_DATE = SYSDATE,
                t.LAST_UPDATED_DATE    = SYSDATE
         WHERE  t.RUN_ID     = p_run_id
@@ -221,7 +163,7 @@ AS
         AND    EXISTS (SELECT 1
                        FROM   DMT_HDL_MESSAGE_GTT m
                        WHERE  m.REQUEST_ID       = l_request
-                       AND    m.SOURCE_SYSTEM_ID IN (t.SALARY_BASIS_NAME));
+                       AND    m.SOURCE_SYSTEM_ID = TO_CHAR(t.TFM_SEQUENCE_ID));
         l_failed := l_failed + SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(

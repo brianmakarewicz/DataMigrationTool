@@ -101,8 +101,14 @@ AS
                 AND    t.TFM_STATUS = 'STAGED'
                 ORDER BY t.TFM_SEQUENCE_ID
             ) LOOP
+                -- SourceSystemId = this TFM row's own TFM_SEQUENCE_ID (backlog #292):
+                -- unique per DMT instance because the SourceSystemOwner is per
+                -- instance (#287), and the exact value the request-id proof report
+                -- returns as RECORD_KEY and the HDL messages name. The prefixed
+                -- SalaryBasisName stays the business key (Salaries reference the
+                -- basis by name, never by this id).
                 l_vals := l_sso                              || '|' ||
-                          pv(r.SALARY_BASIS_NAME)            || '|' ||  -- SourceSystemId = name
+                          TO_CHAR(r.TFM_SEQUENCE_ID)         || '|' ||
                           pv(r.SALARY_BASIS_NAME)            || '|' ||
                           pv(r.ELEMENT_NAME)                 || '|' ||
                           pv(r.INPUT_VALUE_NAME)             || '|' ||

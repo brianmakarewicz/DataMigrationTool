@@ -459,22 +459,25 @@ commit;
 -- DMT_RECON_CONTRACT_PKG.FETCH_ROWS. Kept in its own MERGE so this block also
 -- converges the Contract v1 columns on an existing row. HDL load = no interface
 -- table (INTERFACE_TABLE = 'N/A (HDL)'); reconciliation is base-tier only from
--- CMP_SALARY_BASES. RECON_KEY = the prefixed SALARY_BASIS_NAME (also the .dat
--- SourceSystemId and the report RECORD_KEY).
+-- CMP_SALARY_BASES. V2 (2026-10-08, backlog #292): rows selected by the HDL
+-- request id; the report RECORD_KEY is the .dat SourceSystemId, which is the TFM
+-- row's TFM_SEQUENCE_ID (the prefixed SALARY_BASIS_NAME stays the business key).
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000029                                                  bip_report_id,
            'SalaryBases'                                              cemli_code,
            'Salary Basis'                                             object_type,
-           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                interface_table,
-           'Salary basis HDL base-table reconciliation (Contract v1)' notes,
+           'Salary basis HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #292): '
+             || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
+             || 'salary basis confirmed in CMP_SALARY_BASES. Deployed alongside V1, never overwriting it.' notes,
            1                                                          contract_version,
            'DMT_SAL_BASIS_TFM_TBL'                                    tfm_table,
            'FUSION_SALARY_BASIS_ID'                                   fusion_id_column,
-           'DMT_UTIL_PKG.PREFIXED(run_prefix, SALARY_BASIS_NAME, 240) -- prefixed salary basis name' recon_key_sql
+           'TO_CHAR(TFM_SEQUENCE_ID) -- the .dat SourceSystemId'      recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
