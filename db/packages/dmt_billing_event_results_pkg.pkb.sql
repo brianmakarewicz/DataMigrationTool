@@ -9,7 +9,8 @@ AS
 -- Tier 1: BIP query on PJB_BILLING_EVENTS_INT (interface table)
 --         Always purged after import — will rarely return rows.
 -- Tier 2: BIP query on PJB_BILLING_EVENTS (base table)
---         Catches successfully LOADED rows via prefix-based SOURCEREF match.
+--         Catches successfully LOADED rows by the import job's REQUEST_ID
+--         (report V2, 2026-10-07); SOURCEREF only matches a row to its TFM row.
 -- Tier 3: Import Report XML from ImportBillingEventReportJob ESS output.
 --         Contains G_6 (full interface snapshot per row) + G_7 (per-row errors).
 --         Primary error source since interface table is always purged.
@@ -21,6 +22,12 @@ AS
 --   4. Parse G_6 + G_7: match SOURCEREF → TFM, mark LOADED or FAILED.
 --   5. Sweep: remaining GENERATED → FAILED with RECONCILE_ERROR.
 --   6. Echo outcomes to STG.
+--
+-- REVISIONS:
+--   2026-10-07  BM  Report V2: called per work item with its own load id as
+--                   P_LOAD_REQUEST_ID and import id as P_IMPORT_ESS_ID (the
+--                   load id was the import id before); rows found by job id,
+--                   never by the run prefix.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_BILLING_EVENT_RESULTS_PKG';
@@ -503,7 +510,7 @@ AS
     -- template from PR #363 and the Worker template DMT_WORKER_RESULTS_PKG).
     --
     -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the BillingEvents
-    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and
+    -- nine-column recon report over BIP (keyset paged, job-id scoped) and
     -- returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
     -- here is STATIC SQL against the compile-time-known BillingEvents TFM table:
     --   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID into
@@ -528,8 +535,9 @@ AS
     -- defer to the report harvest for the human-readable reason.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_BILLING_EVENTS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_request_id    IN VARCHAR2,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_BILLING_EVENTS';
         l_gen_count NUMBER := 0;
@@ -547,13 +555,19 @@ AS
         FROM   DMT_PJB_BILL_EVENTS_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
+        -- Report V2 (owner decision 2026-10-07) finds rows only by this work
+        -- item's Fusion job ids: base events by the import job's REQUEST_ID
+        -- (P_IMPORT_ESS_ID), interface rows by the load job's LOAD_REQUEST_ID
+        -- (P_LOAD_REQUEST_ID). One load = one Import Billing Events job, so the
+        -- report is called once per work item with that item's own ids.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -707,7 +721,6 @@ AS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
         l_xml       XMLTYPE;
         l_err_code  NUMBER;
-        l_prefix    VARCHAR2(30);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -722,23 +735,15 @@ AS
         -- the ONLY path to LOADED (a real base-table row). It runs FIRST so a
         -- genuinely-costed row is confirmed before the interface/import-report
         -- harvest below looks at what is left. Rows already terminal are untouched.
-        -- The load ESS id feeds the report's LOAD_REQUEST_ID; run-scoped row
-        -- selection is by the stamped prefix (see the DM header). ERROR rows carry
+        -- The load ESS id feeds the report's P_LOAD_REQUEST_ID and the import ESS
+        -- id its P_IMPORT_ESS_ID; rows are found only by those job ids, never by
+        -- the run prefix (see the DM header). ERROR rows carry
         -- the '#IMPORT_REPORT#' marker as a genuine FAILED here; the real per-row
         -- text is harvested from the import report XML by PARSE_AND_UPDATE (Tier 3).
         APPLY_CONTRACT_V1_BILLING_EVENTS(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
-
-        -- Prefix for the report's Tier 2 base-table match (P_PREFIX).
-        BEGIN
-            SELECT PREFIX INTO l_prefix
-            FROM   DMT_PIPELINE_RUN_TBL
-            WHERE  RUN_ID = p_run_id;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                l_prefix := NULL;
-        END;
+            p_run_id        => p_run_id,
+            p_request_id    => TO_CHAR(p_load_ess_id),
+            p_import_ess_id => p_import_ess_id);
 
         -- Shared transport: builds the runReport envelope, posts, checks the SOAP
         -- fault, decodes <reportBytes> and returns the parsed XMLTYPE (NULL on zero
@@ -748,9 +753,10 @@ AS
         DMT_UTIL_PKG.RUN_BIP_REPORT(
             p_run_id     => p_run_id,
             p_cemli_code => C_CEMLI,
-            p_params     => 'P_BATCH_ID|' || TO_CHAR(p_load_ess_id) ||
-                            '~P_IMPORT_ESS_ID|' || NVL(TO_CHAR(p_import_ess_id), '') ||
-                            '~P_PREFIX|' || NVL(l_prefix, ''),
+            -- Same report, same job-id parameters as the Contract v1 fetch above
+            -- (the retired P_BATCH_ID and the run prefix are no longer sent).
+            p_params     => 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
+                            '~P_IMPORT_ESS_ID|' || NVL(TO_CHAR(p_import_ess_id), ''),
             x_report_xml => l_xml,
             x_error_code => l_err_code);
 

@@ -17,24 +17,10 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|Assets|DMT_FA_ASSET_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/Assets/query.sql does not match the SQL of the deployed DMT_FA_ASSET_RECON_DM.xdm (query.sql names: DMT_FA_ASSET_RECON_DM)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
       "key": "BIP-MIRROR|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
       "backlog": 216,
       "found": "2026-10-07",
       "detail": "registered data model bip/BenBeneficiary/DMT_BENBENEFICIARY_RECON_DM.xdm does not exist in the repo (registry/deploy name and file name disagree)"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR|BlanketPOs|DMT_BLANKET_PO_RECON_DM",
-      "backlog": 215,
-      "found": "2026-10-07",
-      "detail": "bip/BlanketPOs/query.sql does not match the SQL of the deployed DMT_BLANKET_PO_RECON_DM.xdm (query.sql names: none)"
     },
     {
       "checker": "check_bip_recon_reports",
