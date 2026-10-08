@@ -47,12 +47,18 @@
     --     queryable the instant after createFileDataSet returns — would be recorded
     --     as a scary ERROR even though the next poll 30s later succeeds on the same
     --     URL (backlog #156). Every other caller keeps loud ERROR logging.
+    -- Every routine below that reaches Fusion takes p_cemli_code: the HCM
+    -- object's CEMLI code. The Fusion user comes from
+    -- DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code) -- hcm_impl via the
+    -- object's DMT_ERP_INTERFACE_OPTIONS_TBL row (backlog #309). A NULL
+    -- p_cemli_code raises -20060 rather than silently using the default user.
     FUNCTION REST_HTTP (
         p_url              IN VARCHAR2,
         p_method           IN VARCHAR2 DEFAULT 'GET',    -- GET or POST
         p_body             IN CLOB     DEFAULT NULL,     -- JSON body for POST
         p_run_id   IN NUMBER   DEFAULT NULL,
-        p_log_errors       IN BOOLEAN  DEFAULT TRUE
+        p_log_errors       IN BOOLEAN  DEFAULT TRUE,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     ) RETURN CLOB;
 
     -- --------------------------------------------------------
@@ -63,7 +69,8 @@
         p_run_id IN NUMBER,
         p_hdl_zip        IN BLOB,
         p_filename       IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     ) RETURN VARCHAR2;
 
     -- --------------------------------------------------------
@@ -74,7 +81,8 @@
         p_run_id IN NUMBER,
         p_content_id     IN VARCHAR2,
         p_dataset_name   IN VARCHAR2 DEFAULT NULL,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     ) RETURN VARCHAR2;
 
     -- --------------------------------------------------------
@@ -87,7 +95,8 @@
         p_timeout_sec     IN NUMBER   DEFAULT 1800,
         p_raise_on_error  IN BOOLEAN  DEFAULT FALSE,
         p_log_context     IN VARCHAR2 DEFAULT NULL,
-        x_dataset_status  OUT VARCHAR2   -- ORA_COMPLETED / ORA_IN_ERROR / ORA_STOPPED / EXPIRED
+        x_dataset_status  OUT VARCHAR2,  -- ORA_COMPLETED / ORA_IN_ERROR / ORA_STOPPED / EXPIRED
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     );
 
     -- --------------------------------------------------------
@@ -97,7 +106,8 @@
     FUNCTION GET_HDL_ERRORS (
         p_run_id IN NUMBER,
         p_request_id     IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     ) RETURN CLOB;
 
     -- --------------------------------------------------------
@@ -136,7 +146,8 @@
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,  -- ORA_COMPLETED / ORA_IN_ERROR from POLL_HDL
         p_log_context     IN VARCHAR2 DEFAULT NULL,
         p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
-        p_defer_base_proof IN BOOLEAN DEFAULT FALSE
+        p_defer_base_proof IN BOOLEAN DEFAULT FALSE,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     );
 
     -- --------------------------------------------------------
@@ -173,7 +184,8 @@
     PROCEDURE LOOKUP_FUSION_IDS (
         p_run_id IN NUMBER,
         p_object_type    IN VARCHAR2,   -- 'Worker', 'Assignment', 'Salary'
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL   -- the object's CEMLI: picks its central Fusion user (backlog #309); required
     );
 
 END DMT_HDL_UTIL_PKG;

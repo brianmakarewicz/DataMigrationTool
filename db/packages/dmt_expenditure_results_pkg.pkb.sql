@@ -209,7 +209,7 @@ AS
                     l_ir_xml    CLOB;
                 BEGIN
                     BEGIN
-                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
                     EXCEPTION
                         WHEN OTHERS THEN
                             DMT_UTIL_PKG.LOG(
@@ -408,7 +408,7 @@ AS
                         p_procedure      => C_PROC);
 
                     BEGIN
-                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
                     EXCEPTION
                         WHEN OTHERS THEN
                             DMT_UTIL_PKG.LOG(
@@ -476,7 +476,7 @@ AS
         IF p_import_ess_id IS NOT NULL THEN
             DECLARE l_ir2 CLOB; l_h NUMBER;
             BEGIN
-                l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_import_ess_id);
+                l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
                 IF l_ir2 IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir2) > 0 THEN
                     -- Only rows with a REAL Fusion message (MESSAGE_NAME_10) are a
                     -- verdict. A G_STAG_ERR row with no message is NOT stamped FAILED;

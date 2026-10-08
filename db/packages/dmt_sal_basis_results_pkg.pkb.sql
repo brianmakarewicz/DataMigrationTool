@@ -221,7 +221,8 @@ AS
             p_key_column       => 'SALARY_BASIS_NAME',
             p_dataset_status   => p_dataset_status,
             p_log_context      => C_CEMLI || ' > SalaryBasis',
-            p_defer_base_proof => TRUE);
+            p_defer_base_proof => TRUE,
+            p_cemli_code     => C_CEMLI);
 
         -- Contract v1 base-tier positive proof (design section 5), Option A shape:
         -- the shared package fetches the parsed report rows (no dynamic SQL, no TFM

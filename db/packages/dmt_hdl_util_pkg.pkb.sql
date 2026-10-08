@@ -7,22 +7,26 @@
 -- ============================================================
 
     -- --------------------------------------------------------
-    -- Private: get Basic auth header value
+    -- Private: Basic auth header for an HCM object's HDL calls.
+    -- The user comes from the central resolver (backlog #309): the object's
+    -- DMT_ERP_INTERFACE_OPTIONS_TBL row (hcm_impl for every HCM CEMLI -- it
+    -- holds the HCM Data Loader role; fin_impl gets HTTP 403 on uploadFile).
+    -- The same user uploads, submits, polls and fetches errors, and it is the
+    -- user RUN_PREFLIGHT verifies. A call without its CEMLI code raises rather
+    -- than silently falling back to the default user.
     -- --------------------------------------------------------
-    FUNCTION get_auth RETURN VARCHAR2 IS
-        l_user VARCHAR2(200);
-        l_pass VARCHAR2(200);
+    FUNCTION get_auth (p_cemli_code IN VARCHAR2) RETURN VARCHAR2 IS
+        l_user VARCHAR2(500);
+        l_pass VARCHAR2(500);
     BEGIN
-        -- HCM REST uses a separate user (hcm_impl) that has HCM Data Loader role.
-        -- Falls back to FUSION_USERNAME/FUSION_PASSWORD if HCM keys not set.
-        l_user := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_USERNAME'),
-                      DMT_UTIL_PKG.GET_CONFIG('FUSION_USERNAME'));
-        l_pass := NVL(DMT_UTIL_PKG.GET_CONFIG('HCM_PASSWORD'),
-                      DMT_UTIL_PKG.GET_CONFIG('FUSION_PASSWORD'));
-
-        RETURN 'Basic ' || UTL_RAW.CAST_TO_VARCHAR2(
-            UTL_ENCODE.BASE64_ENCODE(
-                UTL_RAW.CAST_TO_RAW(l_user || ':' || l_pass)));
+        IF p_cemli_code IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20060,
+                'DMT_HDL_UTIL_PKG: an HDL call needs its object''s CEMLI code to pick the Fusion user.');
+        END IF;
+        DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                           x_username   => l_user,
+                                           x_password   => l_pass);
+        RETURN DMT_UTIL_PKG.BASIC_AUTH_HEADER(p_username => l_user, p_password => l_pass);
     END get_auth;
 
     -- --------------------------------------------------------
@@ -60,7 +64,8 @@
         p_method           IN VARCHAR2 DEFAULT 'GET',
         p_body             IN CLOB     DEFAULT NULL,
         p_run_id   IN NUMBER   DEFAULT NULL,
-        p_log_errors       IN BOOLEAN  DEFAULT TRUE
+        p_log_errors       IN BOOLEAN  DEFAULT TRUE,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_req       UTL_HTTP.REQ;
         l_resp      UTL_HTTP.RESP;
@@ -74,7 +79,7 @@
         UTL_HTTP.SET_TRANSFER_TIMEOUT(600);
 
         l_req := UTL_HTTP.BEGIN_REQUEST(p_url, p_method, 'HTTP/1.1');
-        UTL_HTTP.SET_HEADER(l_req, 'Authorization', get_auth());
+        UTL_HTTP.SET_HEADER(l_req, 'Authorization', get_auth(p_cemli_code));
 
         IF p_method = 'POST' AND p_body IS NOT NULL THEN
             UTL_HTTP.SET_HEADER(l_req, 'Content-Type', 'application/vnd.oracle.adf.action+json');
@@ -135,7 +140,8 @@
         p_run_id IN NUMBER,
         p_hdl_zip        IN BLOB,
         p_filename       IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         l_url       VARCHAR2(500);
         l_b64       CLOB;
@@ -180,7 +186,7 @@
             p_url            => l_url,
             p_method         => 'POST',
             p_body           => l_body,
-            p_run_id => p_run_id);
+            p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
         DBMS_LOB.FREETEMPORARY(l_body);
 
@@ -216,7 +222,8 @@
         p_run_id IN NUMBER,
         p_content_id     IN VARCHAR2,
         p_dataset_name   IN VARCHAR2 DEFAULT NULL,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         l_url        VARCHAR2(500);
         l_body       CLOB;
@@ -239,7 +246,7 @@
             p_url            => l_url,
             p_method         => 'POST',
             p_body           => l_body,
-            p_run_id => p_run_id);
+            p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
         -- Parse RequestId from JSON: {"result":{"Status":"SUCCESS","RequestId":"107468"}}
         l_request_id := REGEXP_SUBSTR(l_response, '"RequestId"\s*:\s*"([^"]+)"', 1, 1, NULL, 1);
@@ -280,7 +287,8 @@
         p_timeout_sec     IN NUMBER   DEFAULT 1800,
         p_raise_on_error  IN BOOLEAN  DEFAULT FALSE,
         p_log_context     IN VARCHAR2 DEFAULT NULL,
-        x_dataset_status  OUT VARCHAR2
+        x_dataset_status  OUT VARCHAR2,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) IS
         l_url       VARCHAR2(500);
         l_response  CLOB;
@@ -312,7 +320,7 @@
                     p_url            => l_url,
                     p_method         => 'GET',
                     p_run_id => p_run_id,
-                    p_log_errors     => FALSE);
+                    p_log_errors     => FALSE, p_cemli_code => p_cemli_code);
                 l_status := REGEXP_SUBSTR(l_response, '"DataSetStatusCode"\s*:\s*"([^"]+)"', 1, 1, NULL, 1);
             EXCEPTION
                 WHEN OTHERS THEN
@@ -382,7 +390,8 @@
     FUNCTION GET_HDL_ERRORS (
         p_run_id IN NUMBER,
         p_request_id     IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB IS
         l_url      VARCHAR2(500);
         l_response CLOB;
@@ -398,7 +407,7 @@
         l_response := REST_HTTP(
             p_url            => l_url,
             p_method         => 'GET',
-            p_run_id => p_run_id);
+            p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
         DMT_UTIL_PKG.LOG(p_run_id,
             'GET_HDL_ERRORS complete. Response length: ' || DBMS_LOB.GETLENGTH(l_response),
@@ -428,7 +437,8 @@
         p_dataset_status  IN VARCHAR2 DEFAULT NULL,
         p_log_context     IN VARCHAR2 DEFAULT NULL,
         p_key_suffixes    IN VARCHAR2 DEFAULT NULL,
-        p_defer_base_proof IN BOOLEAN DEFAULT FALSE
+        p_defer_base_proof IN BOOLEAN DEFAULT FALSE,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) IS
         l_json      CLOB;
         l_proc      VARCHAR2(100) := NVL(p_log_context, '') || ' > RECONCILE_HDL';
@@ -497,7 +507,7 @@
         END IF;
 
         -- Step 1: Get error messages and mark failed rows
-        l_json := GET_HDL_ERRORS(p_run_id, p_request_id, p_log_context);
+        l_json := GET_HDL_ERRORS(p_run_id, p_request_id, p_log_context, p_cemli_code => p_cemli_code);
 
         BEGIN
             EXECUTE IMMEDIATE
@@ -587,7 +597,7 @@
             l_ds_resp := REST_HTTP(
                 p_url    => get_url() || C_HCM_REST_PATH || '/' || p_request_id,
                 p_method => 'GET',
-                p_run_id => p_run_id);
+                p_run_id => p_run_id, p_cemli_code => p_cemli_code);
             l_load_succ := TO_NUMBER(
                 REGEXP_SUBSTR(l_ds_resp, '"ObjectSuccessCount"\s*:\s*([0-9]+)', 1, 1, NULL, 1));
         EXCEPTION
@@ -794,7 +804,8 @@
     PROCEDURE LOOKUP_FUSION_IDS (
         p_run_id IN NUMBER,
         p_object_type    IN VARCHAR2,
-        p_log_context    IN VARCHAR2 DEFAULT NULL
+        p_log_context    IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code       IN VARCHAR2 DEFAULT NULL
     ) IS
         l_proc      VARCHAR2(100) := NVL(p_log_context, '') || ' > LOOKUP_FUSION_IDS';
         l_base_url  VARCHAR2(500);
@@ -1025,7 +1036,7 @@
                     l_response := REST_HTTP(
                         p_url            => l_url,
                         p_method         => 'GET',
-                        p_run_id => p_run_id);
+                        p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
                     -- Parse PersonId from JSON: {"items":[{"PersonId":300000012345678,...}]}
                     l_person_id := TO_NUMBER(
@@ -1079,7 +1090,7 @@
                     l_response := REST_HTTP(
                         p_url            => l_url,
                         p_method         => 'GET',
-                        p_run_id => p_run_id);
+                        p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
                     -- The generator emits the assignment's AssignmentNumber as
                     -- the RAW source value (DMT_ASSIGNMENT_HDL_GEN_PKG uses
@@ -1158,7 +1169,7 @@
                     l_response := REST_HTTP(
                         p_url            => l_url,
                         p_method         => 'GET',
-                        p_run_id => p_run_id);
+                        p_run_id => p_run_id, p_cemli_code => p_cemli_code);
 
                     -- Parse SalaryId from the first salary child
                     l_salary_id := TO_NUMBER(
@@ -1210,7 +1221,7 @@
 
                     l_url := l_base_url || '/' || r.FUSION_PERSON_ID ||
                              '/child/workRelationships?fields=PayrollRelationshipId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(
                         JSON_VALUE(l_response, '$.items[0].PayrollRelationshipId'));
 
@@ -1251,7 +1262,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/talentProfiles' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=ProfileId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ProfileId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_TALENT_PROF_TFM_TBL
@@ -1288,7 +1299,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/absences' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=PersonAbsenceEntryId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].PersonAbsenceEntryId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_ABSENCE_TFM_TBL
@@ -1325,7 +1336,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/payrollDeductionCards' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=DeductionCardId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DeductionCardId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_TAX_CARD_TFM_TBL
@@ -1361,7 +1372,7 @@
                              cr.FUSION_DIR_CARD_ID || '/child/cardComponents' ||
                              '?q=ComponentName=''' || UTL_URL.ESCAPE(REPLACE(cr.COMPONENT_NAME, '''', ''''''), TRUE) || '''' ||
                              '&fields=CardComponentId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].CardComponentId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_TAX_CARD_COMP_TFM_TBL
@@ -1399,7 +1410,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/balances' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=BalanceId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BalanceId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_W2_BAL_TFM_TBL
@@ -1435,7 +1446,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/workScheduleAssignments' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=WorkScheduleId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].WorkScheduleId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_WORK_SCHED_TFM_TBL
@@ -1471,7 +1482,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/performanceRatings' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=EvaluationId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].EvaluationId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_PERF_EVAL_TFM_TBL
@@ -1507,7 +1518,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/participantEnrollments' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=ParticipantId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].ParticipantId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_BEN_PARTIC_TFM_TBL
@@ -1543,7 +1554,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/beneficiaries' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=BeneficiaryId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].BeneficiaryId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_BEN_BENFY_TFM_TBL
@@ -1579,7 +1590,7 @@
                     l_url := get_url() || 'hcmRestApi/resources/11.13.18.05/dependents' ||
                              '?q=PersonId=' || r.FUSION_PERSON_ID ||
                              '&fields=DependentId&onlyData=true';
-                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id);
+                    l_response := REST_HTTP(p_url => l_url, p_method => 'GET', p_run_id => p_run_id, p_cemli_code => p_cemli_code);
                     l_fusion_id := TO_NUMBER(JSON_VALUE(l_response, '$.items[0].DependentId'));
                     IF l_fusion_id IS NOT NULL THEN
                         UPDATE DMT_BEN_DEPEND_TFM_TBL
