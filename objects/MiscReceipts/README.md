@@ -48,10 +48,35 @@ their sequences were dropped in backlog #25
 - `RcvTransactionsInterface.ctl` -- CTL file for RCV_TRANSACTIONS_INTERFACE loader
 
 ## BIP Artifacts
-- Data Model: `bip/MiscReceipts/MISC_RECEIPT_DM.xdm`
-- Report: `bip/MiscReceipts/MISC_RECEIPT_RPT.xdo`
-- Query: `bip/MiscReceipts/query.sql`
-- Deployed to `/Custom/DMT/MiscReceipts/`
+- Reconciliation data model (registered): `bip/MiscReceipts/DMT_INV_TRX_RECON_V2_DM.xdm`
+  + `DMT_INV_TRX_RECON_V2_RPT.xdo`, deployed to `/Custom/DMT2/MiscReceipts/` alongside V1
+  (`DMT_INV_TRX_RECON_DM`, never overwritten). `bip/MiscReceipts/query.sql` mirrors V2.
+- Legacy: `MISC_RECEIPT_DM.xdm` / `MISC_RECEIPT_RPT.xdo` (not registered).
+
+## Reconciliation by Fusion job id (recon V2, 2026-10-07, backlog #262)
+
+V2 finds rows only by the work item's Fusion load job id:
+
+- Posted transactions: `INV_MATERIAL_TXNS.LOAD_REQUEST_ID` = the load job.
+- Rejections: `INV_TRANSACTIONS_INTERFACE.LOAD_REQUEST_ID` = the load job and
+  `PROCESS_FLAG = 3` (the real error is inline on the row).
+- Serials: `INV_SERIAL_NUMBERS` whose `LAST_TRANSACTION_ID` is a transaction of that load.
+
+Why the load id and not the import id: the work item records the `PollTMEssJob` request it
+submits as its import id, but Fusion stamps `REQUEST_ID` on the transactions with the
+`SingleTMEssJob` child that `PollTMEssJob` spawns (run 272: recorded 10075703, rows stamped
+10075704, parent 10075703). `PollTMEssJob` also processes every pending interface row on the
+pod, not only this load's. `LOAD_REQUEST_ID` is kept on both the posted and the rejected rows
+and is exact per work item. V1 selected rows by the `'DMT-' || run id` transaction reference;
+that is gone, and `SOURCE_LINE_ID` / the serial number are only the `RECORD_KEY`.
+
+Proof run 272 (prefix 93328, scenario RegressionTest2610071920, STANDALONE:MiscReceipts):
+load 10075692 is the `LOAD_REQUEST_ID` on all four transactions in Fusion. Same result as run
+238: three receipts LOADED (with the lot and both serials), FAKE-ITEM-REGRESSION-BAD FAILED
+with Fusion's own `INV_INVALID_ITEM` error, 0 UNACCOUNTED, quantity 11 staged = 10 loaded + 1
+failed (the rows carry no cost). A reconcile-only rerun left every TFM row byte-identical;
+regression harness 0 failures (its only review items are the pre-existing "no REST lookup
+configured" notes for this object); Playwright click-through PASS.
 
 ## Status
 WIRED INTO PIPELINE. Code built. Now in P2P scheduler sequence (last position).

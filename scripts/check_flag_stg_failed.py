@@ -35,13 +35,58 @@ EXEMPT (declared, NOT CHECKED here — a green run stays honest):
     out of scope and has no row in dmt_cemli_catalog_tbl.sql, so there is no catalog
     SUB_OBJECT to key the helper on. Excluded until PlanningBudgets is in scope.
 
-Exit code 0 = all REQUIRED packages conform; non-zero = at least one failure.
+PART 2 -- NO RECONCILE / FUSION OUTCOME WRITTEN BACK TO STG (rule STG-WRITEBACK)
+-------------------------------------------------------------------------------
+DMT_DESIGN.html section 7 ("STG rows carry status only, never an error message";
+"Reporting derives success from TFM ... never from STG"; the STG-status rule that
+names "the illegal staging write-back"). The outcome of a load lives on the TFM row,
+which is run-stamped. STG has no RUN_ID, so an outcome copied onto it cannot be tied
+to a run, is overwritten by the next run, and (when ERROR_TEXT is appended) grows on
+every reconcile rerun -- the Requisitions defect found in PR #627.
+
+The only STG writes the pipeline may make are pre-TFM: the pre-validation flag
+(FLAG_STG_FAILED / the inline validator rule UPDATEs), the transformer's
+NEW -> TRANSFORMED / transform-failure marks, and the CSV upload's SCENARIO_ID stamp.
+
+Every UPDATE of a *_STG_TBL in db/packages/*.pkb.sql -- static SQL, and dynamic SQL
+built as 'UPDATE ' || <variable whose name contains STG> -- is a WRITE-BACK when ANY
+of these holds:
+  a. it sets STG_STATUS to a load-outcome value ('LOADED', 'GENERATED',
+     'UNACCOUNTED');
+  b. it sets STG_STATUS from a sub-select (copying TFM_STATUS);
+  c. it reads TFM_STATUS anywhere (its rows or values are chosen by a TFM load
+     outcome -- e.g. "STG_STATUS='FAILED' WHERE ... TFM_STATUS='FAILED'");
+  d. it sets a FUSION_* column, REQUEST_ID or LOAD_REQUEST_ID (Fusion ids);
+  e. it sets ERROR_TEXT from a *_TFM_TBL sub-select;
+  f. it lives in a reconcile package (any *_results_pkg, dmt_hdl_util_pkg,
+     dmt_recon_engine_pkg, dmt_recon_contract_pkg, dmt_queue_worker_pkg,
+     dmt_loader_pkg) -- those packages run after the load and have no pre-TFM
+     reason to touch STG at all.
+Comments are stripped first, so prose that mentions an old write-back cannot trip it.
+
+Key (stable, no line numbers):
+    STG-WRITEBACK|<package>|<procedure>|<STG table or dynamic variable>|<SET columns>
+Every write-back that existed when the rule was introduced is listed in
+scripts/standards_known_violations.json under checker "check_flag_stg_failed", tied
+to the backlog item that removes it. Only a NEW write-back fails the run; a listed one
+that disappears is reported RESOLVED (delete its entry).
+
+NOT CHECKED: MERGE INTO a *_STG_TBL (none exist today), writes from outside
+db/packages, and dynamic SQL whose target-table variable name does not contain "STG".
+
+Exit code 0 = all REQUIRED packages conform AND no NEW write-back; non-zero otherwise.
 Run from the repo root:  python scripts/check_flag_stg_failed.py
 """
 
+import glob
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import standards_known_violations as known          # noqa: E402
+
+CHECKER = "check_flag_stg_failed"
 
 PKG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        "db", "packages")
@@ -192,6 +237,184 @@ def check_pkg(base):
     return fails
 
 
+# ---------------------------------------------------------------------------
+# PART 2 -- STG-WRITEBACK
+# ---------------------------------------------------------------------------
+
+# Packages that run after the load; any STG UPDATE in them is a write-back (rule f).
+RECONCILE_PKG_RE = re.compile(
+    r"^(dmt_\w+_results_pkg|dmt_hdl_util_pkg|dmt_recon_engine_pkg|"
+    r"dmt_recon_contract_pkg|dmt_queue_worker_pkg|dmt_loader_pkg)$")
+
+STATIC_UPD_RE = re.compile(r"\bUPDATE\s+(?:DMT_OWNER\.)?(DMT_\w*_STG_TBL)\b", re.I)
+DYNAMIC_UPD_RE = re.compile(r"'\s*UPDATE\s*'\s*\|\|\s*(\w*STG\w*)", re.I)
+PROC_RE = re.compile(r"^\s*(?:PROCEDURE|FUNCTION)\s+(\w+)", re.I | re.M)
+
+
+def _strip_comments_keep_lines(text):
+    """Blank out -- and /* */ comments (outside string literals), keeping every
+    newline so line numbers still match the file."""
+    out = []
+    i, n = 0, len(text)
+    in_str = False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "'":
+                in_str = False
+            i += 1
+            continue
+        if c == "'":
+            in_str = True
+            out.append(c)
+            i += 1
+        elif text.startswith("--", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r"[^\n]", " ", text[i:j]))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _stmt_end(text, start):
+    """Index of the ';' that ends the statement starting at start (outside quotes)."""
+    in_str = False
+    for k in range(start, len(text)):
+        c = text[k]
+        if c == "'":
+            in_str = not in_str
+        elif c == ";" and not in_str:
+            return k
+    return len(text)
+
+
+def _split_depth0(s, sep_re):
+    """Find the first depth-0 match of sep_re in s; return its start or -1."""
+    depth = 0
+    for k, c in enumerate(s):
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif depth == 0:
+            m = sep_re.match(s, k)
+            if m and (k == 0 or not (s[k - 1].isalnum() or s[k - 1] == "_")):
+                return k
+    return -1
+
+
+def _set_assignments(stmt):
+    """Return [(column, rhs)] of the statement's SET clause (depth-0 commas)."""
+    m = re.search(r"\bSET\b", stmt, re.I)
+    if not m:
+        return []
+    body = stmt[m.end():]
+    w = _split_depth0(body, re.compile(r"WHERE\b", re.I))
+    if w >= 0:
+        body = body[:w]
+    parts, depth, cur = [], 0, []
+    for c in body:
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        if c == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+    parts.append("".join(cur))
+    out = []
+    for p in parts:
+        mm = re.match(r"\s*(?:\w+\.)?(\w+)\s*=\s*(.*)$", p, re.S)
+        if mm:
+            out.append((mm.group(1).upper(), mm.group(2).strip()))
+    return out
+
+
+def _proc_at(text, pos):
+    name = "<package>"
+    for m in PROC_RE.finditer(text, 0, pos):
+        name = m.group(1).upper()
+    return name
+
+
+def _classify(pkg, stmt):
+    """Return (set_signature, [reasons]) -- reasons empty means not a write-back."""
+    up = stmt.upper()
+    sets = _set_assignments(stmt)
+    reasons = []
+    sig = []
+    for col, rhs in sets:
+        if col == "LAST_UPDATED_DATE":
+            continue
+        rhs_u = rhs.upper()
+        if col == "STG_STATUS":
+            lit = re.match(r"'([A-Z_]+)'", rhs_u)
+            if lit:
+                sig.append("STG_STATUS=" + lit.group(1))
+                if lit.group(1) in ("LOADED", "GENERATED", "UNACCOUNTED"):
+                    reasons.append("sets STG_STATUS='%s' (a load outcome)" % lit.group(1))
+            elif rhs_u.startswith("("):
+                sig.append("STG_STATUS=<subselect>")
+                reasons.append("copies STG_STATUS from a sub-select (TFM outcome)")
+            else:
+                sig.append("STG_STATUS=<expr>")
+        else:
+            sig.append(col)
+            if col.startswith("FUSION_") or col in ("REQUEST_ID", "LOAD_REQUEST_ID"):
+                reasons.append("sets Fusion id column %s" % col)
+            if col == "ERROR_TEXT" and re.search(r"\w+_TFM_TBL\b", rhs_u):
+                reasons.append("copies ERROR_TEXT from a TFM row")
+    if re.search(r"\bTFM_STATUS\b", up):
+        reasons.append("is driven by TFM_STATUS (a load outcome)")
+    if RECONCILE_PKG_RE.match(pkg):
+        reasons.append("is in a reconcile package")
+    return ",".join(sig) or "<none>", reasons
+
+
+def scan_stg_writebacks(pkg_dir=PKG_DIR):
+    """Return [(key, message)] for every STG write-back in db/packages."""
+    found = []
+    seen = {}
+    for path in sorted(glob.glob(os.path.join(pkg_dir, "*.pkb.sql"))):
+        pkg = os.path.basename(path)[:-len(".pkb.sql")]
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = _strip_comments_keep_lines(fh.read())
+        hits = []
+        for m in STATIC_UPD_RE.finditer(text):
+            hits.append((m.start(), m.group(1).upper(), text[m.start():_stmt_end(text, m.start())]))
+        for m in DYNAMIC_UPD_RE.finditer(text):
+            # dynamic SQL: the literal quotes are doubled inside the string
+            end = _stmt_end(text, m.end())
+            raw = text[m.start():end]
+            stmt = re.sub(r"'\s*\|\|\s*'", "", raw).replace("''", "'")
+            stmt = re.split(r"\bUSING\b", stmt, flags=re.I)[0]
+            hits.append((m.start(), m.group(1).lower(), stmt))
+        for pos, target, stmt in sorted(hits):
+            sig, reasons = _classify(pkg, stmt)
+            if not reasons:
+                continue
+            line = text.count("\n", 0, pos) + 1
+            proc = _proc_at(text, pos)
+            base = "STG-WRITEBACK|%s|%s|%s|%s" % (pkg, proc, target, sig)
+            seen[base] = seen.get(base, 0) + 1
+            key = base if seen[base] == 1 else "%s#%d" % (base, seen[base])
+            msg = ("db/packages/%s.pkb.sql:%d %s.%s UPDATE %s SET %s -- %s"
+                   % (pkg, line, pkg.upper(), proc, target, sig, "; ".join(reasons)))
+            found.append((key, msg))
+    return found
+
+
 def main():
     print("FLAG_STG_FAILED conformance check")
     print("=" * 60)
@@ -214,12 +437,22 @@ def main():
     for base in EXEMPT:
         print("  EXEMPT  " + base)
 
+    print("\n" + "=" * 60)
+    print("STG-WRITEBACK: no reconcile / Fusion outcome written back to a *_STG_TBL")
+    wb = scan_stg_writebacks()
+    wb_rc = known.report(CHECKER, wb)
+
     print("=" * 60)
     if any_fail:
-        print("RESULT: FAIL — at least one required validator is missing/incorrect.")
+        print("RESULT: FAIL -- at least one required validator is missing/incorrect.")
+    if wb_rc:
+        print("RESULT: FAIL -- a NEW STG write-back exists (the load outcome belongs "
+              "on the TFM row only; see DMT_DESIGN.html section 7).")
+    if any_fail or wb_rc:
         return 1
-    print("RESULT: PASS — all %d required validators carry the standard "
-          "FLAG_STG_FAILED helper, byte-identical and COMMIT-free." % len(REQUIRED))
+    print("RESULT: PASS -- all %d required validators carry the standard "
+          "FLAG_STG_FAILED helper, byte-identical and COMMIT-free; no new STG "
+          "write-back." % len(REQUIRED))
     return 0
 
 

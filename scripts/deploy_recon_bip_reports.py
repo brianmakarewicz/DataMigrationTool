@@ -43,6 +43,10 @@ REPORTS = [
     # DMT_BLANKET_PO_RECON_DM (never overwritten).
     ("BlanketPOs",              "DMT_BLANKET_PO_RECON_V2_DM", "DMT_BLANKET_PO_RECON_V2_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
+    # Contracts V2 (2026-10-07, backlog #259): rows found only by the work
+    # item's Fusion job ids and the Contract document style. Deployed alongside
+    # DMT_CONTRACT_RECON_DM (never overwritten).
+    ("Contracts",               "DMT_CONTRACT_RECON_V2_DM", "DMT_CONTRACT_RECON_V2_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # rows by Fusion job id only, real Payables rejection text only (#166).
@@ -61,6 +65,10 @@ REPORTS = [
     ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
+    # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
+    # item's load job id (LOAD_REQUEST_ID). Deployed alongside
+    # DMT_INV_TRX_RECON_DM (never overwritten).
+    ("MiscReceipts",            "DMT_INV_TRX_RECON_V2_DM", "DMT_INV_TRX_RECON_V2_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
     # (never overwritten). Category tiers also match request_id = import ESS
     # id and carry MESSAGE_NAME + text from both EGP interface tables.
@@ -114,6 +122,10 @@ REPORTS = [
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
     # overwritten).
     ("PurchaseOrders",           "DMT_PO_RECON_V2_DM",         "DMT_PO_RECON_V2_RPT"),
+    # Expenditures V2 (2026-10-07, owner decision): rows found only by the work
+    # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
+    # the run prefix. Deployed alongside DMT_EXP_RECON_DM (never overwritten).
+    ("Expenditures",             "DMT_EXP_RECON_V2_DM",        "DMT_EXP_RECON_V2_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/

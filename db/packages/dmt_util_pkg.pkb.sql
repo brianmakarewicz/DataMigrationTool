@@ -37,7 +37,10 @@
 
     -- --------------------------------------------------------
     -- BASIC_AUTH_HEADER
-    -- Build Basic Auth header value; credentials default to config.
+    -- Build Basic Auth header value. The caller passes a user+password PAIR
+    -- (from GET_CEMLI_CREDENTIALS); passing neither means the run-scoped
+    -- default user, resolved by GET_CEMLI_CREDENTIALS(NULL). Passing only
+    -- one half raises -20002: halves are never mixed (backlog #309).
     -- UTL_ENCODE.BASE64_ENCODE inserts a CR/LF every 64 output chars
     -- (i.e. beyond a 48-byte user:password), which corrupted the header
     -- into multiple lines — strip all CR/LF from the encoded value.
@@ -47,15 +50,19 @@
         p_password IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         l_username  VARCHAR2(200);
-        l_password  VARCHAR2(200);
-        l_raw       RAW(600);
+        l_password  VARCHAR2(500);
+        l_raw       RAW(2000);
     BEGIN
-        l_username := NVL(p_username, GET_CONFIG('FUSION_USERNAME'));
-        l_password := NVL(p_password, GET_CONFIG('FUSION_PASSWORD'));
-
-        IF l_username IS NULL OR l_password IS NULL THEN
+        IF p_username IS NULL AND p_password IS NULL THEN
+            GET_CEMLI_CREDENTIALS(p_cemli_code => NULL,
+                                  x_username   => l_username,
+                                  x_password   => l_password);
+        ELSIF p_username IS NULL OR p_password IS NULL THEN
             RAISE_APPLICATION_ERROR(-20002,
-                'FUSION_USERNAME or FUSION_PASSWORD not set in DMT_CONFIG_TBL.');
+                'BASIC_AUTH_HEADER: a Fusion username and password must be passed together.');
+        ELSE
+            l_username := p_username;
+            l_password := p_password;
         END IF;
 
         l_raw := UTL_ENCODE.BASE64_ENCODE(
@@ -370,7 +377,7 @@
         -- (BIP v2 userID/password elements) suppress the Basic header.
         IF p_send_auth THEN
             -- p_auth_header lets a caller probe a SPECIFIC credential
-            -- (VERIFY_CREDENTIAL); NULL falls back to the global Basic header.
+            -- (VERIFY_CREDENTIAL); NULL = the default user from GET_CEMLI_CREDENTIALS(NULL).
             UTL_HTTP.SET_HEADER(l_req, 'Authorization', NVL(p_auth_header, basic_auth_header));
         END IF;
         UTL_HTTP.SET_HEADER(l_req, 'Content-Type',   p_content_type);
@@ -436,161 +443,6 @@
     END HTTP_REQUEST;
 
     -- --------------------------------------------------------
-    -- BIP_REQUEST
-    -- Fetches a BIP report via the Fusion xmlpserver REST API.
-    -- Endpoint: POST {FUSION_URL}/xmlpserver/services/rest/v1/reports
-    -- Response contains reportBytes as a base64-encoded CSV (or other format).
-    -- --------------------------------------------------------
-    PROCEDURE BIP_REQUEST (
-        p_report_path    IN  VARCHAR2,
-        p_params         IN  VARCHAR2    DEFAULT NULL,
-        p_output_format  IN  VARCHAR2    DEFAULT 'csv',
-        p_run_id IN  NUMBER      DEFAULT NULL,
-        x_report_data    OUT CLOB
-    ) IS
-        l_fusion_url    VARCHAR2(500);
-        l_bip_url       VARCHAR2(1000);
-        l_body          CLOB;
-        l_response      CLOB;
-        l_status_code   NUMBER;
-        l_params_json   CLOB;
-        l_param_token   VARCHAR2(500);
-        l_param_name    VARCHAR2(200);
-        l_param_value   VARCHAR2(200);
-        l_pos           INTEGER;
-        l_b64_start     INTEGER;
-        l_b64_end       INTEGER;
-        l_b64_data      CLOB;
-        l_decoded_blob  BLOB;
-        l_dest_off      INTEGER := 1;
-        l_src_off       INTEGER := 1;
-        l_lang_ctx      INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
-        l_conv_warn     INTEGER;
-    BEGIN
-        LOG(p_run_id => p_run_id,
-            p_message        => 'BIP_REQUEST start: ' || p_report_path,
-            p_log_type       => C_LOG_INFO,
-            p_package        => 'DMT_UTIL_PKG',
-            p_procedure      => 'BIP_REQUEST');
-
-        l_fusion_url := GET_CONFIG('FUSION_URL');
-        IF l_fusion_url IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20004, 'FUSION_URL not configured in DMT_CONFIG_TBL.');
-        END IF;
-
-        l_bip_url := RTRIM(l_fusion_url, '/') || '/xmlpserver/services/rest/v1/reports';
-
-        -- Build the parameters JSON array from pipe~tilde-delimited input
-        -- Format: 'PARAM1|VALUE1~PARAM2|VALUE2'
-        l_params_json := '';
-        IF p_params IS NOT NULL THEN
-            l_params_json := '"reportParameters": [';
-            DECLARE
-                l_remaining VARCHAR2(4000) := p_params;
-                l_pair      VARCHAR2(500);
-                l_first     BOOLEAN := TRUE;
-            BEGIN
-                WHILE l_remaining IS NOT NULL LOOP
-                    l_pos := INSTR(l_remaining, '~');
-                    IF l_pos > 0 THEN
-                        l_pair      := SUBSTR(l_remaining, 1, l_pos - 1);
-                        l_remaining := SUBSTR(l_remaining, l_pos + 1);
-                    ELSE
-                        l_pair      := l_remaining;
-                        l_remaining := NULL;
-                    END IF;
-
-                    l_pos         := INSTR(l_pair, '|');
-                    l_param_name  := SUBSTR(l_pair, 1, l_pos - 1);
-                    l_param_value := SUBSTR(l_pair, l_pos + 1);
-
-                    IF NOT l_first THEN l_params_json := l_params_json || ','; END IF;
-                    l_params_json := l_params_json ||
-                        '{"name":"' || l_param_name || '",' ||
-                        '"values":["' || l_param_value || '"]}';
-                    l_first := FALSE;
-                END LOOP;
-            END;
-            l_params_json := l_params_json || '],';
-        END IF;
-
-        -- Build JSON request body
-        l_body :=
-            '{' ||
-                '"reportAbsolutePath":"' || p_report_path || '",' ||
-                l_params_json ||
-                '"outputFormat":"' || p_output_format || '",' ||
-                '"flattenXML":false' ||
-            '}';
-
-        HTTP_REQUEST(
-            p_url            => l_bip_url,
-            p_method         => 'POST',
-            p_body           => l_body,
-            p_content_type   => 'application/json',
-            p_run_id => p_run_id,
-            x_response       => l_response,
-            x_status_code    => l_status_code
-        );
-
-        -- Extract reportBytes value from JSON response using DBMS_LOB
-        -- Response format: {"reportBytes":"<base64>","reportContentType":"..."}
-        l_b64_start := DBMS_LOB.INSTR(l_response, '"reportBytes":"') +
-                       LENGTH('"reportBytes":"');
-        l_b64_end   := DBMS_LOB.INSTR(l_response, '"', l_b64_start);
-
-        IF l_b64_start <= LENGTH('"reportBytes":"') OR l_b64_end = 0 THEN
-            RAISE_APPLICATION_ERROR(-20005,
-                'BIP response did not contain reportBytes. ' ||
-                'Report: ' || p_report_path ||
-                ' Response (first 500): ' || DBMS_LOB.SUBSTR(l_response, 500, 1));
-        END IF;
-
-        DBMS_LOB.CREATETEMPORARY(l_b64_data, TRUE);
-        DBMS_LOB.COPY(l_b64_data, l_response, l_b64_end - l_b64_start, 1, l_b64_start);
-
-        -- Decode via the central whitespace-safe decoder (BASE64_DECODE_CLOB),
-        -- then convert the bytes to CLOB. The previous inline decoder aligned
-        -- its 4-char quanta over RAW chunk positions without stripping the
-        -- CR/LF line breaks base64 streams legally carry — the same bug family
-        -- BASE64_DECODE_CLOB exists to fix (silent corruption beyond one chunk).
-        l_decoded_blob := BASE64_DECODE_CLOB(l_b64_data);
-        DBMS_LOB.FREETEMPORARY(l_b64_data);
-
-        DBMS_LOB.CREATETEMPORARY(x_report_data, TRUE);
-        IF DBMS_LOB.GETLENGTH(l_decoded_blob) > 0 THEN
-            DBMS_LOB.CONVERTTOCLOB(
-                dest_lob     => x_report_data,
-                src_blob     => l_decoded_blob,
-                amount       => DBMS_LOB.LOBMAXSIZE,
-                dest_offset  => l_dest_off,
-                src_offset   => l_src_off,
-                blob_csid    => DBMS_LOB.DEFAULT_CSID,
-                lang_context => l_lang_ctx,
-                warning      => l_conv_warn);
-        END IF;
-        IF DBMS_LOB.ISTEMPORARY(l_decoded_blob) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(l_decoded_blob);
-        END IF;
-
-        LOG(p_run_id => p_run_id,
-            p_message        => 'BIP_REQUEST complete: ' || p_report_path ||
-                                ' | Data length: ' || DBMS_LOB.GETLENGTH(x_report_data),
-            p_log_type       => C_LOG_INFO,
-            p_package        => 'DMT_UTIL_PKG',
-            p_procedure      => 'BIP_REQUEST');
-
-    EXCEPTION
-        WHEN OTHERS THEN
-            LOG_ERROR(p_run_id => p_run_id,
-                      p_message        => 'BIP_REQUEST failed: ' || p_report_path,
-                      p_sqlerrm        => SQLERRM,
-                      p_package        => 'DMT_UTIL_PKG',
-                      p_procedure      => 'BIP_REQUEST');
-            RAISE;
-    END BIP_REQUEST;
-
-    -- --------------------------------------------------------
     -- (Retired per-CEMLI prefix functions GET_PREFIX /
     --  INCREMENT_AND_GET_PREFIX removed 2026-07-08, Stage C prefix
     --  consolidation — design section 6: one prefix per run from
@@ -634,57 +486,83 @@
     END STG_ROW_SELECTED;
 
     -- --------------------------------------------------------
-    -- GET_CEMLI_CREDENTIALS
-    -- Resolve Fusion credentials for a CEMLI.
-    -- Priority: options table override > config table default.
+    -- GET_CEMLI_CREDENTIALS -- THE central Fusion user resolver (backlog #309).
+    -- Every Fusion call DMT makes for an object (upload, ESS submit/poll/
+    -- download, BIP, REST, HDL) gets its user here. The username and password
+    -- are taken TOGETHER from ONE place (backlog #303):
+    --   * the object's DMT_ERP_INTERFACE_OPTIONS_TBL row when that row names a
+    --     FUSION_USERNAME -- both halves from that row;
+    --   * otherwise (no row, or a row with no username) both halves from the
+    --     default user, DMT_CONFIG_TBL FUSION_USERNAME / FUSION_PASSWORD.
+    -- A password on a row without a username is ignored, never paired with
+    -- the default username. p_cemli_code NULL = the run-scoped default user.
+    -- An incomplete pair (missing or still-masked password) raises -20002
+    -- instead of sending one user with another user's password.
     -- --------------------------------------------------------
     PROCEDURE GET_CEMLI_CREDENTIALS (
         p_cemli_code IN  VARCHAR2,
         x_username   OUT VARCHAR2,
         x_password   OUT VARCHAR2
     ) IS
+        C_MASKED   CONSTANT VARCHAR2(30) := '***MASKED-SET-ME***';
+        l_row_user DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_USERNAME%TYPE;
+        l_row_pass DMT_ERP_INTERFACE_OPTIONS_TBL.FUSION_PASSWORD%TYPE;
     BEGIN
-        IF p_cemli_code IS NOT NULL THEN
-            BEGIN
-                SELECT FUSION_USERNAME, FUSION_PASSWORD
-                INTO   x_username, x_password
-                FROM   DMT_ERP_INTERFACE_OPTIONS_TBL
-                WHERE  CEMLI_CODE = p_cemli_code;
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    x_username := NULL;
-                    x_password := NULL;
-            END;
+        -- CEMLI_CODE is unique (DMT_ERP_INT_OPT_TBL_UQ), so MAX() reads the
+        -- zero-or-one row without a NO_DATA_FOUND handler; both columns come
+        -- from that same row.
+        SELECT MAX(o.FUSION_USERNAME), MAX(o.FUSION_PASSWORD)
+        INTO   l_row_user, l_row_pass
+        FROM   DMT_ERP_INTERFACE_OPTIONS_TBL o
+        WHERE  o.CEMLI_CODE = p_cemli_code;
+
+        IF l_row_user IS NOT NULL THEN
+            x_username := l_row_user;
+            x_password := l_row_pass;
+        ELSE
+            x_username := GET_CONFIG('FUSION_USERNAME');
+            x_password := GET_CONFIG('FUSION_PASSWORD');
         END IF;
 
-        -- Fall back to config defaults if the options table had NULL
-        x_username := NVL(x_username, GET_CONFIG('FUSION_USERNAME'));
-        x_password := NVL(x_password, GET_CONFIG('FUSION_PASSWORD'));
+        IF x_username IS NULL OR x_password IS NULL OR x_password = C_MASKED THEN
+            RAISE_APPLICATION_ERROR(-20002,
+                'GET_CEMLI_CREDENTIALS: incomplete Fusion credential for '
+                || NVL(p_cemli_code, 'the default user') || ' (user '
+                || NVL(x_username, '<none>') || ' has no password set). '
+                || 'Run db/tools/setup_runtime_config.py.');
+        END IF;
     END GET_CEMLI_CREDENTIALS;
 
     -- --------------------------------------------------------
     -- GET_CREDENTIALS_FOR_REQUEST
-    -- Resolve credentials from an ESS request_id by tracing back
-    -- to the CEMLI that submitted it.
+    -- Resolve credentials from an ESS request_id: find the CEMLI that owns
+    -- the request (DMT_ESS_JOB_TBL, else the work item that submitted it as
+    -- its load, import or post-run job) and hand it to GET_CEMLI_CREDENTIALS.
+    -- A request DMT never recorded resolves to the default user.
     -- --------------------------------------------------------
     PROCEDURE GET_CREDENTIALS_FOR_REQUEST (
         p_request_id IN  NUMBER,
         x_username   OUT VARCHAR2,
         x_password   OUT VARCHAR2
     ) IS
-        l_cemli VARCHAR2(100);
+        l_cemli DMT_ESS_JOB_TBL.CEMLI_CODE%TYPE;
     BEGIN
-        BEGIN
-            SELECT j.CEMLI_CODE INTO l_cemli
-            FROM   DMT_ESS_JOB_TBL j
-            WHERE  j.REQUEST_ID = p_request_id
-            AND    ROWNUM = 1;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                l_cemli := NULL;
-        END;
+        SELECT MAX(src.CEMLI_CODE) KEEP (DENSE_RANK FIRST ORDER BY src.SRC_ORDER)
+        INTO   l_cemli
+        FROM  (SELECT j.CEMLI_CODE, 1 AS SRC_ORDER
+               FROM   DMT_ESS_JOB_TBL j
+               WHERE  j.REQUEST_ID = p_request_id
+               AND    j.CEMLI_CODE IS NOT NULL
+               UNION ALL
+               SELECT q.CEMLI_CODE, 2 AS SRC_ORDER
+               FROM   DMT_WORK_QUEUE_TBL q
+               WHERE  TO_CHAR(p_request_id) IN (q.LOAD_ESS_JOB_ID,
+                                                q.IMPORT_ESS_JOB_ID,
+                                                q.POSTRUN_ESS_JOB_ID)) src;
 
-        GET_CEMLI_CREDENTIALS(l_cemli, x_username, x_password);
+        GET_CEMLI_CREDENTIALS(p_cemli_code => l_cemli,
+                              x_username   => x_username,
+                              x_password   => x_password);
     END GET_CREDENTIALS_FOR_REQUEST;
 
     -- --------------------------------------------------------
@@ -1071,8 +949,8 @@
             'http://xmlns.oracle.com/oxp/service/v2/ReportService/runReportRequest';
         l_step      VARCHAR2(500);
         l_base_url  VARCHAR2(500);
-        l_user      VARCHAR2(100);
-        l_pass      VARCHAR2(100);
+        l_user      VARCHAR2(500);
+        l_pass      VARCHAR2(500);
         l_path      VARCHAR2(500);
         l_items     CLOB;
         l_env       CLOB;
@@ -1107,8 +985,11 @@
 
         l_step := 'reading Fusion BIP connection config';
         l_base_url := RTRIM(GET_CONFIG('FUSION_URL'), '/');
-        l_user := NVL(GET_CONFIG('BIP_USERNAME'), GET_CONFIG('FUSION_USERNAME'));
-        l_pass := NVL(GET_CONFIG('BIP_PASSWORD'), GET_CONFIG('FUSION_PASSWORD'));
+        -- The report runs as the object's central Fusion user (backlog #309),
+        -- the same user that loaded the object; never a separate BIP user.
+        GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                              x_username   => l_user,
+                              x_password   => l_pass);
         IF l_base_url IS NULL OR l_user IS NULL OR l_pass IS NULL THEN
             RAISE_APPLICATION_ERROR(-20031, C_PROC || ': Fusion BIP connection config incomplete.');
         END IF;
