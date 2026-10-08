@@ -62,7 +62,7 @@ AS
             p_run_id,
             NULL,
             DMT_XREF_PKG.PERSON_NUMBER(s.PERSON_NUMBER),
-            s.PROFILE_CODE,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PROFILE_CODE, 30),  -- run-prefixed business key (#451): a profile code is unique in Fusion
             s.PROFILE_TYPE_CODE,
             s.PROFILE_STATUS_CODE,
             s.PROFILE_USAGE_CODE,
@@ -119,6 +119,7 @@ AS
             RATING,
             PROFILE_CODE,
             INTEREST_LEVEL,
+            SECTION_NAME,
             RECON_KEY,
             TFM_STATUS,
             LAST_UPDATED_DATE
@@ -134,8 +135,9 @@ AS
             s.DATE_FROM,
             s.DATE_TO,
             s.RATING,
-            s.PROFILE_CODE,
+            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PROFILE_CODE, 30),  -- run-prefixed business key (#451): a profile code is unique in Fusion
             s.INTEREST_LEVEL,
+            s.SECTION_NAME,
             -- RECON_KEY = the child ProfileItem.dat SourceSystemId = prefixed
             -- PERSON_NUMBER || '_TPITM' (see DMT_TALENT_PROF_HDL_GEN_PKG). Stamped
             -- for consistency and future child base-tier proof; the current

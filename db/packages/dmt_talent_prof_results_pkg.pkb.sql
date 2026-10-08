@@ -40,16 +40,13 @@ AS
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
-        l_failed    NUMBER := 0;
-        l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
-        l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
-        l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
         -- Generated-row count is done statically here (not in the shared pkg),
         -- and drives the shared fetch's keyset page-count cap.
-        SELECT COUNT(*) INTO l_gen_count
-        FROM   DMT_TALENT_PROF_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
+        SELECT (SELECT COUNT(*) FROM DMT_TALENT_PROF_TFM_TBL      WHERE RUN_ID = p_run_id)
+             + (SELECT COUNT(*) FROM DMT_TALENT_PROF_ITEM_TFM_TBL WHERE RUN_ID = p_run_id)
+        INTO   l_gen_count
+        FROM   DUAL;
 
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code  => C_CEMLI,
@@ -80,99 +77,42 @@ AS
                 p_procedure => C_PROC);
         ELSE
             FOR i IN 1 .. l_rows.COUNT LOOP
-                l_rc   := 0;     -- backlog #65: reset per row so a prior row's tier
-                l_tier := NULL;  -- cannot mislabel this row's audit log line.
                 IF l_rows(i).SOURCE_TYPE = 'BASE'
                    AND l_rows(i).FUSION_STATUS = 'SUCCESS'
-                   AND l_rows(i).FUSION_ID IS NOT NULL THEN
-                    -- Positive proof: profile found in HRT_PROFILES_B with a real
-                    -- id. The ONLY path to LOADED.
-                    --
-                    -- Backlog #65 three-tier match (owner order on PR #481), mirroring
-                    -- DMT_WORKER_RESULTS_PKG. Tier 1 is the stamped Slot A reference
-                    -- (RECON_KEY = RECORD_KEY, exactly as before). Only if tier 1 matches
-                    -- NO TFM row do we fall through: tier 2 (the Slot C DFF stamp:
-                    -- TFM_SEQUENCE_ID = the trailing segment of DFF_KEY) -- for HDL
-                    -- TalentProfiles there is NO DFF carrier so DFF_KEY is null and tier 2
-                    -- is skipped -- and then tier 3 (the business key: PERSON_NUMBER =
-                    -- BUSINESS_KEY, the SourceSystemId the report returns). Every tier-1
-                    -- hit short-circuits, so loaded outcomes are identical to before.
-                    -- Static UPDATEs.
+                   AND l_rows(i).FUSION_ID IS NOT NULL
+                   AND l_rows(i).OBJECT_TYPE = 'TalentProfile' THEN
+                    -- Positive proof (report V2, backlog #451): the profile's own
+                    -- key-map row, confirmed in HRT_PROFILES_B. Matched on the exact
+                    -- SourceSystemId the generator wrote. The ONLY path to LOADED.
                     UPDATE DMT_TALENT_PROF_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
                            FUSION_PROFILE_ID    = l_rows(i).FUSION_ID,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID    = p_run_id
-                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                    WHERE  RUN_ID = p_run_id
+                    AND    PERSON_NUMBER || '_TPROF' = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                    l_rc := SQL%ROWCOUNT;
-                    l_tier := CASE WHEN l_rc > 0 THEN 'TIER1' END;
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
 
-                    -- Tier 2 (DFF): only when tier 1 matched nothing and a DFF stamp is
-                    -- present. HDL TalentProfiles have no DFF carrier, so this is normally
-                    -- a no-op; kept uniform with the shared three-tier template.
-                    IF l_rc = 0 AND l_rows(i).DFF_KEY IS NOT NULL THEN
-                        l_dff_seq := TO_NUMBER(
-                            REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
-                        IF l_dff_seq IS NOT NULL THEN
-                            UPDATE DMT_TALENT_PROF_TFM_TBL
-                            SET    TFM_STATUS           = 'LOADED',
-                                   FUSION_PROFILE_ID    = l_rows(i).FUSION_ID,
-                                   RESULTS_UPDATED_DATE = SYSDATE,
-                                   LAST_UPDATED_DATE    = SYSDATE
-                            WHERE  RUN_ID    = p_run_id
-                            AND    TFM_SEQUENCE_ID = l_dff_seq
-                            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                            l_rc := SQL%ROWCOUNT;
-                            IF l_rc > 0 THEN l_tier := 'TIER2'; END IF;
-                        END IF;
-                    END IF;
-
-                    -- Tier 3 (business key): last resort, only when tiers 1 and 2 both
-                    -- matched nothing. The profile's business key is PERSON_NUMBER, equal
-                    -- to the SourceSystemId the report returns as BUSINESS_KEY.
-                    IF l_rc = 0 AND l_rows(i).BUSINESS_KEY IS NOT NULL THEN
-                        UPDATE DMT_TALENT_PROF_TFM_TBL
-                        SET    TFM_STATUS           = 'LOADED',
-                               FUSION_PROFILE_ID    = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE = SYSDATE,
-                               LAST_UPDATED_DATE    = SYSDATE
-                        WHERE  RUN_ID    = p_run_id
-                        AND    PERSON_NUMBER = l_rows(i).BUSINESS_KEY
-                        AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                        l_rc := SQL%ROWCOUNT;
-                        IF l_rc > 0 THEN l_tier := 'TIER3'; END IF;
-                    END IF;
-
-                    l_loaded := l_loaded + l_rc;
-                    IF l_tier IN ('TIER2','TIER3') THEN
-                        DMT_UTIL_PKG.LOG(p_run_id,
-                            C_PROC || ': matched a LOADED TalentProfile via ' || l_tier ||
-                            ' fallback (tier 1 stamped ref did not resolve). PROFILE_ID '
-                            || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
-                    END IF;
-
-                ELSIF l_rows(i).FUSION_STATUS = 'ERROR'
-                      AND l_rows(i).ERROR_MESSAGE IS NOT NULL THEN
-                    -- A real, specific Fusion error -> FAILED on the exact
-                    -- message (never composed). Static UPDATE.
-                    UPDATE DMT_TALENT_PROF_TFM_TBL
-                    SET    TFM_STATUS           = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(
-                                                    ERROR_TEXT,
-                                                    '[FUSION_ERROR] ' || l_rows(i).ERROR_MESSAGE),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID    = p_run_id
-                    AND    RECON_KEY = l_rows(i).RECORD_KEY
+                ELSIF l_rows(i).SOURCE_TYPE = 'BASE'
+                      AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+                      AND l_rows(i).FUSION_ID IS NOT NULL
+                      AND l_rows(i).OBJECT_TYPE = 'ProfileItem' THEN
+                    -- The item's own key-map row, confirmed in HRT_PROFILE_ITEMS.
+                    UPDATE DMT_TALENT_PROF_ITEM_TFM_TBL
+                    SET    TFM_STATUS             = 'LOADED',
+                           FUSION_PROFILE_ITEM_ID = l_rows(i).FUSION_ID,
+                           RESULTS_UPDATED_DATE   = SYSDATE,
+                           LAST_UPDATED_DATE      = SYSDATE
+                    WHERE  RUN_ID = p_run_id
+                    AND    PERSON_NUMBER || '_TPITM' = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
+                    l_loaded := l_loaded + SQL%ROWCOUNT;
 
                 ELSE
-                    -- INTERFACE/SUCCESS (corroborating, never sufficient) or a
-                    -- non-terminal status with no real error: leave the row for
-                    -- the existing unaccounted sweep. Never fabricate an outcome.
+                    -- No positive proof for this row: leave it for the honest
+                    -- unaccounted sweep. Never fabricate an outcome. (HDL errors
+                    -- arrive through APPLY_HDL_ERRORS, not through this report.)
                     NULL;
                 END IF;
             END LOOP;
@@ -181,8 +121,7 @@ AS
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
-                           || ' | LOADED: ' || l_loaded
-                           || ' | FAILED: ' || l_failed || '.',
+                           || ' | LOADED: ' || l_loaded || '.',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 
@@ -322,6 +261,83 @@ AS
             RAISE;
     END APPLY_FILE_ERRORS;
 
+    -- --------------------------------------------------------
+    -- PROPAGATE_DOCUMENT_ERRORS (private, backlog #451)
+    -- Design section 5, "Whole-document rejection carries the real error to every
+    -- grain". HCM Data Loader rejects a person's TalentProfile together with its
+    -- ProfileItems when one of them fails, but reports the error only on that
+    -- record. After the per-record errors and the base-table proof, every row of
+    -- that person still GENERATED is FAILED quoting the failing record's real
+    -- message, named (DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR). LOADED rows are never
+    -- touched; a row keeps its own error. Static SQL.
+    -- --------------------------------------------------------
+    PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
+        p_run_id     IN NUMBER,
+        p_request_id IN VARCHAR2
+    ) IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
+        l_request NUMBER := TO_NUMBER(p_request_id);
+        l_failed  NUMBER := 0;
+    BEGIN
+        UPDATE DMT_TALENT_PROF_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                   (SELECT MIN(DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                               m.BUSINESS_OBJECT, m.SOURCE_SYSTEM_ID, m.MESSAGE_TEXT))
+                           KEEP (DENSE_RANK FIRST ORDER BY m.FILE_LINE NULLS LAST, m.MESSAGE_LINE_ID)
+                    FROM   DMT_HDL_MESSAGE_GTT m
+                    WHERE  m.REQUEST_ID = l_request
+                    AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_TPROF',
+                                                  t.PERSON_NUMBER || '_TPITM'))),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_HDL_MESSAGE_GTT m
+                       WHERE  m.REQUEST_ID = l_request
+                       AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_TPROF',
+                                                     t.PERSON_NUMBER || '_TPITM'));
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        UPDATE DMT_TALENT_PROF_ITEM_TFM_TBL t
+        SET    t.TFM_STATUS           = 'FAILED',
+               t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT,
+                   (SELECT MIN(DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                               m.BUSINESS_OBJECT, m.SOURCE_SYSTEM_ID, m.MESSAGE_TEXT))
+                           KEEP (DENSE_RANK FIRST ORDER BY m.FILE_LINE NULLS LAST, m.MESSAGE_LINE_ID)
+                    FROM   DMT_HDL_MESSAGE_GTT m
+                    WHERE  m.REQUEST_ID = l_request
+                    AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_TPROF',
+                                                  t.PERSON_NUMBER || '_TPITM'))),
+               t.RESULTS_UPDATED_DATE = SYSDATE,
+               t.LAST_UPDATED_DATE    = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'GENERATED'
+        AND    EXISTS (SELECT 1
+                       FROM   DMT_HDL_MESSAGE_GTT m
+                       WHERE  m.REQUEST_ID = l_request
+                       AND    m.SOURCE_SYSTEM_ID IN (t.PERSON_NUMBER || '_TPROF',
+                                                     t.PERSON_NUMBER || '_TPITM'));
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Rows FAILED with their rejected document: ' || l_failed || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END PROPAGATE_DOCUMENT_ERRORS;
+
     PROCEDURE RECONCILE_BATCH (
         p_run_id IN NUMBER,
         p_request_id     IN VARCHAR2,
@@ -356,6 +372,9 @@ AS
         -- procedure (one BEGIN/END per procedure). REPLACES the old
         -- LOOKUP_FUSION_IDS positive path.
         APPLY_CONTRACT_V1_TALENTPROFILES(p_run_id, p_request_id);
+
+        -- Whole-document rejection (backlog #451).
+        PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_request_id);
 
         -- Whole-file HDL rejections last, only on rows still open (backlog #288).
         APPLY_FILE_ERRORS(p_run_id, p_request_id);

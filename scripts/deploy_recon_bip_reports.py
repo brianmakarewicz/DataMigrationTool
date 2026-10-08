@@ -111,6 +111,8 @@ REPORTS = [
     ("BenBeneficiary",           "DMT_BENBENEFICIARY_RECON_DM", "DMT_BENBENEFICIARY_RECON_RPT"),
     ("W2Balances",              "DMT_W2_BAL_RECON_DM", "DMT_W2_BAL_RECON_RPT"),
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
+    # TalentProfiles V2 (2026-10-08, backlog #451): alongside V1; request-id selection.
+    ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_V2_DM", "DMT_TALENTPROFILES_RECON_V2_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
     # Projects V2 (2026-10-07, owner-approved exception): base projects found by
