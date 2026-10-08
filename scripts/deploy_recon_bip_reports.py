@@ -71,6 +71,9 @@ REPORTS = [
     # GLBalances V3 (backlog #173): alongside V1; real Journal Import error
     # (STATUS[: STATUS_DESCRIPTION]) only, rows selected by job id.
     ("GLBalances",              "DMT_GL_BAL_RECON_V3_DM", "DMT_GL_BAL_RECON_V3_RPT"),
+    # GLBalances V4 (backlog #173): GROUP_ID = work queue id, never ALL; base rows
+    # by the import job's own GroupID/LedgerID arguments.
+    ("GLBalances",              "DMT_GL_BAL_RECON_V4_DM", "DMT_GL_BAL_RECON_V4_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
     # item's load job id (LOAD_REQUEST_ID). Deployed alongside
@@ -86,8 +89,15 @@ REPORTS = [
     ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
     ("ItemCategories",          "ITEM_CAT_DM",       "ITEM_CAT_RPT"),
     ("Workers",                 "DMT_WORKERS_RECON_DM", "DMT_WORKERS_RECON_RPT"),
+    # Workers V2 (2026-10-07, backlog #289): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; every person component proven on its
+    # own key-map row and base table.
+    ("Workers",                 "DMT_WORKERS_RECON_V2_DM", "DMT_WORKERS_RECON_V2_RPT"),
     ("SalaryBases",             "DMT_SALARYBASES_RECON_DM", "DMT_SALARYBASES_RECON_RPT"),
     ("Salaries",                "DMT_SALARIES_RECON_DM", "DMT_SALARIES_RECON_RPT"),
+    # Salaries V2 (2026-10-07, backlog #291): alongside V1 (never overwritten).
+    # Rows selected by the HDL request id; salary confirmed in CMP_SALARY.
+    ("Salaries",                "DMT_SALARIES_RECON_V2_DM", "DMT_SALARIES_RECON_V2_RPT"),
     ("Absences",                "DMT_ABSENCES_RECON_DM", "DMT_ABSENCES_RECON_RPT"),
     ("WorkSchedules",            "DMT_WORKSCHEDULES_RECON_DM", "DMT_WORKSCHEDULES_RECON_RPT"),
     ("PayrollRelationships",     "DMT_PAYROLLRELATIONSHIPS_RECON_DM", "DMT_PAYROLLRELATIONSHIPS_RECON_RPT"),
@@ -103,6 +113,11 @@ REPORTS = [
     ("TalentProfiles",           "DMT_TALENTPROFILES_RECON_DM", "DMT_TALENTPROFILES_RECON_RPT"),
     ("PerfEvaluations",          "DMT_PERFEVALUATIONS_RECON_DM", "DMT_PERFEVALUATIONS_RECON_RPT"),
     ("Projects",                 "DMT_PROJECT_RECON_DM",       "DMT_PROJECT_RECON_RPT"),
+    # Projects V2 (2026-10-07, owner-approved exception): base projects found by
+    # PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%' (no job id on the
+    # project base tables), interface rows by LOAD_REQUEST_ID. Deployed alongside
+    # DMT_PROJECT_RECON_DM (never overwritten).
+    ("Projects",                 "DMT_PROJECT_RECON_V2_DM",    "DMT_PROJECT_RECON_V2_RPT"),
     # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.

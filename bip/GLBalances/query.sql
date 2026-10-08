@@ -1,40 +1,35 @@
 -- ============================================================
 -- GLBalances BIP reconciliation query: mirror of the SQL embedded in
--- DMT_GL_BAL_RECON_V3_DM.xdm (the deployed data model the registry points
+-- DMT_GL_BAL_RECON_V4_DM.xdm (the deployed data model the registry points
 -- at; the .xdm is authoritative). Data source: ApplicationDB_FSCM.
 -- ============================================================
 -- ============================================================
--- GLBalances reconciliation data model V3 (backlog #173), Contract v1:
+-- GLBalances reconciliation data model V4 (backlog #173), Contract v1:
 -- nine columns, keyset pagination, the six standard parameters.
--- Deployed ALONGSIDE DMT_GL_BAL_RECON_DM (V1), never overwriting it.
--- (A V2 data model was deployed to Fusion during research and never
--- registered; V3 supersedes it.)
+-- Deployed ALONGSIDE V1 and V3, never overwriting them.
 --
--- How DMT loads GL now: every journal carries its own GROUP_ID and the
--- Import Journals job runs once per load with GroupID = ALL. Journal
--- Import rejects all-or-nothing per group, so a rejected line takes down
--- only its own journal (proven 2026-10-07, probe load 10075714).
+-- How DMT loads GL (owner decision 2026-10-07): GROUP_ID = the work queue
+-- id, one group per load, and Import Journals is submitted with exactly
+-- that group id (never ALL, so it never imports another user's journals).
+-- Journal Import holds the WHOLE group when any line errors (proven with one
+-- group of 2 good journals + 1 bad journal, probe load 10075834): the good
+-- lines are rolled back to status P. The reconciler quotes the rejected
+-- line's error onto them (PROPAGATE_DOCUMENT_ERRORS, document = group).
 --
 -- ERROR_MESSAGE carries only Journal Import's own error for the row:
---   GL_INTERFACE.STATUS (the error code or codes, e.g. EF04 or
---   EF04,EC03), followed by ': ' and GL_INTERFACE.STATUS_DESCRIPTION
---   (Fusion's message text) when Fusion wrote one; the code alone when it
---   did not. Nothing is composed around it.
+--   GL_INTERFACE.STATUS (the error code or codes, e.g. EF04 or EF04,EC03),
+--   plus ': ' and GL_INTERFACE.STATUS_DESCRIPTION when Fusion wrote one;
+--   the code alone when it did not. Nothing is composed around it.
 -- An unbalanced base journal has no Fusion error behind it (Journal Import
 --   accepts it), so it is returned BASE / ERROR with a NULL message: neither
 --   LOADED nor FAILED, it falls to UNACCOUNTED.
--- Lines of a rejected journal that have no error of their own (status P)
---   are not returned; the reconciler quotes the rejected line's error onto
---   them (PROPAGATE_DOCUMENT_ERRORS, the journal = one GROUP_ID).
 --
 -- Rows are selected by Fusion job id, never by run id or prefix:
---   BASE      batches created by the Journal Import child of OUR Import
---             Journals job (:P_IMPORT_ESS_ID). GL_JE_BATCHES.REQUEST_ID is
---             always NULL on this pod; Journal Import writes its own request
---             id into the batch name ("<name> <source> A <group> <request> N"),
---             which is the only job link the base tables carry. Scoped to the
---             job's ledger argument (submit.argument3) and to batches created
---             after the job started.
+--   BASE      batches whose GROUP_ID is the GroupID argument of OUR Import
+--             Journals job (:P_IMPORT_ESS_ID, FUSION_ORA_ESS.REQUEST_PROPERTY
+--             submit.argument4), on the job's ledger argument (submit.argument3),
+--             created after the job started. GL_JE_BATCHES.REQUEST_ID is
+--             always NULL on this pod.
 --   INTERFACE rows our load job (:P_LOAD_REQUEST_ID) put in GL_INTERFACE that
 --             Journal Import rejected (status code starting with E).
 --
@@ -56,8 +51,8 @@ SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- Tier: BASE. One row per GL_JE_LINES line of the batches our Journal
-    -- Import job created.
+    -- Tier: BASE. One row per GL_JE_LINES line of the batches of OUR group
+    -- (the import job's own GroupID argument) on the job's ledger.
     SELECT
         'GLBalances'                         AS object_type,
         jl.reference_1                       AS record_key,
@@ -75,10 +70,10 @@ FROM (
     WHERE  jb.creation_date >= (SELECT h.processstart
                                 FROM   fusion_ora_ess.request_history h
                                 WHERE  h.requestid = TO_NUMBER(:P_IMPORT_ESS_ID))
-    AND    EXISTS (SELECT 1
-                   FROM   fusion_ora_ess.request_history c
-                   WHERE  c.parentrequestid = TO_NUMBER(:P_IMPORT_ESS_ID)
-                   AND    jb.name LIKE '% ' || TO_CHAR(c.requestid) || ' %')
+    AND    jb.group_id = (SELECT TO_NUMBER(rp.value)
+                          FROM   fusion_ora_ess.request_property rp
+                          WHERE  rp.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
+                          AND    rp.name = 'submit.argument4')
     AND    jh.ledger_id = (SELECT TO_NUMBER(rp.value)
                            FROM   fusion_ora_ess.request_property rp
                            WHERE  rp.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)

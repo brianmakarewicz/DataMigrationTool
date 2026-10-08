@@ -36,8 +36,8 @@ AS
 -- coupling is what makes the join hit — its absence is why the earlier pilot got
 -- 0 LOADED.
 --
--- After the three tiers settle, outcomes are echoed back to all three STG tables
--- (unchanged from the prior reader). Each tier has its own BASE and INTERFACE
+-- Outcomes stay on the TFM rows; nothing is copied back to STG (backlog #310).
+-- Each tier has its own BASE and INTERFACE
 -- rows in the report, so each tier accounts for itself directly. Then
 -- PROPAGATE_DOCUMENT_ERRORS quotes each rejected row's real Fusion error onto the
 -- other rows of the same requisition, which Requisition Import rejects with it
@@ -383,56 +383,8 @@ AS
             END LOOP;
         END IF;
 
-        -- ============================================================
-        -- Echo tier outcomes back to the three STG tables (unchanged behaviour).
-        -- ============================================================
-        -- Headers
-        UPDATE DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_HEADERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_POR_REQ_HEADERS_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_HEADERS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_HEADERS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Lines
-        UPDATE DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_POR_REQ_LINES_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_LINES_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_LINES_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
-
-        -- Distributions
-        UPDATE DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS = 'LOADED', stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_POR_REQ_DISTS_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_POR_REQ_DISTS_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_POR_REQ_DISTS_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries.
 

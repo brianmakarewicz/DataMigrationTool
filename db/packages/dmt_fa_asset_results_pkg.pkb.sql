@@ -67,7 +67,7 @@
     -- one pair of UPDATEs, discriminated by the OBJECT_TYPE prefix 'Assets' and
     -- joined on RECON_KEY = RECORD_KEY. Book and assignment TFM rows inherit the
     -- header outcome via the cascade at the end (LOADED down, real Fusion error
-    -- carried down); the STG echo is unchanged.
+    -- carried down). Nothing is copied back to STG (backlog #310).
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_ASSETS (
         p_run_id        IN NUMBER,
@@ -347,23 +347,8 @@
             AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
             AND    hdr.TFM_STATUS   = 'FAILED');
 
-        -- Echo outcomes back to STG (headers).
-        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STG_STATUS        = 'LOADED',
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'LOADED');
-        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL t
-                    WHERE  t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID
-                    AND    t.RUN_ID  = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_SEQUENCE_ID IN (
-            SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
-            WHERE  t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         -- NO COMMIT — orchestrator controls transaction boundaries.
 
@@ -619,7 +604,7 @@
                    AND   b.BOOK_TYPE_CODE = l_book));
         l_marked := SQL%ROWCOUNT;
 
-        -- Cascade the new header FAILEDs to book + assignment + STG echo, using
+        -- Cascade the new header FAILEDs to book + assignment, using
         -- the same linked-record wording as APPLY_CONTRACT_V1_ASSETS.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
@@ -647,16 +632,6 @@
                        WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
                        AND h.TFM_STATUS = 'FAILED');
 
-        UPDATE DMT_FA_ASSET_HDR_STG_TBL stg
-        SET    stg.STG_STATUS = 'FAILED',
-               stg.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(stg.ERROR_TEXT,
-                   (SELECT t.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL t
-                    WHERE t.STG_SEQUENCE_ID = stg.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)),
-               stg.LAST_UPDATED_DATE = SYSDATE
-        WHERE  stg.STG_STATUS NOT IN ('LOADED','FAILED')
-        AND    stg.STG_SEQUENCE_ID IN (
-                   SELECT t.STG_SEQUENCE_ID FROM DMT_FA_ASSET_HDR_TFM_TBL t
-                   WHERE t.RUN_ID = p_run_id AND t.TFM_STATUS = 'FAILED');
 
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,

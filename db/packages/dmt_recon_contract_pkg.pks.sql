@@ -106,12 +106,6 @@
     --   p_load_ess_id   the load job's request id (P_LOAD_REQUEST_ID). For HDL
     --                   objects this is the HDL data set request id.
     --   p_import_ess_id the import job's request id (P_IMPORT_ESS_ID, nullable).
-    --   p_row_cap       expected upper bound on rows (usually the run's generated-
-    --                   row count) used only to derive the keyset page-count cap.
-    --                   NULL/0 falls back to a floor of 2 pages of slack.
-    --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
-    --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
-    --                   detail is in DMT_LOG_TBL and x_rows is empty.
     --   p_work_queue_id the work item's queue id, sent as P_WQ_ID ONLY when not
     --                   NULL. Used solely by the Projects report (owner-approved
     --                   exception 2026-10-07, design section 5): Fusion stamps no
@@ -119,6 +113,12 @@
     --                   the work item's projects by the reference DMT stamps,
     --                   '<run_id>:<work_queue_id>:<legacy reference>'. Every other
     --                   caller leaves it NULL and its report never sees P_WQ_ID.
+    --   p_row_cap       expected upper bound on rows (usually the run's generated-
+    --                   row count) used only to derive the keyset page-count cap.
+    --                   NULL/0 falls back to a floor of 2 pages of slack.
+    --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
+    --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
+    --                   detail is in DMT_LOG_TBL and x_rows is empty.
     --   p_fusion_batch_id  optional: the Fusion import batch id this load sent, for an
     --                   object whose base tables carry that batch rather than the
     --                   import job id (Customers: HZ_* base REQUEST_ID = the bulk

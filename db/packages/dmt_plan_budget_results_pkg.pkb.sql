@@ -76,11 +76,9 @@
         -- BIP did not confirm (and that carry no real Fusion error) are left GENERATED
         -- so the honest accounting sweep marks them UNACCOUNTED. Never auto-promote
         -- unconfirmed rows to LOADED.
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
-        UPDATE DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS='LOADED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_PLAN_BUDGET_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS='LOADED');
-        UPDATE DMT_PLAN_BUDGET_STG_TBL SET STG_STATUS='FAILED', LAST_UPDATED_DATE=SYSDATE
-        WHERE STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_PLAN_BUDGET_TFM_TBL WHERE RUN_ID=p_run_id AND TFM_STATUS='FAILED');
         -- NO COMMIT — orchestrator controls transaction boundaries
         DMT_UTIL_PKG.LOG(p_run_id, 'PARSE_AND_UPDATE complete. LOADED: '||l_loaded||', FAILED: '||l_failed, 'INFO', C_PKG, 'PARSE_AND_UPDATE');
     EXCEPTION WHEN OTHERS THEN DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'PARSE_AND_UPDATE failed.', SQLERRM, C_PKG, 'PARSE_AND_UPDATE'); RAISE;

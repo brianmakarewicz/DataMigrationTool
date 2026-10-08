@@ -782,29 +782,8 @@
         AND    TFM_STATUS = 'GENERATED'
         AND    ERROR_TEXT IS NOT NULL;
 
-        -- Mirror the terminal TFM outcome onto STG for headers.
-        UPDATE DMT_AP_PAY_TERM_HDR_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_AP_PAY_TERM_HDR_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_HDR_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
-
-        -- Mirror the terminal TFM outcome onto STG for lines.
-        UPDATE DMT_AP_PAY_TERM_LINE_STG_TBL s
-        SET    s.STG_STATUS = (SELECT t.TFM_STATUS
-                               FROM   DMT_AP_PAY_TERM_LINE_TFM_TBL t
-                               WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                               AND    t.RUN_ID = p_run_id),
-               s.LAST_UPDATED_DATE = SYSDATE
-        WHERE  EXISTS (SELECT 1 FROM DMT_AP_PAY_TERM_LINE_TFM_TBL t
-                       WHERE  t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                       AND    t.RUN_ID = p_run_id
-                       AND    t.TFM_STATUS IN ('LOADED','FAILED'));
+        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
+        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
 
         COMMIT;
 

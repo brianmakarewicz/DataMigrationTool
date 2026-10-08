@@ -7,10 +7,10 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
     -- Money = ENTERED_DR (headline) with ENTERED_CR tracked alongside per
     -- discovery; ACCOUNTED amounts are NULL on the DMT side for this run
     -- (single-currency test data) so they are never used here.
-    -- Key = STAMPED_REF: GL_JE_BATCHES.GROUP_ID was stamped with the DMT
-    -- RUN_ID at transform time and survives Journal Import -- the live
-    -- Fusion query filters on jb.group_id = p_run_id directly (passed as
-    -- :P_BATCH_ID), never a prefix and never a timestamp window.
+    -- Key = STAMPED_REF: GL_JE_BATCHES.GROUP_ID carries prefix || the GLBalances
+    -- work queue id (stamped at generation, backlog #173) and survives Journal
+    -- Import -- the live Fusion query filters on jb.group_id = that id
+    -- (passed as :P_BATCH_ID), never a prefix and never a timestamp window.
     -- A Fusion "success" is a journal LINE whose HEADER balances
     -- (running_total_dr = running_total_cr) and is therefore postable.
     -- Every attempted line physically lands in gl_je_lines regardless of
@@ -50,8 +50,8 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
          WHERE RUN_ID = p_run_id
            AND TFM_STATUS = 'FAILED';
 
-        -- (c) batch = the run id itself, stamped into GL_JE_BATCHES.GROUP_ID
-        --     at transform time. Only meaningful once this run actually
+        -- (c) batch = the run's GL group (prefix || work queue id), stamped into GROUP_ID
+        --     at generation. Only meaningful once this run actually
         --     staged GL rows; otherwise there is nothing to key Fusion on.
         IF l_stg_cnt = 0 AND l_err_cnt = 0 THEN
             RETURN DMT_CMP_ROW_OBJ(C_CEMLI, C_CEMLI, 'NONE',
@@ -59,7 +59,12 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
                 NULL, NULL, NULL, l_money_ok, NULL, NULL, '?',
                 'No GL interface rows staged for this run yet (in flight)', NULL, NULL, NULL);
         END IF;
-        l_batch    := TO_CHAR(p_run_id);
+        -- GROUP_ID is prefix || the GLBalances work queue id (backlog #173), stamped on
+        -- every line at generation; the run's GL batches carry that group.
+        SELECT TO_CHAR(MAX(GROUP_ID)) INTO l_batch
+          FROM DMT_GL_INTERFACE_TFM_TBL
+         WHERE RUN_ID = p_run_id;
+        l_batch    := NVL(l_batch, TO_CHAR(p_run_id));
         l_key_type := 'STAMPED_REF';
 
         -- (d) live Fusion aggregate via the shared BIP transport. The

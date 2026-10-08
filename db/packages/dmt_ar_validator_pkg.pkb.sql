@@ -111,7 +111,7 @@ AS
                'required. Supply a context defined in Fusion for the Line Transactions flexfield ' ||
                '(for example EXTERNAL_SOURCE) -- AR invoice line skipped.'
         FROM   DMT_RA_LINES_STG_TBL ln
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS, p_run_id, 'DMT_RA_LINES_STG_TBL', ln.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR ln.SCENARIO_ID = p_scenario_id)
         AND    ln.INTERFACE_LINE_CONTEXT IS NULL;
         l_ctx_failed := SQL%ROWCOUNT;
@@ -122,7 +122,7 @@ AS
                '[PRE_VALIDATION] INTERFACE_LINE_CONTEXT (Line Transactions Flexfield Context) is ' ||
                'required on the distribution to link it to its invoice line -- distribution skipped.'
         FROM   DMT_RA_DISTS_STG_TBL d
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS, p_run_id, 'DMT_RA_DISTS_STG_TBL', d.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR d.SCENARIO_ID = p_scenario_id)
         AND    d.INTERFACE_LINE_CONTEXT IS NULL;
         l_ctx_failed := l_ctx_failed + SQL%ROWCOUNT;
@@ -152,7 +152,7 @@ AS
                        ln.BILL_CUSTOMER_ACCOUNT_NUMBER ||
                        ''' is not loaded — AR invoice line skipped.'
                 FROM   DMT_RA_LINES_STG_TBL ln
-                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS) = 'Y'
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, ln.STG_STATUS, p_run_id, 'DMT_RA_LINES_STG_TBL', ln.STG_SEQUENCE_ID) = 'Y'
                 AND    (p_scenario_id IS NULL OR ln.SCENARIO_ID = p_scenario_id)
                 AND    ln.BILL_CUSTOMER_ACCOUNT_NUMBER IS NOT NULL
                 AND    NOT EXISTS (
@@ -175,7 +175,7 @@ AS
                        d.INTERFACE_LINE_ATTRIBUTE1 ||
                        ''') failed upstream validation — distribution skipped.'
                 FROM   DMT_RA_DISTS_STG_TBL d
-                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS) = 'Y'
+                WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, d.STG_STATUS, p_run_id, 'DMT_RA_DISTS_STG_TBL', d.STG_SEQUENCE_ID) = 'Y'
                 AND    (p_scenario_id IS NULL OR d.SCENARIO_ID = p_scenario_id)
                 AND    EXISTS (
                            SELECT 1

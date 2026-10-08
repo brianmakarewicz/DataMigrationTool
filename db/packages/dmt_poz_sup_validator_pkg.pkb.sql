@@ -34,7 +34,7 @@
         SELECT p_run_id, 'Suppliers', 'Suppliers', s.STG_SEQUENCE_ID,
                '[PRE_VALIDATION] Supplier is missing the mandatory VENDOR_NAME — row rejected before transform.'
         FROM   DMT_POZ_SUPPLIERS_STG_TBL s
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_POZ_SUPPLIERS_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR s.SCENARIO_ID = p_scenario_id)
         AND    s.VENDOR_NAME IS NULL;
         l_failed := SQL%ROWCOUNT;
@@ -66,7 +66,7 @@
                '[PRE_VALIDATION] Supplier ''' || a.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — address skipped.'
         FROM   DMT_POZ_SUP_ADDR_STG_TBL a
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS, p_run_id, 'DMT_POZ_SUP_ADDR_STG_TBL', a.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
@@ -105,7 +105,7 @@
                '[PRE_VALIDATION] Supplier ''' || si.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — site skipped.'
         FROM   DMT_POZ_SUP_SITE_STG_TBL si
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, si.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, si.STG_STATUS, p_run_id, 'DMT_POZ_SUP_SITE_STG_TBL', si.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR si.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
@@ -146,7 +146,7 @@
                ' / ' || a.VENDOR_SITE_CODE ||
                ''' has no LOADED TFM row in any run — site assignment skipped.'
         FROM   DMT_POZ_SUP_SITE_ASSN_STG_TBL a
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, a.STG_STATUS, p_run_id, 'DMT_POZ_SUP_SITE_ASSN_STG_TBL', a.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR a.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1
@@ -186,7 +186,7 @@
                '[PRE_VALIDATION] Supplier ''' || c.VENDOR_NAME ||
                ''' has no LOADED TFM row in any run — contact skipped.'
         FROM   DMT_POZ_SUP_CONTACTS_STG_TBL c
-        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, c.STG_STATUS) = 'Y'
+        WHERE  DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, c.STG_STATUS, p_run_id, 'DMT_POZ_SUP_CONTACTS_STG_TBL', c.STG_SEQUENCE_ID) = 'Y'
         AND    (p_scenario_id IS NULL OR c.SCENARIO_ID = p_scenario_id)
         AND    NOT EXISTS (
                    SELECT 1

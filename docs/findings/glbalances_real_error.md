@@ -34,7 +34,90 @@ write was the proof run described at the end.
    journal LOADED, BAD line FAILED with its own real error, its sibling line FAILED quoting it,
    0 UNACCOUNTED. See "Resolution".
 
-## Resolution (2026-10-07, proof run 276)
+## Group id = prefix + work queue id (owner decision 2026-10-08, proof run 286, backlog #410)
+
+- `GROUP_ID` = the run prefix followed by the work queue id (prefix 93342 + work item 1657 =
+  933421657); the work queue id alone when prefixing is off (cutover). `GL_INTERFACE.GROUP_ID` is
+  NUMBER(18): a 5-digit prefix leaves 13 digits for the work queue id, and the generator refuses
+  any value over 18 digits instead of truncating it. `RUN_GL_BALANCES` reads the stamped value back
+  and submits Import Journals with exactly that group (never `ALL`).
+- The quoted group error names the journal and line that caused it:
+  `[FUSION_ERROR] Rejected with document: journal <REFERENCE1> line <key>: <real message>`.
+- Report V4 is unchanged (it reads the import job's own GroupID argument). Its header comment still
+  says "GROUP_ID = the work queue id"; it is not redeployed for a comment (BIP objects are never
+  overwritten).
+
+Proof run 286 (prefix 93342, scenario `RegressionTest2610072127`, work item 1657, load 10076040,
+import 10076043): Fusion `GL_INTERFACE.GROUP_ID` = 933421657 on all 6 lines (1 `EF04`, 5 `P`),
+and the import job's `submit.argument4` = 933421657.
+
+| Line | Outcome | ERROR_TEXT |
+|---|---|---|
+| BAD1 line 511 (account 99999) | FAILED | `[FUSION_ERROR] EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+| G1 x2, G2 x2, BAD1 line 512 | FAILED | `[FUSION_ERROR] Rejected with document: journal 93342RT-JNL-BAD1 line 511: EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+
+0 UNACCOUNTED. `dmt_regression_run.py`: PASS (exit 0, 0 review items). Playwright click-through
+run 286: PASS. All four checkers: PASS.
+
+## Current design (owner decision 2026-10-07, proof run 282) — supersedes "Resolution" below
+
+The owner ruled out `GroupID = ALL`: on a shared pod (local, ATP and other users) it could import
+someone else's pending journals. One job per journal is also ruled out. Research showed Import
+Journals takes exactly one group id or "All Group IDs" (7 arguments on every one of 104 launches in
+`FUSION_ORA_ESS.REQUEST_PROPERTY`; no list, range or multi-row parameter), so **GROUP_ID is now the
+work queue id**: one group per load, and the job is submitted with that exact group id.
+
+### Definitive test: one group, 2 good journals + 1 bad journal
+
+Probe load 10075834 (prefix 48350, own prefixed data only), one GROUP_ID 48350, Import Journals
+10075838 submitted with GroupID 48350, child `JournalImport` 10075839:
+
+| Journal | GL_INTERFACE status | In GL_JE_HEADERS / LINES? |
+|---|---|---|
+| `48350RT-JNL-G1` (2 good lines) | P, P | No |
+| `48350RT-JNL-G2` (2 good lines) | P, P | No |
+| `48350RT-JNL-BAD1` (account 99999) | EF04 `FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` | No |
+
+No `GL_JE_BATCHES` row exists for group 48350. `GL_JI_ERROR_CODES` holds one row for request
+10075839 / group 48350 (`CR 10000 / DR 17777 / DIF -7777`). The Journal Import log (request
+10075839) shows the mechanism: it inserted all 5 lines (`SHRD0079: Number of records inserted into
+the gl_je_lines table: 5.`), then hit the flexfield error (`Error flexfield = 99999.101.10.510.000.000`),
+then `LEZL0010: Deleting journal entry error lines.`, and finally reset every header of the group
+with `header_error = error,` (`update GL_INTERFACE ... set status = decode(:p_header_error1, 'error,',
+decode(status, 'PROCESSED', 'P', status) ...` — `Updated 2 records`, `Updated 2 records`). So the
+whole group is held, and the good journals' lines go back to status P. Run 263 and DMT run 282 show
+the same.
+
+Oracle documentation: "If Journal Import encounters an error in any journal line, the entire source
+will have the Error status." (Journal Import Execution Report, Oracle General Ledger User's Guide).
+No Fusion documentation sentence states the group roll-back more directly; the log above is the
+definitive evidence.
+
+### What DMT does now
+
+- The generator stamps `GROUP_ID = work queue id` on every line; `RUN_GL_BALANCES` submits Import
+  Journals with that same group id (never `ALL`).
+- Report V4 (`DMT_GL_BAL_RECON_V4_DM`, alongside V1/V3): base batches by the import job's own GroupID
+  and LedgerID arguments; interface rows by `LOAD_REQUEST_ID` with an E status; error text is
+  `STATUS[: STATUS_DESCRIPTION]` exactly as Fusion wrote it.
+- `PROPAGATE_DOCUMENT_ERRORS`: the document is the import group (GROUP_ID + ledger). Every other line
+  of a rejected group ends FAILED quoting the real error with `FORMAT_DOCUMENT_ERROR`; nothing is
+  left UNACCOUNTED when a real group error exists.
+- Comparison report back on `GL_BAL_CMP_DM` with `P_BATCH_ID` = the run's GL work queue id.
+
+### Proof run 282 (prefix 93338, scenario `RegressionTest2610072127`, work item 1650, load 10075887, import 10075892 with GroupID 1650)
+
+| Line | Outcome | ERROR_TEXT |
+|---|---|---|
+| G1 debit / credit, G2 debit / credit, BAD1 line 2 (5 lines) | FAILED | `[FUSION_ERROR] Rejected with document: line 505: EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+| BAD1 line 1, account 99999 | FAILED | `[FUSION_ERROR] EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+
+0 UNACCOUNTED. Fusion: G1 and G2 lines status P, no batch for group 1650. `dmt_regression_run.py`:
+PASS, all 6 listed rows met their expected outcome (one review item: an unrelated Customers REST
+error with no run id, logged by another agent's run in the same minutes). Playwright click-through
+run 282: PASS. A GL run with no bad line still loads every journal (run 276's good journal shape).
+
+## Resolution (2026-10-07, proof run 276) — superseded: used GroupID = ALL
 
 ### What unit Journal Import rejects
 

@@ -65,7 +65,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -153,10 +153,10 @@ using (
            'POZ_SUP_CONTACTS_INT',
            'Supplier contact import reconciliation' from dual
     union all select 100000016, 'GLBalances', 'GL Balance',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_DM.xdm',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_RPT.xdo',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_DM.xdm',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_RPT.xdo',
            'GL_INTERFACE',
-           'GL journal import reconciliation (Contract v1 -- nine columns, keyset). V3 (backlog #173): one GROUP_ID per journal, Import Journals GroupID=ALL; ERROR_MESSAGE is only Journal Import''s own error (GL_INTERFACE.STATUS, plus '': '' STATUS_DESCRIPTION when Fusion wrote one); no REFERENCE10, no composed unbalanced sentence. Rows selected by job id (Journal Import child request id in the batch name; LOAD_REQUEST_ID). Deployed alongside V1, never overwriting it.' from dual
+           'GL journal import reconciliation (Contract v1 -- nine columns, keyset). V4 (backlog #173): GROUP_ID = work queue id, Import Journals submitted with that exact group (never ALL); ERROR_MESSAGE is only Journal Import''s own error (GL_INTERFACE.STATUS, plus '': '' STATUS_DESCRIPTION when Fusion wrote one); no REFERENCE10, no composed unbalanced sentence. Rows selected by job id (import job''s GroupID/LedgerID arguments; LOAD_REQUEST_ID). Deployed alongside V1 and V3, never overwriting them.' from dual
     -- Issue 8 (2026-07-20): repoint the remaining reconciliation reports from the
     -- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/. Their data models
     -- + reports were additively deployed to /Custom/DMT2/{CEMLI}/ and each report
@@ -416,10 +416,13 @@ using (
     select 100000027                                            bip_report_id,
            'Workers'                                            cemli_code,
            'Worker'                                             object_type,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_DM.xdm'      dm_catalog_path,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_RPT.xdo'     report_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                          interface_table,
-           'Worker HDL base-table reconciliation (Contract v1)' notes,
+           'Worker HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #289): '
+             || 'rows selected by the HDL request id; every person component (name, email, '
+             || 'phone, address, national id, legislative data) proven on its own key-map '
+             || 'row and base table. Deployed alongside V1, never overwriting it.' notes,
            1                                                    contract_version,
            'DMT_WORKER_TFM_TBL'                                 tfm_table,
            'FUSION_PERSON_ID'                                   fusion_id_column,
@@ -508,10 +511,12 @@ using (
     select 100000028                                            bip_report_id,
            'Salaries'                                           cemli_code,
            'Salary'                                             object_type,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                          interface_table,
-           'Salary HDL base-table reconciliation (Contract v1)' notes,
+           'Salary HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #291): '
+             || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
+             || 'salary confirmed in CMP_SALARY. Deployed alongside V1, never overwriting it.' notes,
            1                                                    contract_version,
            'DMT_SALARY_TFM_TBL'                                 tfm_table,
            'FUSION_SALARY_ID'                                   fusion_id_column,
@@ -1540,13 +1545,24 @@ commit;
 -- Projects interface tables carry NO error-text column, so ERROR rows return the
 -- literal '#IMPORT_REPORT#' marker; the reconciler leaves those GENERATED and the
 -- import-report harvest (child ImportProjectReportJob) supplies the real text.
+-- V2 (2026-10-07, owner-approved exception, design section 5): Fusion stamps no
+-- job id on the project base tables, so DMT_PROJECT_RECON_V2_DM selects the work
+-- item's base projects by PM_PROJECT_REFERENCE LIKE '<run_id>:<work_queue_id>:%'
+-- (the source reference the transform stamps; P_WQ_ID is sent for Projects only),
+-- tasks / team members / transaction controls through their project, interface
+-- rows by LOAD_REQUEST_ID. Never by the run prefix. V1 stays deployed (BIP objects
+-- are never overwritten); the three auditor rows below point at V2 too.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Projects'                                             cemli_code,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'      report_catalog_path,
-           'Project import reconciliation (Contract v1, multi-tier, 4 tiers)' notes,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'   report_catalog_path,
+           'Project import reconciliation (Contract v1, multi-tier, 4 tiers). V2 (2026-10-07, '
+           || 'owner-approved exception): base projects found by PM_PROJECT_REFERENCE LIKE '
+           || '''<run_id>:<work_queue_id>:%'' (Fusion stamps no job id on the project base '
+           || 'tables), other base tiers through their project, interface rows by '
+           || 'LOAD_REQUEST_ID; called once per work item. Deployed alongside V1.' notes,
            1                                                       contract_version,
            'DMT_PJF_PROJECTS_TFM_TBL'                             tfm_table,
            'FUSION_PROJECT_ID'                                    fusion_id_column,
@@ -2982,8 +2998,8 @@ commit;
 -- / 100000023); the reconciliation path/notes/interface_table set earlier for
 -- these rows is untouched.
 --   GLBalances -- money-bearing (journal line ENTERED_DR), KEY_TYPE=
---                 STAMPED_REF (GROUP_ID = RUN_ID * 1000000 + journal number,
---                 one group per journal; report V2 reads the run's range),
+--                 STAMPED_REF (GROUP_ID = the GLBalances work queue id,
+--                 passed as P_BATCH_ID),
 --                 DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON.
 --   GLBudgets  -- money-bearing (budget cell BUDGET_AMOUNT), KEY_TYPE=
 --                 CAPTURED_ID (captured CODE_COMBINATION_ID list + budget
@@ -2993,8 +3009,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'GLBalances'                                        cemli_code,
-           '/Custom/DMT2/GLBalances/GL_BAL_CMP_V2_DM.xdm'       cmp_dm_catalog_path,
-           '/Custom/DMT2/GLBalances/GL_BAL_CMP_V2_RPT.xdo'      cmp_report_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_RPT.xdo'         cmp_report_catalog_path,
            'DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON'         cmp_function
     from dual
     union all select 'GLBudgets',
@@ -3326,8 +3342,8 @@ using (
     select 100000062                                            bip_report_id,
            'Projects.Task'                                        cemli_code,
            'Project Task'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJF_TASKS_XFACE'                                        interface_table,
            'Projects project-task tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3377,8 +3393,8 @@ using (
     select 100000063                                            bip_report_id,
            'Projects.TeamMember'                                        cemli_code,
            'Project Team Member'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJF_PROJ_TEAM_MEMBERS_XFACE'                                        interface_table,
            'Projects project-team-member tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3428,8 +3444,8 @@ using (
     select 100000064                                            bip_report_id,
            'Projects.TxnControl'                                        cemli_code,
            'Project Transaction Control'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V2_RPT.xdo'      report_catalog_path,
            'PJC_TXN_CONTROLS_XFACE'                                        interface_table,
            'Projects project-txn-control tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '

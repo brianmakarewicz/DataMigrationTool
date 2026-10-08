@@ -179,12 +179,27 @@ AS
 
         DBMS_LOB.CREATETEMPORARY(l_dat, TRUE);
 
-        -- Source key naming convention:
-        --   Worker:           SSO=<HDL_SOURCE_SYSTEM_OWNER config>, SSID=<PersonNumber>
+        -- Source key naming convention (SSO = <HDL_SOURCE_SYSTEM_OWNER config>):
+        --   Worker:           SSID=<PersonNumber>
         --   PersonName:       SSID=<PersonNumber>_NME, PersonId(SSID)=<PersonNumber>
-        --   WorkRelationship: SSID=<PersonNumber>_POS, PersonId(SSID)=<PersonNumber>
-        --   WorkTerms:        SSID=<AssignmentNumber>_TRM, PeriodOfServiceId(SSID)=<PersonNumber>_POS
-        --   Assignment:       SSID=<AssignmentNumber>_ASG, WorkTermsAssignmentId(SSID)=<AssignmentNumber>_TRM
+        --   WorkRelationship: SSID=<worker TFM_SEQUENCE_ID>, PersonId(SSID)=<PersonNumber>
+        --   WorkTerms:        SSID=<assignment TFM_SEQUENCE_ID>_TRM,
+        --                     PeriodOfServiceId(SSID)=<worker TFM_SEQUENCE_ID>
+        --   Assignment:       SSID=<AssignmentNumber>_ASG,
+        --                     WorkTermsAssignmentId(SSID)=<assignment TFM_SEQUENCE_ID>_TRM
+        -- Parent-child join keys are the TFM sequence id (design section 6, decided
+        -- 2026-10-07; backlog #289/#290), now that the SourceSystemOwner is unique per
+        -- DMT instance (#287). Documented exceptions:
+        --   * The WorkRelationship is generated one-for-one from the worker row, so it
+        --     takes the worker's TFM id (key-map object PeriodOfService, so it cannot
+        --     collide with the Person record).
+        --   * WorkTerms and Assignment come from the SAME assignment TFM row and are
+        --     both key-map object Assignment, so WorkTerms carries '_TRM' after the TFM
+        --     id to stay distinct.
+        --   * The Worker id (<PersonNumber>) and the Assignment id
+        --     (<AssignmentNumber>_ASG) are also referenced by OTHER objects (Salary,
+        --     Absence, TalentProfiles, Benefits). Switching them needs a cross-object
+        --     XREF resolver, which policy defers, so they keep their business keys.
         -- The assignment number is a SOURCE business key (from the Assignment
         -- object's rows, joined by person) — never fabricated from the person.
 
@@ -259,7 +274,7 @@ AS
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
             l_vals := l_sso                          || '|' ||
-                      pv(r.PERSON_NUMBER) || '_POS'  || '|' ||  -- SourceSystemId
+                      TO_CHAR(r.TFM_SEQUENCE_ID)     || '|' ||  -- SourceSystemId (worker TFM id, #289)
                       pv(r.PERSON_NUMBER)            || '|' ||  -- PersonId(SourceSystemId)
                       pv(r.LEGAL_ENTITY_NAME)        || '|' ||
                       pv(r.START_DATE)             || '|' ||
@@ -280,9 +295,9 @@ AS
         --    generate, so DMT_ASSIGNMENT_TFM_TBL / DMT_WORK_REL_TFM_TBL are
         --    populated. The TFM row carries the run-prefixed PERSON_NUMBER (the
         --    same prefix the Worker TFM uses) and the source ASSIGNMENT_NUMBER
-        --    verbatim, so the WorkTerms SourceSystemId '<AssignmentNumber>_TRM'
-        --    and the PeriodOfServiceId '<prefixed person>_POS' both line up with
-        --    the Worker/WorkRelationship keys above and with the recon RECON_KEY.
+        --    verbatim. The WorkTerms SourceSystemId is the assignment row's TFM id
+        --    plus '_TRM', and its PeriodOfServiceId is the person's worker TFM id
+        --    (the WorkRelationship id from section 3), see the key notes above.
         --    One assignment TFM row = one WorkTerms + one Assignment line, so
         --    multiple assignments per person get distinct keys by construction.
         --
@@ -298,9 +313,18 @@ AS
             DMT_HDL_UTIL_PKG.BUILD_DAT_HEADER('WorkTerms', C_WORK_TERMS_COLS));
 
         FOR r IN (
-            SELECT a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
+            SELECT a.TFM_SEQUENCE_ID,
+                   a.PERSON_NUMBER, a.ASSIGNMENT_NUMBER, a.ASSIGNMENT_NAME,
                    a.EFFECTIVE_START_DATE, a.ACTION_CODE,
                    a.PRIMARY_ASSIGNMENT_FLAG,
+                   -- The person's worker TFM id = the WorkRelationship's
+                   -- SourceSystemId (section 3). NULL when this run carries no
+                   -- worker row for the person: the reference then names no
+                   -- parent and Fusion rejects the line with its own error.
+                   (SELECT MIN(w.TFM_SEQUENCE_ID)
+                    FROM   DMT_WORKER_TFM_TBL w
+                    WHERE  w.RUN_ID = a.RUN_ID
+                    AND    w.PERSON_NUMBER = a.PERSON_NUMBER) AS WORKER_TFM_ID,
                    ROW_NUMBER() OVER (
                        PARTITION BY a.PERSON_NUMBER, a.EFFECTIVE_START_DATE
                        ORDER BY a.PRIMARY_ASSIGNMENT_FLAG DESC, a.TFM_SEQUENCE_ID
@@ -314,8 +338,8 @@ AS
             ORDER BY a.TFM_SEQUENCE_ID
         ) LOOP
             l_vals := l_sso                                  || '|' ||
-                      pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- SourceSystemId (per assignment)
-                      pv(r.PERSON_NUMBER) || '_POS'          || '|' ||  -- PeriodOfServiceId(SourceSystemId)
+                      TO_CHAR(r.TFM_SEQUENCE_ID) || '_TRM'   || '|' ||  -- SourceSystemId (assignment TFM id, #290)
+                      TO_CHAR(r.WORKER_TFM_ID)               || '|' ||  -- PeriodOfServiceId(SourceSystemId) = WorkRelationship id
                       pv(NVL(r.ACTION_CODE, 'HIRE'))         || '|' ||
                       pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
                       TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
@@ -367,7 +391,7 @@ AS
                       pv(r.EFFECTIVE_START_DATE)             || '|' ||  -- EffectiveStartDate
                       TO_CHAR(r.eff_seq)                     || '|' ||  -- EffectiveSequence (distinct per same-day sibling)
                       CASE WHEN r.eff_seq = r.eff_cnt THEN 'Y' ELSE 'N' END || '|' ||  -- EffectiveLatestChange: only the last same-day sibling
-                      pv(r.ASSIGNMENT_NUMBER) || '_TRM'      || '|' ||  -- WorkTermsAssignmentId(SourceSystemId)
+                      TO_CHAR(r.TFM_SEQUENCE_ID) || '_TRM'   || '|' ||  -- WorkTermsAssignmentId(SourceSystemId) = this row's WorkTerms id
                       pv(NVL(r.ASSIGNMENT_NAME, r.ASSIGNMENT_NUMBER)) || '|' ||  -- AssignmentName
                       pv(r.ASSIGNMENT_NUMBER)                || '|' ||  -- AssignmentNumber (source business key)
                       pv(NVL(r.ASSIGNMENT_STATUS_TYPE_CODE, 'ACTIVE_PROCESS')) || '|' ||  -- AssignmentStatusTypeCode

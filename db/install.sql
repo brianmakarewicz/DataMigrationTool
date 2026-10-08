@@ -491,6 +491,7 @@ prompt == Views (dependency order) ==
 @@views/dmt_pipeline_summary_v.sql
 @@views/dmt_prefix_history_v.sql
 @@views/dmt_record_detail_v.sql
+@@views/dmt_stg_attempt_v.sql
 @@views/dmt_object_funnel_v.sql
 @@views/dmt_run_history_v.sql
 @@views/dmt_run_metrics_v.sql
@@ -808,6 +809,10 @@ prompt == Procedures ==
 -- point (a thin guard-enforcing wrapper over DMT_SCHEDULER_PKG.SUBMIT_PIPELINE),
 -- not a page renderer, so it does not belong in the APEX page package.
 @@procedures/dmt_submit_run_v2.sql
+
+-- DMT_WORKER_DOC_ERROR_V calls DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR and reads
+-- DMT_HDL_MESSAGE_GTT, so it is created once the package specs exist.
+@@views/dmt_worker_doc_error_v.sql
 
 prompt == Package bodies ==
 @@packages/dmt_absence_hdl_gen_pkg.pkb.sql
