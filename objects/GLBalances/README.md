@@ -17,10 +17,11 @@
 - **DataAccessSetID:** 300000046975980 (US Primary Ledger)
 - **Source:** Spreadsheet (must match USER_JE_SOURCE_NAME in data exactly)
 - **LedgerID:** 300000046975971 (US Primary Ledger)
-- **GroupID:** the work queue id (backlog #173, owner decision 2026-10-07). The
-  generator stamps it on every line and the job is submitted with that exact group,
-  never `ALL`. Journal Import holds the whole group when any line errors, so a load
-  is all-or-nothing: every other line is FAILED quoting the real error.
+- **GroupID:** the run prefix followed by the work queue id (backlog #410; the work
+  queue id alone when prefixing is off). The generator stamps it on every line and the
+  job is submitted with that exact group, never `ALL`. Journal Import holds the whole
+  group when any line errors, so a load is all-or-nothing: every other line is FAILED
+  quoting the real error and naming the journal and line that caused it.
 - **Last 3:** N,N,N
 
 Discovered via BIP query against `gl_ledgers` + `gl_access_sets` on 2026-04-02.
@@ -41,6 +42,9 @@ None in this folder.
 None currently.
 
 ## History
+- 2026-10-08 (backlog #410, proof run 286): GROUP_ID = prefix || work queue id
+  (933421657 for prefix 93342, work item 1657); quoted group errors name the journal
+  and line that caused them.
 - 2026-10-08 (backlog #173 follow-up, proof run 282): GROUP_ID = work queue id, Import
   Journals submitted with that exact group (never ALL, which could import other users'
   journals on a shared pod). Probe load 10075834 proved one bad journal holds the whole

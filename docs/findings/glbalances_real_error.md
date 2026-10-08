@@ -34,6 +34,31 @@ write was the proof run described at the end.
    journal LOADED, BAD line FAILED with its own real error, its sibling line FAILED quoting it,
    0 UNACCOUNTED. See "Resolution".
 
+## Group id = prefix + work queue id (owner decision 2026-10-08, proof run 286, backlog #410)
+
+- `GROUP_ID` = the run prefix followed by the work queue id (prefix 93342 + work item 1657 =
+  933421657); the work queue id alone when prefixing is off (cutover). `GL_INTERFACE.GROUP_ID` is
+  NUMBER(18): a 5-digit prefix leaves 13 digits for the work queue id, and the generator refuses
+  any value over 18 digits instead of truncating it. `RUN_GL_BALANCES` reads the stamped value back
+  and submits Import Journals with exactly that group (never `ALL`).
+- The quoted group error names the journal and line that caused it:
+  `[FUSION_ERROR] Rejected with document: journal <REFERENCE1> line <key>: <real message>`.
+- Report V4 is unchanged (it reads the import job's own GroupID argument). Its header comment still
+  says "GROUP_ID = the work queue id"; it is not redeployed for a comment (BIP objects are never
+  overwritten).
+
+Proof run 286 (prefix 93342, scenario `RegressionTest2610072127`, work item 1657, load 10076040,
+import 10076043): Fusion `GL_INTERFACE.GROUP_ID` = 933421657 on all 6 lines (1 `EF04`, 5 `P`),
+and the import job's `submit.argument4` = 933421657.
+
+| Line | Outcome | ERROR_TEXT |
+|---|---|---|
+| BAD1 line 511 (account 99999) | FAILED | `[FUSION_ERROR] EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+| G1 x2, G2 x2, BAD1 line 512 | FAILED | `[FUSION_ERROR] Rejected with document: journal 93342RT-JNL-BAD1 line 511: EF04: FLEX-VALUE DOES NOT EXIST (SEGMENT=Account) (VALUESET=Corporate Account) (VALUE=99999)` |
+
+0 UNACCOUNTED. `dmt_regression_run.py`: PASS (exit 0, 0 review items). Playwright click-through
+run 286: PASS. All four checkers: PASS.
+
 ## Current design (owner decision 2026-10-07, proof run 282) — supersedes "Resolution" below
 
 The owner ruled out `GroupID = ALL`: on a shared pod (local, ATP and other users) it could import
