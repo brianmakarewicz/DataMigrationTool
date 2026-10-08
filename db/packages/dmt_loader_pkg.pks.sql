@@ -54,10 +54,13 @@ AS
     -- post-load job (e.g. Assets PostMassAdditions) run after the import job succeeds.
     -- p_job_name: full ESS path with ',' or ';' before the job definition.
     -- p_param_list: ESS ParameterList (e.g. book code 'US CORP'); NULL => 'NEW,N,<run_id>'.
+    -- p_cemli_code: the object the job runs for; it is submitted as that object's
+    -- central Fusion user (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS), the user that polls it.
     FUNCTION SUBMIT_IMPORT_JOB (
         p_run_id         IN NUMBER,
         p_job_name       IN VARCHAR2,
-        p_param_list     IN VARCHAR2 DEFAULT NULL
+        p_param_list     IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code     IN VARCHAR2
     ) RETURN VARCHAR2;
 
     -- Find the chained import ESS job ID after the Load job completes.

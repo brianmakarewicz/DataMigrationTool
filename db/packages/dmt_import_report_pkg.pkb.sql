@@ -166,12 +166,23 @@
         l_xml      CLOB;
         l_errors   t_error_list;
         l_prefix   VARCHAR2(50) := NVL(p_cemli_code, 'UNKNOWN') || ' > ';
+        l_user     VARCHAR2(500);
+        l_pass     VARCHAR2(500);
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
             p_message        => C_PROC || ' start. ESS request: ' || p_request_id,
             p_package        => C_PKG,
             p_procedure      => C_PROC);
+
+        -- Download as the object's central Fusion user, the user that submitted
+        -- the import (backlog #309; Fusion refuses another user's output). With
+        -- no CEMLI the download traces the request id to its CEMLI instead.
+        IF p_cemli_code IS NOT NULL THEN
+            DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS(p_cemli_code => p_cemli_code,
+                                               x_username   => l_user,
+                                               x_password   => l_pass);
+        END IF;
 
         -- Download the ESS output XML.
         -- Download failure RAISES out of this function (tranche findings 9/23):
@@ -183,7 +194,9 @@
         -- ever needed, that is a signature change (error-code OUT parameter
         -- per the section 7 contract), not a re-overload of the 0 return.
         BEGIN
-            l_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id);
+            l_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_request_id,
+                                                         p_username   => l_user,
+                                                         p_password   => l_pass);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG_ERROR(
