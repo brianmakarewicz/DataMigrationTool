@@ -120,6 +120,9 @@ AS
     -- DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM (backlog #500), so it is no
     -- longer STAGED here. The NOT NULL filters stay as a guard so a NULL is never
     -- sent as a parameter. STATIC SQL; no COMMIT.
+    -- Backlog #502: the token also carries LABEL = '<BU> / <batch source>', which
+    -- the queue worker uses as the child's PARTITION_LABEL, so two groups that
+    -- differ only by business unit are told apart on the run-detail page.
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
@@ -127,7 +130,8 @@ AS
         l_keys DMT_PARTITION_KEY_TBL;
     BEGIN
         SELECT JSON_OBJECT('BU_NAME'           VALUE BU_NAME,
-                           'BATCH_SOURCE_NAME' VALUE BATCH_SOURCE_NAME)
+                           'BATCH_SOURCE_NAME' VALUE BATCH_SOURCE_NAME,
+                           'LABEL'             VALUE SUBSTR(BU_NAME || ' / ' || BATCH_SOURCE_NAME, 1, 200))
         BULK COLLECT INTO l_keys
         FROM  (SELECT DISTINCT BU_NAME, BATCH_SOURCE_NAME
                FROM   DMT_RA_LINES_TFM_TBL

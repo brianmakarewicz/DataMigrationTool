@@ -218,7 +218,11 @@ AS
         -- unaffected). A GENERATED row cannot normally carry [FUSION_ERROR] (a real
         -- error sets it FAILED), so the guard is defence in depth and never defers a
         -- row that already has a real error.
-        x_awaiting_base OUT NUMBER
+        x_awaiting_base OUT NUMBER,
+        -- Backlog #515: 'Y' counts only rows with no work item (WORK_QUEUE_ID
+        -- IS NULL) -- the rows a spawn-per-partition parent transformed that no
+        -- child generated. Ignored when p_work_queue_id is given.
+        p_unowned_only  IN  VARCHAR2 DEFAULT 'N'
     ) IS
         l_sql   VARCHAR2(4000);
         l_cnt   NUMBER;
@@ -270,7 +274,9 @@ AS
                 || 'FROM ' || r.TFM_TABLE
                 || ' WHERE RUN_ID = :run_id'
                 || CASE WHEN p_work_queue_id IS NOT NULL
-                        THEN ' AND WORK_QUEUE_ID = :wq' END
+                        THEN ' AND WORK_QUEUE_ID = :wq'
+                        WHEN p_unowned_only = 'Y'
+                        THEN ' AND WORK_QUEUE_ID IS NULL' END
                 || CASE WHEN r.ROW_FILTER IS NOT NULL
                         THEN ' AND ' || r.ROW_FILTER END;
 
@@ -585,6 +591,7 @@ AS
         l_awaiting    NUMBER;  -- unused here; ACCOUNT_ROWS OUT (base-lag count)
         l_partition_key DMT_WORK_QUEUE_TBL.PARTITION_KEY%TYPE;
         l_scope_wq    NUMBER;
+        l_parent_id   DMT_WORK_QUEUE_TBL.PARENT_QUEUE_ID%TYPE;  -- backlog #515
     BEGIN
         -- Work-queue-ID core (2026-07-20): a spawn-per-partition child (a real
         -- PARTITION_KEY, not the un-partitioned parent NULL and not the in-zip
@@ -595,7 +602,7 @@ AS
         -- other item keeps the run-scoped count (l_scope_wq stays NULL). This
         -- reuses the same signal that decides whether the generators stamp
         -- WORK_QUEUE_ID (EXECUTE_ONE: PARTITION_KEY IS NOT NULL AND <> 'ALL').
-        SELECT PARTITION_KEY INTO l_partition_key
+        SELECT PARTITION_KEY, PARENT_QUEUE_ID INTO l_partition_key, l_parent_id
         FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         l_scope_wq := CASE WHEN l_partition_key IS NOT NULL
                             AND l_partition_key <> 'ALL'
@@ -635,7 +642,88 @@ AS
                 l_loaded || ' loaded, ' || l_failed || ' errored of ' || l_total || ').',
                 'INFO', C_PKG, 'apply_accounting_gate');
         END IF;
+
+        -- Backlog #515: a spawn-per-partition child has just settled. If it was
+        -- the last of its parent's children, check that every row the parent
+        -- transformed was taken by some child; if not, the parent goes FAILED.
+        IF l_parent_id IS NOT NULL THEN
+            SETTLE_SPLIT_PARENT(p_parent_queue_id => l_parent_id);
+        END IF;
     END apply_accounting_gate;
+
+    -- ============================================================
+    -- SETTLE_SPLIT_PARENT (backlog #515) — see the spec. A split parent is
+    -- marked DONE when it spawns its children (the bookkeeping exemption);
+    -- this re-checks that claim once every child is terminal. Rows that no
+    -- child generated carry no WORK_QUEUE_ID; any of them not accounted
+    -- (still STAGED, GENERATED, UNACCOUNTED, or FAILED without text) means
+    -- the parent's records are not all accounted for, so the parent is set
+    -- FAILED with the count. It never writes DONE (the gate's rule). Uses
+    -- the sanctioned ACCOUNT_ROWS read; no new dynamic-SQL site.
+    -- ============================================================
+    PROCEDURE SETTLE_SPLIT_PARENT (p_parent_queue_id IN NUMBER) IS
+        C_PROC        CONSTANT VARCHAR2(30) := 'SETTLE_SPLIT_PARENT';
+        l_run_id      DMT_WORK_QUEUE_TBL.RUN_ID%TYPE;
+        l_cemli       DMT_WORK_QUEUE_TBL.CEMLI_CODE%TYPE;
+        l_status      DMT_WORK_QUEUE_TBL.WORK_STATUS%TYPE;
+        l_open        NUMBER;
+        l_total       NUMBER;
+        l_loaded      NUMBER;
+        l_failed      NUMBER;
+        l_unaccounted NUMBER;
+        l_awaiting    NUMBER;  -- unused; ACCOUNT_ROWS OUT
+        l_step        VARCHAR2(100);
+    BEGIN
+        -- Lock the parent so two children settling at the same moment
+        -- serialise: the second sees the first's committed terminal status.
+        l_step := 'lock parent ' || p_parent_queue_id;
+        SELECT RUN_ID, CEMLI_CODE, WORK_STATUS
+        INTO   l_run_id, l_cemli, l_status
+        FROM   DMT_WORK_QUEUE_TBL
+        WHERE  QUEUE_ID = p_parent_queue_id
+        FOR UPDATE;
+
+        -- Only a parent still claiming DONE needs the check.
+        IF l_status <> 'DONE' THEN
+            RETURN;
+        END IF;
+
+        l_step := 'count open children';
+        SELECT COUNT(*) INTO l_open
+        FROM   DMT_WORK_QUEUE_TBL
+        WHERE  PARENT_QUEUE_ID = p_parent_queue_id
+        AND    WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+        IF l_open > 0 THEN
+            RETURN;  -- a later child settles it
+        END IF;
+
+        l_step := 'count unowned rows';
+        ACCOUNT_ROWS(l_run_id, l_cemli,
+                     l_total, l_loaded, l_failed, l_unaccounted,
+                     x_awaiting_base => l_awaiting,
+                     p_unowned_only  => 'Y');
+
+        IF l_unaccounted > 0 THEN
+            l_step := 'fail parent';
+            UPDATE DMT_WORK_QUEUE_TBL
+            SET    WORK_STATUS   = 'FAILED',
+                   ERROR_MESSAGE = l_unaccounted || ' record(s) transformed by this run were '
+                                   || 'not taken by any partition child work item, so they '
+                                   || 'were never sent to Fusion and are unaccounted.',
+                   COMPLETED_AT  = SYSTIMESTAMP
+            WHERE  QUEUE_ID = p_parent_queue_id;
+            DMT_UTIL_PKG.LOG(l_run_id,
+                'Object ' || l_cemli || ' split parent ' || p_parent_queue_id
+                || ' FAILED: ' || l_unaccounted || ' record(s) owned by no child work item.',
+                'WARN', C_PKG, C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(l_run_id,
+                'SETTLE_SPLIT_PARENT failed at step: ' || l_step,
+                SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END SETTLE_SPLIT_PARENT;
 
     -- ============================================================
     -- EXECUTE_ONE — called by one-shot child job DMT_WQ_{queue_id}
@@ -794,7 +882,12 @@ AS
 
                         IF l_keys IS NOT NULL THEN
                             FOR i IN 1 .. l_keys.COUNT LOOP
-                                l_label := JSON_VALUE(l_keys(i), '$.' || l_child_col);
+                                -- Backlog #502: a composite-key object may carry its
+                                -- own display label in the token ("LABEL"); use it
+                                -- when present, else the partition column's value.
+                                l_label := SUBSTR(NVL(JSON_VALUE(l_keys(i), '$.LABEL'),
+                                                      JSON_VALUE(l_keys(i), '$.' || l_child_col)),
+                                                  1, 200);
                                 INSERT INTO DMT_WORK_QUEUE_TBL (
                                     RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
                                     PARENT_QUEUE_ID, SORT_ORDER, DEPENDS_ON, WORK_STATUS
@@ -815,6 +908,12 @@ AS
                             PARTITION_LABEL = CASE WHEN l_cnt = 0 THEN 'No qualifying rows'
                                                    ELSE '(split into ' || l_cnt || ' partition(s))' END
                         WHERE QUEUE_ID = p_queue_id;
+                        -- Backlog #515: with no children there is no later child
+                        -- settle to re-check the parent, so check now: any row the
+                        -- parent transformed that is not accounted fails the parent.
+                        IF l_cnt = 0 THEN
+                            SETTLE_SPLIT_PARENT(p_parent_queue_id => p_queue_id);
+                        END IF;
                         COMMIT;
                     END;
 

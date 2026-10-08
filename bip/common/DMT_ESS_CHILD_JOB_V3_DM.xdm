@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ess_child_job" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- V3 (2026-10-08, backlog #501): adds an optional SECOND submitted-
+-- argument match. :P_MATCH2_ARG_POS / :P_MATCH2_VALUE name another
+-- argument that must also equal a value (ARInvoices: AutoInvoiceImportEss
+-- argument 1 = the business unit id, with argument 2 = the transaction
+-- source), so two groups with the same source in different business
+-- units each get their own import. Both empty = identical to V2.
+-- V2 (2026-10-07): the import job's batch id may be any submitted
+-- argument. :P_BATCH_ARG_POS names its position (Items = 1, the
+-- default when empty; Requisitions = 2, RequisitionImportJob
+-- argument 2 = BatchId). With an empty :P_BATCH_ID the behaviour is
+-- identical to V1. V3 is deployed alongside V1 and V2 (never
+-- overwritten).
+SELECT r.requestid
+FROM   fusion.ess_request_history r
+LEFT JOIN fusion.ess_request_property pb
+       ON pb.requestid = r.requestid
+      AND pb.name = 'submit.argument' || NVL(:P_BATCH_ARG_POS, '1')
+LEFT JOIN fusion.ess_request_property pm
+       ON pm.requestid = r.requestid
+      AND pm.name = 'submit.argument' || :P_MATCH2_ARG_POS
+WHERE  r.definition LIKE '%' || :P_JOB_DEF || '%'
+AND    r.requestid != TO_NUMBER(:P_LOAD_ESS_ID)
+AND    r.requestid  > TO_NUMBER(:P_LOAD_ESS_ID)
+AND    (
+          (:P_BATCH_ID IS NOT NULL AND pb.value = :P_BATCH_ID)
+       OR (:P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID))
+       OR (:P_BATCH_ID IS NULL)
+       )
+AND    (:P_MATCH2_VALUE IS NULL OR pm.value = :P_MATCH2_VALUE)
+ORDER BY
+    CASE WHEN :P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID)
+         THEN 0 ELSE 1 END,
+    r.requestid ASC
+FETCH FIRST 1 ROW ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ess_child_job">
+          <element name="REQUESTID" value="REQUESTID" dataType="xsd:string" tagName="REQUESTID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_LOAD_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_JOB_DEF" dataType="character" rowPlacement="2"
+               labelID="P_JOB_DEF" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="3"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ARG_POS" dataType="character" rowPlacement="4"
+               labelID="P_BATCH_ARG_POS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_MATCH2_ARG_POS" dataType="character" rowPlacement="5"
+               labelID="P_MATCH2_ARG_POS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_MATCH2_VALUE" dataType="character" rowPlacement="6"
+               labelID="P_MATCH2_VALUE" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

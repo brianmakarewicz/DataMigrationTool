@@ -70,8 +70,32 @@ AS
         x_failed        OUT NUMBER,
         x_unaccounted   OUT NUMBER,
         p_work_queue_id IN  NUMBER DEFAULT NULL,
-        x_awaiting_base OUT NUMBER
+        x_awaiting_base OUT NUMBER,
+        -- p_unowned_only (backlog #515): 'Y' counts only the run's rows that
+        -- carry NO work item (WORK_QUEUE_ID IS NULL). Used for a spawn-per-
+        -- partition parent: once its children have settled, a row no child
+        -- generated is still unowned, and if it is not accounted the parent
+        -- must not stay DONE. Ignored when p_work_queue_id is given.
+        p_unowned_only  IN  VARCHAR2 DEFAULT 'N'
     );
+
+    -- ------------------------------------------------------------
+    -- SETTLE_SPLIT_PARENT (backlog #515). A spawn-per-partition parent is
+    -- marked DONE when it splits (the bookkeeping exemption in the design's
+    -- accounting-gate rule): its rows are owned and gated by its children.
+    -- A row the parent transformed that no child took (no partition key
+    -- covered it) would otherwise stay STAGED, owned and counted by nobody.
+    -- Once every child of p_parent_queue_id is terminal, this counts the
+    -- run's rows of that object that carry no WORK_QUEUE_ID and are not
+    -- accounted (ACCOUNT_ROWS, p_unowned_only = 'Y'). If any, the parent is
+    -- set FAILED with the count; otherwise it is left as it is. It never
+    -- writes DONE. Locks the parent row so two children settling at once
+    -- serialise and the last one decides. Does NOT commit.
+    -- Called from apply_accounting_gate when a child settles, and from the
+    -- heartbeat run rollup (DMT_QUEUE_PKG) for children that ended FAILED
+    -- outside the gate.
+    -- ------------------------------------------------------------
+    PROCEDURE SETTLE_SPLIT_PARENT (p_parent_queue_id IN NUMBER);
 
     -- ------------------------------------------------------------
     -- SWEEP_UNACCOUNTED — the one shared unaccounted sweep (design
