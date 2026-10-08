@@ -42,3 +42,7 @@ jobs:
       - name: BIP reconciliation reports (.xdm + query.sql)
         if: always()
         run: python scripts/check_bip_recon_reports.py
+
+      - name: Central Fusion credentials (no HCM_/BIP_ keys, no direct reads)
+        if: always()
+        run: python scripts/check_central_credentials.py

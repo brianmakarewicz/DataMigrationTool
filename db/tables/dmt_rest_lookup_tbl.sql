@@ -16,6 +16,7 @@ begin
 	"ABSENT_FIELD" VARCHAR2(100), 
 	"ABSENT_VALUE" VARCHAR2(100), 
 	"NOT_APPLICABLE_REASON" VARCHAR2(500), 
+	"CEMLI_CODE" VARCHAR2(100), 
 	 PRIMARY KEY ("REST_LOOKUP_ID")
   USING INDEX  ENABLE, 
 	 CONSTRAINT "DMT_REST_LOOKUP_OBJ_UK" UNIQUE ("OBJECT_TYPE")
@@ -53,6 +54,16 @@ end;
 /
 begin
   execute immediate 'ALTER TABLE "DMT_REST_LOOKUP_TBL" ADD ("NOT_APPLICABLE_REASON" VARCHAR2(500))';
+exception when others then if sqlcode not in (-1430) then raise; end if;
+end;
+/
+
+-- 2026-10-08 (backlog #430): CEMLI_CODE names the object whose Fusion user the
+-- verify reads as (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS). Set only on rows whose
+-- OBJECT_TYPE is neither an object code nor a display label in the object display
+-- catalog (DMT_V_CEMLI_TFM_TABLES); NULL means the catalog / the key resolves it.
+begin
+  execute immediate 'ALTER TABLE "DMT_REST_LOOKUP_TBL" ADD ("CEMLI_CODE" VARCHAR2(100))';
 exception when others then if sqlcode not in (-1430) then raise; end if;
 end;
 /
