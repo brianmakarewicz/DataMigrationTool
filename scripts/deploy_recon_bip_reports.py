@@ -93,6 +93,10 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # BillingEvents V2 (2026-10-07, owner decision): base events by the import
+    # job's REQUEST_ID, interface rows by LOAD_REQUEST_ID, never by the run prefix.
+    # Alongside BILLING_EVENT_DM (never overwritten).
+    ("BillingEvents",            "DMT_BILLING_EVENT_RECON_V2_DM", "DMT_BILLING_EVENT_RECON_V2_RPT"),
     # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
     # item's Fusion job ids and the Standard document style; the run-id LIKE on
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
