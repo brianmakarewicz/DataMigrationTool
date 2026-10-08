@@ -38,6 +38,10 @@ REPORTS = [
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
     ("PurchaseOrders",          "PO_DM",             "PO_RPT"),
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
+    # BlanketPOs V2 (2026-10-07, backlog #258): rows found only by the work
+    # item's Fusion job ids and the Blanket document style. Deployed alongside
+    # DMT_BLANKET_PO_RECON_DM (never overwritten).
+    ("BlanketPOs",              "DMT_BLANKET_PO_RECON_V2_DM", "DMT_BLANKET_PO_RECON_V2_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     ("APInvoices",              "DMT_AP_RECON_DM",   "DMT_AP_RECON_RPT"),
     # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
