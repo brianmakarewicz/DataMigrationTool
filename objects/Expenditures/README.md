@@ -124,12 +124,14 @@ click-through PASS.
 None in this folder.
 
 ## Known Issues
-- **The Record Detail "Verify in Fusion" REST lookup for Expenditures fails.** The
-  `DMT_REST_LOOKUP_TBL` row asks `projectExpenditureItems` for fields (ProjectNumber,
-  TaskNumber, ExpenditureType, ItemDate, Quantity, Amount) the resource does not expose; Fusion
-  answers 400 "URL request parameter fields ... is not valid" (DMT's call reports HTTP 500).
-  The item itself is there (a plain query by ExpenditureItemId returns 200). Pre-existing; it is
-  the review item in `dmt_regression_run.py` for this object (run 238 shows it too).
+- **The Record Detail "Verify in Fusion" REST lookup for Expenditures fails (backlog #314).**
+  The call filters `ExpenditureItemId=<recon key>` (the text reference, not the numeric
+  FUSION_EXPENDITURE_ITEM_ID), and the `DMT_REST_LOOKUP_TBL` row asks `projectExpenditureItems`
+  for fields (ProjectNumber, TaskNumber, ExpenditureType, ItemDate, Quantity, Amount) the
+  resource does not expose (Fusion answers 400 "URL request parameter fields ... is not
+  valid"). The item itself is there (a plain query by ExpenditureItemId returns 200).
+  Pre-existing; it is the review item in `dmt_regression_run.py` for this object (run 238 shows
+  it too).
 - TRANSACTION_TYPE in STG must be 'LABOR' or 'NONLABOR'. 'Miscellaneous' caused the original ORA-06502 (Fusion tried to process NULL QUANTITY/PERSON_NUMBER).
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - `expenditure_item_id` does NOT exist on `PJC_TXN_XFACE_STAGE_ALL` interface table — removed from BIP query and results package.
