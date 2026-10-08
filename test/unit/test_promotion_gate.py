@@ -185,7 +185,7 @@ def main():
                                                  exit_code=2)), ident, False),
         ("MATCHING regression 'PASS (known review items only)' exit 0 (owner rule 2026-10-08)",
          mutate(lambda e: e["regression"].update(verdict="PASS (known review items only)",
-                                                 exit_code=0, known_review=28,
+                                                 exit_code=0, known_review=11,
                                                  new_review=0)), ident, True),
         ("regression was a subset (--pipelines HCM)",
          mutate(lambda e: e["regression"].update(pipelines="HCM")), ident, False),

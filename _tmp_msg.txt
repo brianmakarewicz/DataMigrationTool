@@ -1,0 +1,9 @@
+Known-review list: keep only the 11 items run 300 still reports after #669
+
+The REST lookup fix (#669) cleared 17 of the original Verify-in-Fusion items,
+so they are removed (a regression there now blocks again). Remaining: 9 HCM
+zero-record objects, BillingEvents/Billing Events (#462, fin_impl 403) and
+Customers/Locations (#468). Unit tests updated to match.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01U8b9oVmN9YXxfmmB65XjHx

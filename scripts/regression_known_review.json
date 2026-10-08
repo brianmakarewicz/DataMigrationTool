@@ -11,24 +11,7 @@
     {"category": "ZERO_RECORDS", "object": "PerfEvaluations","backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
     {"category": "ZERO_RECORDS", "object": "WorkSchedules",  "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
 
-    {"category": "REST_VERIFY", "object": "Assets",         "sub": "Asset Headers",        "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Assets",         "sub": "Asset Books",          "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Assets",         "sub": "Asset Assignments",    "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "BillingEvents",  "sub": "Billing Events",       "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Locations",            "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Party Sites",          "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Party Site Uses",      "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Accounts",             "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Account Sites",        "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Account Site Uses",    "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Expenditures",   "sub": "Project Expenditures", "backlog": "#314",      "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "GLBudgets",      "sub": "GL Budget Balances",   "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "MiscReceipts",   "sub": "Inventory Transactions", "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "MiscReceipts",   "sub": "Transaction Lots",     "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "MiscReceipts",   "sub": "Transaction Serials",  "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "ProjectBudgets", "sub": "Project Budget Lines", "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "Projects",       "sub": "Team Members",         "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "TalentProfiles", "sub": "Talent Profiles",      "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"},
-    {"category": "REST_VERIFY", "object": "TalentProfiles", "sub": "Profile Items",        "backlog": "#460-#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"}
+    {"category": "REST_VERIFY", "object": "BillingEvents",  "sub": "Billing Events",       "backlog": "#462", "reason": "Verify-in-Fusion REST lookup never worked (fin_impl gets HTTP 403); owner decision 2026-10-08"},
+    {"category": "REST_VERIFY", "object": "Customers",      "sub": "Locations",            "backlog": "#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"}
   ]
 }
