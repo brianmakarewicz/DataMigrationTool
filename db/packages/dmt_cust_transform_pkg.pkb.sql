@@ -5,10 +5,26 @@
 -- DMT_CUST_TRANSFORM_PKG Body
 -- Customers: 7 transform procedures (one per object type).
 -- Applies run prefix to PARTY_NUMBER, ACCOUNT_NUMBER, and
--- all ORIG_SYSTEM_REFERENCE values. Carries the user's BATCH_ID and every
--- *_ORIG_SYSTEM (source system) through from staging unchanged -- no
--- hardcoding STG->TFM (design section 7); the batch id and source system
--- must match the values the loader sends in the BulkImportJob ParameterList.
+-- all ORIG_SYSTEM_REFERENCE values. Carries every *_ORIG_SYSTEM (source
+-- system) through from staging unchanged -- no hardcoding STG->TFM (design
+-- section 7). The source system and the TFM BATCH_ID must match the values the
+-- loader sends in the bulk import ParameterList.
+--
+-- TFM BATCH_ID = the Fusion import batch id DMT sends (owner decision
+-- 2026-10-07): the run prefix followed by the source BATCH_ID, e.g. prefix
+-- 93311 + source 5001 = 933115001. With no source BATCH_ID it is the prefix
+-- followed by the work-queue id (DMT_LOADER_PKG.g_gen_queue_id; the run id
+-- when the transform runs outside a work item). With USE_PREFIX = N (NULL
+-- prefix) it is the source BATCH_ID unchanged. Fusion stamps this value on
+-- every HZ base row (REQUEST_ID) and interface row (BATCH_ID), so each load's
+-- rows carry their own batch and the reconciliation report selects base rows
+-- by it exactly. The source BATCH_ID still partitions the loads: within a run
+-- the prefix is constant, so one source batch maps to exactly one Fusion batch.
+-- Fusion's batch columns are NUMBER(18): a 5-digit prefix leaves 13 digits for
+-- the source batch id.
+--
+-- REVISIONS:
+--   2026-10-07  BM  TFM BATCH_ID = prefix || NVL(source BATCH_ID, work-queue id).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_CUST_TRANSFORM_PKG';
@@ -100,7 +116,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -314,7 +332,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.LOCATION_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.LOCATION_ORIG_SYSTEM_REFERENCE),
                     s.INSERT_UPDATE_FLAG,
@@ -528,7 +548,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -723,7 +745,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.PARTY_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.PARTY_ORIG_SYSTEM_REFERENCE),
                     s.SITE_ORIG_SYSTEM,
@@ -908,7 +932,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.PARTY_ORIG_SYSTEM,
@@ -1102,7 +1128,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.CUST_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_ORIG_SYSTEM_REFERENCE),
                     s.CUST_SITE_ORIG_SYSTEM,
@@ -1292,7 +1320,9 @@
                     s.STG_SEQUENCE_ID,
                     p_run_id,
                     NULL,
-                    NVL(s.BATCH_ID, p_run_id),  -- work-queue-ID core: source BATCH_ID first; run id fallback (always non-null at transform time -- g_work_queue_id is NULL during the parent transform pass), never the prefix. Prefix is only a key component (via PREFIXED), never a control value.
+                    -- Fusion batch id (owner decision 2026-10-07): run prefix followed by the
+                    -- source BATCH_ID, else by the work-queue id (run id outside the queue).
+                    TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.CUST_SITE_ORIG_SYSTEM,
                     DMT_UTIL_PKG.PREFIXED(l_prefix, s.CUST_SITE_ORIG_SYS_REF),
                     s.CUST_SITEUSE_ORIG_SYSTEM,

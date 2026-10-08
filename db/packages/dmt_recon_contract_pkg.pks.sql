@@ -119,6 +119,12 @@
     --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
     --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
     --                   detail is in DMT_LOG_TBL and x_rows is empty.
+    --   p_fusion_batch_id  optional: the Fusion import batch id this load sent, for an
+    --                   object whose base tables carry that batch rather than the
+    --                   import job id (Customers: HZ_* base REQUEST_ID = the bulk
+    --                   import batch id). Sent as the report parameter
+    --                   P_FUSION_BATCH_ID only when not NULL, so every other object's
+    --                   report call is unchanged. (Added 2026-10-07.)
     -- --------------------------------------------------------
     PROCEDURE FETCH_ROWS (
         p_cemli_code    IN  VARCHAR2,
@@ -128,7 +134,8 @@
         p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
-        p_work_queue_id IN  NUMBER   DEFAULT NULL
+        p_work_queue_id IN  NUMBER   DEFAULT NULL,
+        p_fusion_batch_id IN NUMBER  DEFAULT NULL
     );
 
 END DMT_RECON_CONTRACT_PKG;
