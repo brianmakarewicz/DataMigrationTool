@@ -457,6 +457,20 @@ models it with one STG + one TFM table.
    "interface-staging" marker, not a drift. The generator spec-header already
    names the correct CSV (`GlBudgetInterface.csv`); no comment fix was required.
 
+## A failed cell carries its error to the rest of its budget run (2026-10-08, backlog #174)
+
+Validate and Load Budgets loads a RUN_NAME all or nothing: one FAILED cell leaves every
+other cell of that run VALIDATED in `GL_BUDGET_INTERFACE`, never loaded, and the recon
+report returns only the FAILED cell. `DMT_GL_BUDGET_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS`
+marks every other not-LOADED cell DMT sent with the same RUN_NAME (same run and work item)
+FAILED quoting it:
+`[FUSION_ERROR] Rejected with document: budget run <RUN_NAME> cell <account> <period>: <real error>`.
+No BIP change was needed. Regression cross-grain rows (scenario RegressionTest2610081756):
+run `Budget_EO_XG` with a valid cell 101-10-78630-120-000-000 (`RT-BUD-XG-78630`) and a cell
+on the parent account value 77001 (`RT-BUD-XG-77001-BAD`). Proof run 315 (prefix 93370):
+77001 FAILED with "The account has parent values...", 78630 FAILED quoting it, Budget_EO_1
+cells LOADED, 0 UNACCOUNTED.
+
 ## Date
 
 Analysis performed: 2026-04-01
