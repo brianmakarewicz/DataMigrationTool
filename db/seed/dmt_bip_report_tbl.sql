@@ -352,23 +352,30 @@ commit;
 -- budgets on projects created in the same run (docs/findings/
 -- known_good_ProjectBudgets.md). Existing DBs converge via
 -- db/migrations/2026-10-07_project_budgets_recon_v2_registry.sql.
+-- V3 (2026-10-07, owner decision): DMT_PRJ_BUDGET_RECON_V3_DM finds rows only by
+-- the work item's Fusion job ids (plan versions by REQUEST_ID = import id,
+-- interface rows by LOAD_REQUEST_ID = load id); the run prefix is never a search
+-- value. V1 and V2 stay deployed; BIP objects are never overwritten. Existing DBs
+-- converge via db/migrations/2026-10-07_project_budgets_recon_v3_registry.sql.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000019                                                    bip_report_id,
            'ProjectBudgets'                                             cemli_code,
            'Project Budget'                                             object_type,
-           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_DM.xdm'           dm_catalog_path,
-           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V2_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V3_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V3_RPT.xdo'         report_catalog_path,
            'PJO_PLAN_VERSIONS_XFACE'                                    interface_table,
            'Project budget import reconciliation (Contract v1) - '
-              || 'PjoPlanVersionsXface.csv via prj/projectControl/import. V2 '
-              || '(2026-10-07): run scoped by PM_BUDGET_REFERENCE LIKE prefix OR '
-              || 'prefixed project number; deployed alongside V1, never overwriting it.'  notes,
+              || 'PjoPlanVersionsXface.csv via prj/projectControl/import. V3 '
+              || '(2026-10-07): rows found only by the work item''s Fusion job ids (plan '
+              || 'versions by the import REQUEST_ID, interface by the load LOAD_REQUEST_ID), '
+              || 'never by the run prefix; called once per work item. Deployed alongside '
+              || 'V1 and V2, never overwriting them.'  notes,
            1                                                            contract_version,
            'DMT_PRJ_BUDGET_TFM_TBL'                                     tfm_table,
            'FUSION_BUDGET_VERSION_ID'                                   fusion_id_column,
-           'SRC_BUDGET_LINE_REFERENCE -- run-prefixed source budget line ref, survives as PM_BUDGET_REFERENCE on the base row' recon_key_sql
+           'SRC_BUDGET_LINE_REFERENCE -- run-prefixed source budget line ref, survives as PM_BUDGET_REFERENCE on the base row (a match key only, never a row selector)' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

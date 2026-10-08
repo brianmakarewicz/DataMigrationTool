@@ -60,9 +60,9 @@ when matched then update set
   t."DISPLAY_LABELS" = 'Req ID,Number,Preparer,Status,BU',
   t."AUTH_TYPE"      = 'ERP',
   t."ENABLED"        = 'Y',
-  t."NOTES"          = 'Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent, so it sidesteps the data-security scoping and the system-generated-number problem. Runs under the per-object credential DMT_CONFIG Requisitions_USERNAME/PASSWORD = calvin.roth.'
+  t."NOTES"          = 'Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent, so it sidesteps the data-security scoping and the system-generated-number problem. Runs as the Requisitions load user (DMT_ERP_INTERFACE_OPTIONS_TBL via DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS = calvin.roth).'
 when not matched then insert ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES")
-  values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionHeaderId={KEY}','FUSION_REQUISITION_HEADER_ID','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent, so it sidesteps the data-security scoping and the system-generated-number problem. Runs under the per-object credential DMT_CONFIG Requisitions_USERNAME/PASSWORD = calvin.roth.');
+  values ('Requisitions','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionHeaderId={KEY}','FUSION_REQUISITION_HEADER_ID','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent, so it sidesteps the data-security scoping and the system-generated-number problem. Runs as the Requisitions load user (DMT_ERP_INTERFACE_OPTIONS_TBL via DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS = calvin.roth).');
 /
 begin
   insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Expenditures','/fscmRestApi/resources/11.13.18.05/projectExpenditureItems','ExpenditureItemId={KEY}','FUSION_EXPENDITURE_ITEM_ID','ExpenditureItemId,ProjectNumber,TaskNumber,ExpenditureType,ItemDate,Quantity,Amount','Item ID,Project,Task,Type,Date,Qty,Amount','ERP','Y',NULL);
@@ -140,7 +140,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Grants','/fscmRestApi/resources/11.13.18.05/gmsGrants','AwardNumber={KEY}','AWARD_NUMBER','GrantId,AwardNumber,AwardName,AwardStatusCode,SponsorName,StartDate','Grant ID,Award #,Name,Status,Sponsor,Start','ERP','Y','Grants management awards');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Grants','/fscmRestApi/resources/11.13.18.05/awards','AwardNumber={KEY}','AWARD_NUMBER','AwardId,AwardNumber,AwardName,SponsorName,StartDate,ContractStatus','Award ID,Award #,Name,Sponsor,Start,Status','ERP','Y','awards resource (gmsGrants does not exist: HTTP 404); query by AwardNumber = the prefixed award number. Verified live 2026-10-07.');
 exception when dup_val_on_index then null;
 end;
 /
@@ -215,7 +215,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Award Headers','/fscmRestApi/resources/11.13.18.05/gmsGrants','AwardNumber={KEY}','AWARD_NUMBER','GrantId,AwardNumber,AwardName,AwardStatusCode,SponsorName,StartDate','Grant ID,Award #,Name,Status,Sponsor,Start','ERP','Y','Grants award headers');
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Award Headers','/fscmRestApi/resources/11.13.18.05/awards','AwardNumber={KEY}','AWARD_NUMBER','AwardId,AwardNumber,AwardName,SponsorName,StartDate,ContractStatus','Award ID,Award #,Name,Sponsor,Start,Status','ERP','Y','awards resource (gmsGrants does not exist: HTTP 404); query by AwardNumber = the prefixed award number. Verified live 2026-10-07.');
 exception when dup_val_on_index then null;
 end;
 /
@@ -241,9 +241,9 @@ when matched then update set
   t."DISPLAY_LABELS" = 'Req ID,Number,Preparer,Status,BU',
   t."AUTH_TYPE"      = 'ERP',
   t."ENABLED"        = 'Y',
-  t."NOTES"          = 'Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent. Runs under the Requisitions per-object credential (calvin.roth).'
+  t."NOTES"          = 'Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent. Runs as the Requisitions load user (DMT_ERP_INTERFACE_OPTIONS_TBL via DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS = calvin.roth).'
 when not matched then insert ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES")
-  values ('Req Headers','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionHeaderId={KEY}','FUSION_REQUISITION_HEADER_ID','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent. Runs under the Requisitions per-object credential (calvin.roth).');
+  values ('Req Headers','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','RequisitionHeaderId={KEY}','FUSION_REQUISITION_HEADER_ID','RequisitionHeaderId,Requisition,Preparer,DocumentStatus,RequisitioningBU','Req ID,Number,Preparer,Status,BU','ERP','Y','Verify queries RequisitionHeaderId = the Fusion header id captured by reconciliation onto the TFM (FUSION_REQUISITION_HEADER_ID); exact and user-independent. Runs as the Requisitions load user (DMT_ERP_INTERFACE_OPTIONS_TBL via DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS = calvin.roth).');
 /
 begin
   insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Req Lines','/fscmRestApi/resources/11.13.18.05/purchaseRequisitions','Requisition={KEY}','REQUISITION_NUMBER','RequisitionHeaderId,RequisitionNumber,PreparerName,Status,TotalAmount,CreationDate','Req ID,Number,Preparer,Status,Amount,Created','ERP','Y',NULL);

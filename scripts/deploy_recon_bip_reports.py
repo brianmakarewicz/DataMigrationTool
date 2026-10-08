@@ -103,6 +103,10 @@ REPORTS = [
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
     ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V2_DM",           "DMT_PRJ_BUDGET_RECON_V2_RPT"),
+    # ProjectBudgets V3 (2026-10-07, owner decision): rows found only by the work
+    # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
+    # the run prefix. Deployed alongside V1 and V2 (never overwritten).
+    ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V3_DM",           "DMT_PRJ_BUDGET_RECON_V3_RPT"),
     # Grants V2 (2026-10-07, docs/findings/known_good_Grants.md): BASE tier keyed
     # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
     # the original DMT_GRANT_RECON_DM (never overwritten).
