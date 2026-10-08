@@ -511,10 +511,12 @@ using (
     select 100000028                                            bip_report_id,
            'Salaries'                                           cemli_code,
            'Salary'                                             object_type,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                          interface_table,
-           'Salary HDL base-table reconciliation (Contract v1)' notes,
+           'Salary HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #291): '
+             || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
+             || 'salary confirmed in CMP_SALARY. Deployed alongside V1, never overwriting it.' notes,
            1                                                    contract_version,
            'DMT_SALARY_TFM_TBL'                                 tfm_table,
            'FUSION_SALARY_ID'                                   fusion_id_column,
