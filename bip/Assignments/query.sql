@@ -1,75 +1,65 @@
--- DMT_ASSIGNMENTS_RECON_DM query (Contract v1, design section 5).
--- Mirror of the CDATA SQL in DMT_ASSIGNMENTS_RECON_DM.xdm, kept here for review
--- and for running the query standalone against live Fusion (bind the six
--- parameters).
+-- DMT_ASSIGNMENTS_RECON_V2_DM query (Contract v1, design section 5).
+-- Mirror of the CDATA SQL in DMT_ASSIGNMENTS_RECON_V2_DM.xdm (the registered
+-- version), kept here for review and for running the query standalone against
+-- live Fusion (bind the six parameters). V1 (DMT_ASSIGNMENTS_RECON_DM.xdm) stays
+-- deployed and in the repo; BIP objects are never overwritten.
 --
--- Assignments is an HDL object whose RECONCILE_BATCH loads TWO record types into
--- two TFM tables, so this ONE Contract v1 report returns BOTH base tiers (the
--- OBJECT_TYPE discriminator, design section 5, lets one report serve them):
+-- Work relationship and assignment tiers of the Workers HDL load. Rows are
+-- selected by the HDL request id (P_LOAD_REQUEST_ID = the data set RequestId),
+-- never by the run prefix: HRC_DL_DATA_SET_BUS_OBJS -> HRC_DL_FILE_LINES ->
+-- HRC_DL_FILE_ROWS gives each SourceSystemOwner + SourceSystemId this load sent;
+-- each is joined to HRC_INTEGRATION_KEY_MAP on its own owner and id (no owner
+-- literal: the owner is per DMT instance, backlog #287), and returned only when
+-- this load's physical line finished LOADED_SUCCESS and the surrogate exists in
+-- the base table.
 --
---   OBJECT_TYPE='WorkRelationship'  -> DMT_WORK_REL_TFM_TBL
---       base tier: PER_PERIODS_OF_SERVICE. FUSION_ID = the real PERSON_ID.
---       RECORD_KEY = the .dat SourceSystemId '<prefixed PERSON_NUMBER>_POS'.
---   OBJECT_TYPE='Assignment'        -> DMT_ASSIGNMENT_TFM_TBL
---       base tier: PER_ALL_ASSIGNMENTS_M. FUSION_ID = the real ASSIGNMENT_ID.
---       RECORD_KEY = the .dat SourceSystemId '<ASSIGNMENT_NUMBER>_ASG' (and the
---       WorkTerms sibling '<ASSIGNMENT_NUMBER>_TRM', also a per_all_assignments_m
---       row) — the same values RECONCILE_HDL matches with the '_TRM,_ASG'
---       suffixes and the assignment TFM row's RECON_KEY.
+--   'WorkRelationship' (key-map PeriodOfService) -> PER_PERIODS_OF_SERVICE,
+--       FUSION_ID = PERSON_ID, RECORD_KEY '<person>_POS'.
+--   'Assignment'       (key-map Assignment)      -> PER_ALL_ASSIGNMENTS_M,
+--       FUSION_ID = ASSIGNMENT_ID, RECORD_KEY '<assignment>_ASG' / '_TRM'.
 --
--- The tie from our .dat SourceSystemId to the base row is HRC_INTEGRATION_KEY_MAP
--- (SOURCE_SYSTEM_ID we wrote -> SURROGATE_ID = the base id). Verified live
--- 2026-09-16 (fin_impl):
---   object_name='PeriodOfService', source_system_id '<PNUM>_POS'
---       SURROGATE_ID == PER_PERIODS_OF_SERVICE.PERIOD_OF_SERVICE_ID
---       -> per_periods_of_service.person_id is the real PERSON_ID.
---   object_name='Assignment', source_system_id '<ASGNUM>_ASG'/'_TRM'
---       SURROGATE_ID == PER_ALL_ASSIGNMENTS_M.ASSIGNMENT_ID
---         (e.g. '10052RT-WKR-G1_ASG' -> ASSIGNMENT_ID 300000331500388,
---          ASSIGNMENT_NUMBER '10052RT-WKR-G1').
--- Every migrated SourceSystemId starts with the run prefix, so BASE-tier
--- matching is by the run prefix (P_PREFIX). HDL per-record failures are captured
--- separately (RECONCILE_HDL tags [FUSION_ERROR] before this report runs), so this
--- report returns BASE/SUCCESS rows only. Keyset pagination by RECORD_KEY.
+-- Proven read-only on 2026-10-07 against request 10070511 (run 238): returns
+-- the G1 / G1B _ASG and _TRM rows and 93294RT-WKR-G1_POS; the rejected BASG
+-- lines (UNPROCESSED) are not returned.
 
-SELECT object_type, record_key, source_type, fusion_status,
-       fusion_id, error_message, load_request_id
+SELECT object_type,
+       record_key,
+       source_type,
+       fusion_status,
+       fusion_id,
+       error_message,
+       load_request_id,
+       source_ref,
+       dmt_reference
 FROM (
-    -- WorkRelationship base tier: positive proof in PER_PERIODS_OF_SERVICE.
-    SELECT 'WorkRelationship'            AS object_type,
-           k.source_system_id            AS record_key,
-           'BASE'                        AS source_type,
-           'SUCCESS'                     AS fusion_status,
-           MAX(pos.person_id)            AS fusion_id,
-           CAST(NULL AS VARCHAR2(4000))  AS error_message,
-           :P_LOAD_REQUEST_ID            AS load_request_id
-    FROM   hrc_integration_key_map k,
-           per_periods_of_service   pos
-    WHERE  k.object_name        = 'PeriodOfService'
-    AND    k.source_system_owner = 'HRC_SQLLOADER'
-    AND    k.surrogate_id       = pos.period_of_service_id
-    AND    k.source_system_id LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR k.source_system_id > :P_AFTER_KEY)
-    GROUP BY k.source_system_id
-    UNION ALL
-    -- Assignment base tier: positive proof in PER_ALL_ASSIGNMENTS_M. Covers both
-    -- the '_ASG' assignment record and its '_TRM' work-terms sibling (both are
-    -- per_all_assignments_m rows keyed by the source assignment number).
-    SELECT 'Assignment'                  AS object_type,
-           k.source_system_id            AS record_key,
-           'BASE'                        AS source_type,
-           'SUCCESS'                     AS fusion_status,
-           MAX(a.assignment_id)          AS fusion_id,
-           CAST(NULL AS VARCHAR2(4000))  AS error_message,
-           :P_LOAD_REQUEST_ID            AS load_request_id
-    FROM   hrc_integration_key_map k,
-           per_all_assignments_m   a
-    WHERE  k.object_name        = 'Assignment'
-    AND    k.source_system_owner = 'HRC_SQLLOADER'
-    AND    k.surrogate_id       = a.assignment_id
-    AND    k.source_system_id LIKE :P_PREFIX || '%'
-    AND    (:P_AFTER_KEY IS NULL OR k.source_system_id > :P_AFTER_KEY)
-    GROUP BY k.source_system_id
-    ORDER BY record_key
+    SELECT DECODE(m.object_name, 'PeriodOfService', 'WorkRelationship', m.object_name) AS object_type,
+           r.key_source_id                   AS record_key,
+           'BASE'                            AS source_type,
+           'SUCCESS'                         AS fusion_status,
+           MAX(DECODE(m.object_name, 'PeriodOfService', pos.person_id, a.assignment_id)) AS fusion_id,
+           CAST(NULL AS VARCHAR2(4000))      AS error_message,
+           :P_LOAD_REQUEST_ID                AS load_request_id,
+           r.key_source_id                   AS source_ref,
+           CAST(NULL AS VARCHAR2(240))       AS dmt_reference
+    FROM   hrc_dl_data_set_bus_objs b
+    JOIN   hrc_dl_file_lines        l   ON l.data_set_bus_obj_id = b.data_set_bus_obj_id
+    JOIN   hrc_dl_file_rows         r   ON r.line_id = l.line_id
+    JOIN   hrc_integration_key_map  m   ON m.source_system_owner = r.key_source_owner
+                                       AND m.source_system_id    = r.key_source_id
+    LEFT JOIN per_periods_of_service pos ON m.object_name = 'PeriodOfService'
+                                        AND pos.period_of_service_id = m.surrogate_id
+    LEFT JOIN per_all_assignments_m  a   ON m.object_name = 'Assignment'
+                                        AND a.assignment_id = m.surrogate_id
+    WHERE  b.request_id = :P_LOAD_REQUEST_ID
+    AND    m.object_name IN ('PeriodOfService', 'Assignment')
+    AND    EXISTS (SELECT 1
+                   FROM   hrc_dl_physical_lines p
+                   WHERE  p.row_id = r.row_id
+                   AND    p.validated_loaded_status = 'LOADED_SUCCESS')
+    GROUP BY m.object_name, r.key_source_id
 )
-WHERE ROWNUM <= :P_CHUNK_SIZE;
+WHERE  fusion_id IS NOT NULL
+AND    (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

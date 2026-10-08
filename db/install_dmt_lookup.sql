@@ -39,11 +39,9 @@ prompt == DMT_LOOKUP tables (COA) ==
 @@lookup/coa/01_coa_tables.sql
 
 prompt == DMT_LOOKUP packages ==
-@@lookup/packages/dmt_lkp_refresh_pkg.pks
 @@lookup/packages/dmt_lkp_suggest_pkg.pks
 @@lookup/packages/dmt_coa_map_pkg.pks
 @@lookup/packages/dmt_coa_suggest_pkg.pks
-@@lookup/packages/dmt_lkp_refresh_pkg.pkb
 @@lookup/packages/dmt_lkp_suggest_pkg.pkb
 @@lookup/packages/dmt_coa_map_pkg.pkb
 @@lookup/packages/dmt_coa_suggest_pkg.pkb
@@ -55,7 +53,6 @@ grant select, insert, update, delete on DMT_LKP_EBS_VALUES to DMT_OWNER;
 grant select, insert, update, delete on DMT_LKP_MAPPING to DMT_OWNER;
 grant select on DMT_LKP_EBS_UNMATCHED_V to DMT_OWNER;
 grant select on DMT_LKP_MAPPING_STATUS_V to DMT_OWNER;
-grant execute on DMT_LKP_REFRESH_PKG to DMT_OWNER;
 grant execute on DMT_LKP_SUGGEST_PKG to DMT_OWNER;
 grant select, insert, update, delete on DMT_COA_SET to DMT_OWNER;
 grant select, insert, update, delete on DMT_COA_SEGMENT_DEF to DMT_OWNER;

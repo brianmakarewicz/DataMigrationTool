@@ -105,6 +105,34 @@ failed 290; a reconcile-only rerun left every ERROR_TEXT byte-identical. Rejecte
 left by earlier runs do not hold back later loads (run 252's GOOD POs loaded beside them), so no
 purge is needed.
 
+## Reconciliation by Fusion job id (recon V2, 2026-10-07, backlog #264)
+
+`bip/PurchaseOrders/DMT_PO_RECON_V2_DM.xdm` (deployed alongside V1, which is never
+overwritten) finds rows only by the work item's own Fusion job ids and the Standard style,
+because the PO family shares the interface and base tables:
+
+- Base headers, lines and schedules: `REQUEST_ID` = the import job (ImportSPOJob) and the
+  header `TYPE_LOOKUP_CODE = 'STANDARD'`. Distributions are found through their loaded
+  schedule (`PO_DISTRIBUTIONS_ALL` carries no request id on this pod).
+- Interface headers: `LOAD_REQUEST_ID` = the load job AND `REQUEST_ID` = the import job AND
+  `DOCUMENT_TYPE_CODE = 'STANDARD'`. Interface lines, schedules and distributions: their
+  `LOAD_REQUEST_ID` under such a header, joined on Fusion's numeric interface ids. Fusion
+  leaves `REQUEST_ID` NULL on the child interface rows, so the import job applies through
+  the header.
+- `PO_INTERFACE_ERRORS`: `REQUEST_ID` = the import job, joined on the interface id.
+
+V1 also narrowed the interface rows with `LIKE :P_RUN_ID || '_HDR_%'` (and `_LN_`, `_LOC_`,
+`_DIST_`); that is gone. The document, line, schedule and distribution numbers are only the
+`RECORD_KEY` that matches a returned row to its TFM row.
+
+Proof run 261 (prefix 93317, scenario RegressionTest2610071920, STANDALONE:PurchaseOrders):
+load 10075434 and import 10075442 are the ids Fusion stamped on the interface and base rows.
+Same result as run 252: PO-001 and PO-002 LOADED (8 rows), BAD1 FAILED on its supplier error
+with its line, schedule and distribution quoting it, XG1 FAILED on line 2's UOM error with
+the rest of the document quoting it, 0 UNACCOUNTED, line dollars 2,540 staged = 2,250 loaded
++ 290 failed. A reconcile-only rerun left every TFM row byte-identical; regression harness
+19/19 expected outcomes met; Playwright click-through PASS.
+
 ## Known Issues
 None currently. Multi-BU grouping working correctly.
 

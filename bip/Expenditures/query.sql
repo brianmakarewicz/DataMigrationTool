@@ -1,9 +1,11 @@
 -- ============================================================
--- Expenditures (project costs) BIP reconciliation query -- BIP
--- reconciliation report contract v1 (nine columns, keyset
--- pagination). Data source: ApplicationDB_FSCM. This mirrors the
--- SQL embedded in DMT_EXP_RECON_DM.xdm for review; the .xdm is
--- authoritative.
+-- Expenditures (project costs) reconciliation data model V2 --
+-- BIP reconciliation report contract v1 (nine columns, keyset
+-- pagination, the six standard parameters). Data source:
+-- ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/Expenditures/query.sql; the .xdm is authoritative.
+-- V2 (2026-10-07) is deployed ALONGSIDE DMT_EXP_RECON_DM (V1);
+-- BIP objects are never overwritten.
 --
 -- NINE columns, in contract order:
 --   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -13,40 +15,53 @@
 -- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
 --   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
 --
--- Keyset: ORDER BY RECORD_KEY, only rows whose RECORD_KEY sorts
--- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- OBJECT MODEL. Expenditures is ONE object (one FBDI zip,
+-- PjcExpendituresInterface). Each work item is one (transaction
+-- source, document) partition: one load (Load Interface File for
+-- Import) and one separately submitted import (Import Costs,
+-- ImportProcessParallelEssJob, argument 8 = the work item's queue
+-- id). The reconciler calls this report once per work item with
+-- that item's own load and import ids.
 --
--- ONE object, two tiers. Expenditures is a single FBDI zip loaded by
--- "Import and Process Cost Transactions": interface table
--- PJC_TXN_XFACE_STAGE_ALL, base table PJC_EXP_ITEMS_ALL.
---
--- RECON KEY = ORIG_TRANSACTION_REFERENCE (Slot A native reference).
--- The transform stamps the run prefix onto it and that prefixed value
--- survives verbatim on the base row, so it is both the read-back key
--- and the run-scoped selector (LIKE :P_PREFIX || '%'). Load/import
--- ESS ids are not durably captured per row on this pod, so
--- :P_LOAD_REQUEST_ID / :P_IMPORT_ESS_ID cannot select the run alone;
--- they are declared for contract symmetry and stamped for traceability.
+-- Row selection (owner decision 2026-10-07): rows are FOUND only
+-- by the work item's Fusion job ids, never by the run prefix or
+-- run id. Verified live on runs 236 and 238 (2026-10-07):
+--   BASE rows: PJC_EXP_ITEMS_ALL.REQUEST_ID = :P_IMPORT_ESS_ID
+--     (Fusion stamps the Import Costs job id on each costed item;
+--     run 238 work item 1576, import 10070713 -> items 765733 and
+--     765734). FUSION_ID = EXPENDITURE_ITEM_ID.
+--   INTERFACE rows rejected by the import: PJC_TXN_XFACE_ALL with
+--     REQUEST_ID = :P_IMPORT_ESS_ID and a status other than 'P'
+--     (run 238: E2DATE and E3RATE kept REQUEST_ID 10070713,
+--     status R).
+--   INTERFACE rows left in staging by the load:
+--     PJC_TXN_XFACE_STAGE_ALL with LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID and a status other than 'P'.
+-- No LIKE anywhere. P_RUN_ID and P_PREFIX are declared for
+-- contract symmetry only. The prefixed ORIG_TRANSACTION_REFERENCE
+-- (= TFM RECON_KEY) is used only as RECORD_KEY, to match a row
+-- Fusion returned back to its TFM row.
 --
 -- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
 --   BASE (present in PJC_EXP_ITEMS_ALL) => SUCCESS
---   INTERFACE (unprocessed, TRANSACTION_STATUS_CODE <> 'P') => ERROR
--- FUSION_ID non-null on every BASE row (EXPENDITURE_ITEM_ID).
+--   INTERFACE (rejected, status <> 'P') => ERROR
 --
--- ERROR_MESSAGE limitation (verified live): the cost interface has NO
--- error-text column, and PJC_TXN_ERRORS carries no
--- ORIG_TRANSACTION_REFERENCE, so a rejected row cannot be joined to
--- its real Fusion message from a queryable table. The per-row
--- rejection text lives in the import report XML, which the pipeline
--- harvests into DMT TFM.ERROR_TEXT. This query reports the interface
--- status code (the only signal the interface carries).
+-- ERROR_MESSAGE is NULL on INTERFACE rows, unchanged from V1: the
+-- cost interface tables carry no error-text column. The real
+-- per-row Fusion message is harvested from the Import Costs
+-- report output of the same import job by
+-- DMT_EXPENDITURE_RESULTS_PKG; a row with no real message is left
+-- UNACCOUNTED, never fabricated FAILED.
+--
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
 -- ============================================================
 SELECT
     object_type, record_key, source_type, fusion_status,
     fusion_id, error_message, load_request_id, source_ref, dmt_reference
 FROM (
-    -- BASE tier -- SUCCESS. RECORD_KEY = prefixed ORIG_TRANSACTION_REFERENCE,
-    -- persisted verbatim on the base row. DMT_REFERENCE = ATTRIBUTE1.
+    -- BASE: costed expenditure items -- found by the import job's REQUEST_ID
     SELECT
         'Expenditures'                       AS object_type,
         ei.orig_transaction_reference        AS record_key,
@@ -54,42 +69,51 @@ FROM (
         'SUCCESS'                            AS fusion_status,
         ei.expenditure_item_id               AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
-        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        ei.request_id                        AS load_request_id,
         ei.orig_transaction_reference        AS source_ref,
         ei.attribute1                        AS dmt_reference
     FROM   pjc_exp_items_all ei
-    WHERE  ei.orig_transaction_reference LIKE :P_PREFIX || '%'
+    WHERE  ei.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
 
     UNION ALL
 
-    -- INTERFACE tier -- rejections only (TRANSACTION_STATUS_CODE <> 'P').
-    -- SUCCESS rows are covered by the BASE tier, so nothing is counted
-    -- twice. ERROR_MESSAGE reports the interface status code; the real
-    -- per-row Fusion text is retained by the reconciler from the report XML.
+    -- INTERFACE: rows the import rejected -- found by the import job's REQUEST_ID
+    SELECT
+        'Expenditures'                       AS object_type,
+        x.orig_transaction_reference         AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        x.request_id                         AS load_request_id,
+        x.orig_transaction_reference         AS source_ref,
+        x.attribute1                         AS dmt_reference
+    FROM   pjc_txn_xface_all x
+    WHERE  x.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    NVL(x.transaction_status_code,'X') <> 'P'
+
+    UNION ALL
+
+    -- INTERFACE: rows left unprocessed in staging -- found by the load job's LOAD_REQUEST_ID
     SELECT
         'Expenditures'                       AS object_type,
         st.orig_transaction_reference        AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
         CAST(NULL AS NUMBER)                 AS fusion_id,
-        -- No real per-row error is available from the interface here (the cost
-        -- interface has no error-text column, and the interface status code is
-        -- non-committal, not a Fusion error). So this column returns NULL rather
-        -- than a composed sentence. The REAL per-row Fusion rejection message is
-        -- harvested separately from the Import and Process Cost Transactions
-        -- report XML by DMT_EXPENDITURE_RESULTS_PKG and stamped onto the TFM row;
-        -- a row with no real message is left UNACCOUNTED, never fabricated FAILED.
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         st.load_request_id                   AS load_request_id,
         st.orig_transaction_reference        AS source_ref,
         st.attribute1                        AS dmt_reference
     FROM   pjc_txn_xface_stage_all st
-    WHERE  st.orig_transaction_reference LIKE :P_PREFIX || '%'
+    WHERE  st.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
     AND    NVL(st.transaction_status_code,'X') <> 'P'
 )
 -- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
 -- BIP, so treat NULL as "from the start". On later pages it carries the
--- previous page's last RECORD_KEY; only greater keys are returned.
-WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
-ORDER BY record_key
+-- previous page's last RECORD_KEY; only greater keys are returned. The
+-- ordering and the comparison are both pinned to BINARY so they agree.
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
 FETCH FIRST :P_CHUNK_SIZE ROWS ONLY

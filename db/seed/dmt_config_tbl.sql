@@ -51,16 +51,6 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_PASSWORD','***MASKED-SET-ME***',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
-  insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('BIP_USERNAME','fin_impl',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
-exception when dup_val_on_index then null;
-end;
-/
-begin
   insert into "DMT_CONFIG_TBL" ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY") values ('CUST_IMPORT_JOB_NAME','/oracle/apps/ess/cdm/foundation/bulkImport,CDMAutoBulkImportJob',NULL,to_date('2026-04-02 18:25:34','YYYY-MM-DD HH24:MI:SS'),'DMT_OWNER');
 exception when dup_val_on_index then null;
 end;
@@ -288,6 +278,26 @@ end;
 merge into "DMT_CONFIG_TBL" t
 using (select 'AR_GROUP_BY_DMT_INVOICE' config_key, 'Y' config_value,
               'ARInvoices Y/N, default Y. Y = each AR line gets ''DMT <run-prefixed invoice key>'' in INTERNAL_NOTES (after any source note; the note is truncated, never the key). INTERNAL_NOTES is an AutoInvoice grouping attribute, so each DMT invoice is one Fusion invoice and old rejected interface rows cannot hold back new runs. N = source note unchanged; DMT invoices with equal grouping values may merge (one rejection fails all) and old rejected rows can hold back new runs until purged.' description
+       from dual) s
+on (t."CONFIG_KEY" = s.config_key)
+when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
+     values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
+commit;
+-- HDL SourceSystemOwner per DMT instance (backlog #287, owner decision 2026-10-07).
+-- Every HCM HDL generator writes this value as SourceSystemOwner on every .dat line
+-- (read at run time through DMT_HDL_UTIL_PKG.GET_SOURCE_SYSTEM_OWNER). SourceSystemIds
+-- are permanent in Fusion's HRC_INTEGRATION_KEY_MAP and TFM ids repeat across a
+-- --fresh rebuild and between Docker and ATP, so each DMT instance writes under its
+-- own owner: DMT_ATP on an Autonomous Database (SYS_CONTEXT CLOUD_SERVICE is set
+-- there) and DMT_LOCAL everywhere else (the Docker instance). Both codes exist and
+-- are enabled in the pod's HRC_SOURCE_SYSTEM_OWNER lookup (verified 2026-10-07).
+-- MERGE inserts only when missing, so an administrator's later value is never
+-- overwritten; re-running is a no-op.
+merge into "DMT_CONFIG_TBL" t
+using (select 'HDL_SOURCE_SYSTEM_OWNER' config_key,
+              case when sys_context('USERENV', 'CLOUD_SERVICE') is not null
+                   then 'DMT_ATP' else 'DMT_LOCAL' end config_value,
+              'HCM HDL SourceSystemOwner written on every .dat line by every HDL generator (backlog #287). One owner per DMT instance so SourceSystemIds from different DMT databases never collide in Fusion HRC_INTEGRATION_KEY_MAP. Must be an enabled HRC_SOURCE_SYSTEM_OWNER lookup code. Seeded DMT_ATP on ATP, DMT_LOCAL on Docker.' description
        from dual) s
 on (t."CONFIG_KEY" = s.config_key)
 when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")

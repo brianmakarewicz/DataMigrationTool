@@ -138,6 +138,9 @@ way; there is NO un-prefixed exact-name party in `HZ_PARTIES`, so the prefix-in-
 already guarantees uniqueness — no DQM duplicate is lurking.
 
 ### Note on `RT-CUST-G1` / "Blorptech Widgets"
+(Superseded 2026-10-07: G1 is held because the BAD party site use INVALID_USE sits on
+`RT-PSITE-G1`, and a failed party site use holds its whole party. See "Cross-grain error
+propagation" below; run 257's `RT-CUST-XU` reproduced it on a fresh name.)
 `RT-CUST-G1` has never created under ANY prefix, and NO existing `%BLORPTECH%` /
 `%WIDGET%` party exists in `HZ_PARTIES`. So G1 is **not** blocked by a name-duplicate
 match. Its absence is because "Blorptech Widgets" is a recently changed seed name and
@@ -241,15 +244,71 @@ and AccountSiteUses (only Parties, Accounts and now PartySiteUses are error-cove
 branches is low-risk (same shape as the PartySiteUses branch) but was left out of this
 focused fix; track as a follow-up.
 
+## Cross-grain error propagation (2026-10-07, backlog #168 / #193)
+
+The customer bulk import does not write an error on every row it refuses. When one row fails it
+leaves related rows at import status `W` (held) with no `HZ_IMP_ERRORS` row of their own. Design
+section 5 ("Whole-document rejection carries the real error to every grain") says such a row must
+land FAILED quoting the real error of the row that held it, in the shared format
+`[FUSION_ERROR] Rejected with document: <grain> <key>: <real msg>`
+(`DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR`). `DMT_CUST_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` does this
+after the per-row apply and before the shared UNACCOUNTED sweep.
+
+**Which rows Fusion holds, and in which direction, was read from Fusion, not assumed.** All
+`HZ_IMP_*_T` rows of the 44 DMT loads in import batch 5001 (load request ids 9971978 to
+10070462, runs 236 and 238 included) were compared with the status of the rows they reference:
+
+| A row with its own error on... | ...holds (Fusion evidence) | Never holds |
+|---|---|---|
+| a party site use | its WHOLE party: the party, every party site, party site use, account, account site and account site use of that party (43 of 43 parties that had a failed site use and no error of their own were held; no party was ever held without one) | the location (it loads) |
+| a party | its whole tree (2 of 2) | the location |
+| a party site | its party site uses and the account sites on it (4 of 4) | the party |
+| an account | its account sites, and so their uses (86 of 86 not created) | the party (84 parties S beside a failed account) |
+| an account site | its account site uses (86 of 86 held) | its party site (86 S), its account (2 S) |
+
+So the "held parts" of runs 236/238 come from two real errors: the INVALID_USE party site use on
+`RT-PSITE-G1` holds the whole G1 customer (party, party site, BILL_TO use, account, account
+site G1, account site BAD1 that sits on `RT-PSITE-G1`, and both account site uses on account
+site G1), and the SET_CODE rejection of account sites G2/G3 holds their account site uses. The
+earlier explanation of the G1 hold as a CDM duplicate review was wrong: G1 is the only customer
+that carries the bad party site use. Note the direction: an account-site error does **not** hold
+the account above it, so a held account only quotes a party-level or party-site-use error.
+
+Rule details: sources are rows FAILED with their own `[FUSION_ERROR]` text (never a quote, so
+quotes never chain); targets are the other rows in the source's scope that Fusion received
+(`FBDI_CSV_ID` set) and that are not LOADED; the quote is appended once (idempotent); a held row
+with no failed row in its scope stays for the UNACCOUNTED sweep. Static SQL, one SELECT plus one
+FORALL UPDATE per TFM table, work-item scoped, no COMMIT.
+
+**Runs 236 / 238.** Their rows are terminal (FAILED with the old V2/V3 text) and the sanctioned
+rerun (`DMT_QUEUE_PKG.RERUN_RUN`) only re-opens UNACCOUNTED rows, so it cannot change them, and
+they are not reset. A read-only dry run fetched the deployed V5 report from live Fusion through
+`DMT_RECON_CONTRACT_PKG.FETCH_ROWS` and applied the apply and propagation rules in memory: in
+both runs the 10 rows V5 leaves UNACCOUNTED become FAILED quoting a real error (11 LOADED,
+7 FAILED with their own error, 10 FAILED with their document, 0 UNACCOUNTED).
+
+**Regression scenario** `RegressionTest2610071942` (id 347) adds three cross-grain customers,
+each with one defect: `RT-CUST-XG` (account site SET_CODE is a business-unit name), `RT-CUST-XU`
+(one party site use with an invalid type) and `RT-CUST-XP` (invalid party type, full tree under
+it). GOOD account sites and account site uses now send set code `CUSTSITE`, so G2/G3 load end
+to end. Expected outcomes are listed in `scripts/regression_scenario.json`.
+`RegressionTest2610071932` (id 346) is the first mint of this change: it sent no SET_CODE on the
+GOOD account site uses and Fusion rejected G2/G3 with `HZ_IMP_INVAL_VALUE_COMPARE` (run 256;
+its expected outcomes record that). Scenarios 343 and 345 (`RegressionTest2610071921` /
+`...1927`) are empty: their inserts lost the DB connection; they were left as they are.
+
+**Proof run 257** (prefix 93313, scenario `RegressionTest2610071942`, `STANDALONE:Customers`):
+22 LOADED, 28 FAILED, 0 UNACCOUNTED; all 50 listed rows met their expected outcome.
+G2, G3 and the XG party / party site / use / account load untouched; XG's account site fails
+with its own SET_CODE error and its account site use quotes it; every XU row quotes the XU
+INVALID_USE error (the party too, which confirms on a fresh name that a failed party site use
+holds the whole party); every XP row quotes the party's `HZ_IMP_PARTY_NAME_ERROR`; all
+locations except BAD1 load. A second reconcile pass (in a rolled-back transaction) changed no
+status and no ERROR_TEXT byte (`PROPAGATE_DOCUMENT_ERRORS`: 20 pairs, 0 rows updated), and the
+sanctioned `RERUN_RUN` re-opened nothing. Click-through `dmt_console_verify.py --run-id 257
+--cemlis Customers`: PASS.
+
 ## Known Issues
-- **OPEN 2026-10-07 — rows Fusion held with no error of their own end UNACCOUNTED.** With the
-  V5 report, a party / site / account row that Fusion held (import status W) or rejected without
-  an `HZ_IMP_ERRORS` row of its own gets no `[FUSION_ERROR]`; the shared sweep marks it
-  UNACCOUNTED. The design document's whole-document rejection rule wants such a row to quote the
-  real error of the row that did fail, in the shared format
-  `[FUSION_ERROR] Rejected with document: <grain> <key>: <real msg>`. That is pending the shared
-  formatter `DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR` (separate PR); once it is on main, the reconciler
-  can quote a failed ancestor's real error onto the held children of the same customer.
 - **RESOLVED 2026-07-11 — `batchId is null` is fixed; 20/20 customers reached the
   HZ base tables (`hz_cust_accounts`).** The customer bulk import needs an
   `HZ_IMP_BATCH_SUMMARY` batch to consume; the positional `NEW,N,<run_id>` form

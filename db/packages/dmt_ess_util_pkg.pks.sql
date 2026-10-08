@@ -9,8 +9,9 @@
 --   status, queries ESS_REQUEST_HISTORY via BIP for all descendants
 --   and populates DMT_ESS_JOB_TBL.
 --
--- DOWNLOAD_ESS_FILE: Calls downloadESSJobExecutionDetails SOAP
---   to fetch log/output files on demand. Returns CLOB.
+-- DOWNLOAD_ESS_FILE_BLOB / GET_ESS_ZIP / GET_ESS_OUTPUT_*: call
+--   downloadESSJobExecutionDetails as the Fusion user that submitted the
+--   request (central resolver, backlog #309).
 -- ============================================================
 
     -- Capture the full ESS job hierarchy (parent + all descendants)
@@ -21,13 +22,11 @@
         p_cemli_code       IN VARCHAR2 DEFAULT NULL
     );
 
-    -- Download ESS job output/log file from Fusion (CLOB — legacy, loses binary).
-    FUNCTION DOWNLOAD_ESS_FILE (
-        p_request_id IN NUMBER,
-        p_file_type  IN VARCHAR2 DEFAULT NULL
-    ) RETURN CLOB;
-
     -- Download ESS output as BLOB (binary-safe, handles MTOM).
+    -- p_username / p_password: a pair from DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS.
+    -- Both NULL = trace the request id to the CEMLI that submitted it
+    -- (DMT_UTIL_PKG.GET_CREDENTIALS_FOR_REQUEST); Fusion refuses another
+    -- user's ESS output with HTTP 500. Every ESS download funnels through here.
     FUNCTION DOWNLOAD_ESS_FILE_BLOB (
         p_request_id IN NUMBER,
         p_file_type  IN VARCHAR2 DEFAULT NULL,
@@ -45,21 +44,29 @@
 
     -- Download ESS output ZIP, extract .log file, return as CLOB.
     -- Falls back to .xml if no .log found.
+    -- p_username / p_password: as DOWNLOAD_ESS_FILE_BLOB. p_cemli_code: when no
+    -- pair is passed, download as that object's central Fusion user
+    -- (DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS) -- the preferred form for callers.
     FUNCTION GET_ESS_OUTPUT_TEXT (
         p_request_id IN NUMBER,
-        p_file_type  IN VARCHAR2 DEFAULT NULL
+        p_file_type  IN VARCHAR2 DEFAULT NULL,
+        p_username   IN VARCHAR2 DEFAULT NULL,
+        p_password   IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB;
 
     -- Download ESS output ZIP, extract the BIP XML report, return as CLOB.
     -- Use for Import Report error parsing (e.g. ImportProjectReportJob output).
-    -- p_username / p_password (optional): download as the Fusion user that
-    -- SUBMITTED the request (Fusion refuses another user's ESS output with
-    -- HTTP 500). NULL = the global FUSION_USERNAME / FUSION_PASSWORD, i.e. the
-    -- previous behaviour, so existing callers are unchanged.
+    -- p_username / p_password: download as the Fusion user that SUBMITTED the
+    -- request (Fusion refuses another user's ESS output with HTTP 500). Pass
+    -- the pair from DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS; both NULL = resolved
+    -- from the request id (see DOWNLOAD_ESS_FILE_BLOB). p_cemli_code: as
+    -- GET_ESS_OUTPUT_TEXT.
     FUNCTION GET_ESS_OUTPUT_XML (
         p_request_id IN NUMBER,
         p_username   IN VARCHAR2 DEFAULT NULL,
-        p_password   IN VARCHAR2 DEFAULT NULL
+        p_password   IN VARCHAR2 DEFAULT NULL,
+        p_cemli_code IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB;
 
     -- Download ESS output for the given Import ESS job and log it.

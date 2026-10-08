@@ -25,6 +25,13 @@
 # FUSION_USERNAME (case-insensitive) in connections.json. That way it stays
 # correct even if the demo users ever stop sharing one password.
 #
+# These are the ONLY Fusion credentials the pipeline uses (backlog #309): every
+# Fusion call -- loads, ESS polls and downloads, BIP reports, REST loads and
+# HDL (the HCM rows name hcm_impl) -- resolves its user and password as a pair
+# through DMT_UTIL_PKG.GET_CEMLI_CREDENTIALS from exactly these two places, and
+# DMT_UTIL_PKG.RUN_PREFLIGHT verifies the same pairs. There is no separate
+# BIP_PASSWORD / HCM_PASSWORD copy to keep in sync.
+#
 # Usage:  python db/tools/setup_runtime_config.py
 # Env:    DMT2_CONN       DMT_OWNER connection (default dmt2-local)
 #         DMT2_WALLET     wallet dir, for ATP only (with DMT2_WALLET_PW)

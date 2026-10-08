@@ -46,6 +46,8 @@ AS
 -- REVISIONS:
 --   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS): the
 --                   requisition (INTERFACE_HEADER_KEY) is the document.
+--   2026-10-07  BM  Report V2: called per work item with its own load + import
+--                   ids; rows found by job id, never by prefix / run id.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_REQ_RESULTS_PKG';
@@ -92,8 +94,9 @@ AS
     -- FBDI objects (AP, AR, MiscReceipts, Assets, PO family, Projects, Grants).
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_REQUISITIONS (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_request_id    IN VARCHAR2,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_REQUISITIONS';
         l_gen_count NUMBER := 0;
@@ -114,13 +117,19 @@ AS
         INTO   l_gen_count
         FROM   dual;
 
+        -- Report V2 (owner decision 2026-10-07) finds rows only by this work
+        -- item's Fusion job ids: base rows by the import job's REQUEST_ID,
+        -- interface rows and errors by the load request id and the import
+        -- request. Both ids are the work item's own (one batch = one load =
+        -- one Requisition Import), so the report is called once per work item.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => TO_NUMBER(p_request_id),
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -649,9 +658,10 @@ AS
 
     -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Calls the shared
-    -- Contract v1 apply. The Requisitions load ESS id is the Contract v1
-    -- P_LOAD_REQUEST_ID; the report's run-scoped selectors (P_RUN_ID, P_PREFIX)
-    -- pick up the whole run regardless of how many batches it submitted.
+    -- Contract v1 apply once for ONE work item (one batch): the load ESS id is
+    -- the Contract v1 P_LOAD_REQUEST_ID and the import ESS id is
+    -- P_IMPORT_ESS_ID. The report finds rows only by these two job ids; the run
+    -- prefix and run id are never search values.
     -- --------------------------------------------------------
     PROCEDURE RECONCILE_BATCH (
         p_run_id  IN NUMBER,
@@ -668,7 +678,7 @@ AS
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        APPLY_CONTRACT_V1_REQUISITIONS(p_run_id, TO_CHAR(p_load_ess_id));
+        APPLY_CONTRACT_V1_REQUISITIONS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
 
         -- Whole-document rejection (design section 5): rows Requisition Import
         -- rejected with their requisition carry the real error of the row that
