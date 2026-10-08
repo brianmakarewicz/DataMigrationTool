@@ -65,7 +65,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -153,10 +153,10 @@ using (
            'POZ_SUP_CONTACTS_INT',
            'Supplier contact import reconciliation' from dual
     union all select 100000016, 'GLBalances', 'GL Balance',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_DM.xdm',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V3_RPT.xdo',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_DM.xdm',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_RPT.xdo',
            'GL_INTERFACE',
-           'GL journal import reconciliation (Contract v1 -- nine columns, keyset). V3 (backlog #173): one GROUP_ID per journal, Import Journals GroupID=ALL; ERROR_MESSAGE is only Journal Import''s own error (GL_INTERFACE.STATUS, plus '': '' STATUS_DESCRIPTION when Fusion wrote one); no REFERENCE10, no composed unbalanced sentence. Rows selected by job id (Journal Import child request id in the batch name; LOAD_REQUEST_ID). Deployed alongside V1, never overwriting it.' from dual
+           'GL journal import reconciliation (Contract v1 -- nine columns, keyset). V4 (backlog #173): GROUP_ID = work queue id, Import Journals submitted with that exact group (never ALL); ERROR_MESSAGE is only Journal Import''s own error (GL_INTERFACE.STATUS, plus '': '' STATUS_DESCRIPTION when Fusion wrote one); no REFERENCE10, no composed unbalanced sentence. Rows selected by job id (import job''s GroupID/LedgerID arguments; LOAD_REQUEST_ID). Deployed alongside V1 and V3, never overwriting them.' from dual
     -- Issue 8 (2026-07-20): repoint the remaining reconciliation reports from the
     -- frozen stack's /Custom/DMT/ to THIS stack's /Custom/DMT2/. Their data models
     -- + reports were additively deployed to /Custom/DMT2/{CEMLI}/ and each report
@@ -2982,8 +2982,8 @@ commit;
 -- / 100000023); the reconciliation path/notes/interface_table set earlier for
 -- these rows is untouched.
 --   GLBalances -- money-bearing (journal line ENTERED_DR), KEY_TYPE=
---                 STAMPED_REF (GROUP_ID = RUN_ID * 1000000 + journal number,
---                 one group per journal; report V2 reads the run's range),
+--                 STAMPED_REF (GROUP_ID = the GLBalances work queue id,
+--                 passed as P_BATCH_ID),
 --                 DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON.
 --   GLBudgets  -- money-bearing (budget cell BUDGET_AMOUNT), KEY_TYPE=
 --                 CAPTURED_ID (captured CODE_COMBINATION_ID list + budget
@@ -2993,8 +2993,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'GLBalances'                                        cemli_code,
-           '/Custom/DMT2/GLBalances/GL_BAL_CMP_V2_DM.xdm'       cmp_dm_catalog_path,
-           '/Custom/DMT2/GLBalances/GL_BAL_CMP_V2_RPT.xdo'      cmp_report_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_DM.xdm'          cmp_dm_catalog_path,
+           '/Custom/DMT2/GLBalances/GL_BAL_CMP_RPT.xdo'         cmp_report_catalog_path,
            'DMT_GL_COMPARE_PKG.GET_BALANCES_COMPARISON'         cmp_function
     from dual
     union all select 'GLBudgets',

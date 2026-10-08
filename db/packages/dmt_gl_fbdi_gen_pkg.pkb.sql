@@ -259,7 +259,8 @@
         -- CSV is built, so the CSV picks up the stamped Slot C value.
         -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code GLBalances):
         --   Slot A = REFERENCE21 (carried by RECON_KEY, set at transform)
-        --   Slot B = GROUP_ID    (one per journal: run_id * 1000000 + journal number, set at transform)
+        --   Slot B = GROUP_ID    (= the work queue id: one group per load, stamped here;
+        --                         Import Journals is submitted with this exact group id)
         --   Slot C = REFERENCE22 = DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm)
         -- Slot C rides REFERENCE22 (-> GL_JE_LINES.REFERENCE_2), NOT an ATTRIBUTE
         -- column: proof-of-recipe run 301 showed GL Journal Import does not carry
@@ -273,6 +274,11 @@
         -- scope. Scoped to the STAGED rows this GENERATE call will emit (this ledger).
         UPDATE DMT_GL_INTERFACE_TFM_TBL
         SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id,
+               -- GROUP_ID = the work queue id (backlog #173, owner decision
+               -- 2026-10-07): one group per load, never shared with another load
+               -- or another user. NVL to the run id only for a standalone call
+               -- with no work item. RUN_GL_BALANCES submits this same value.
+               GROUP_ID      = NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id),
                REFERENCE22   = DMT_REF_ID_PKG.BUILD_REF(
                                    p_run_id        => p_run_id,
                                    p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
