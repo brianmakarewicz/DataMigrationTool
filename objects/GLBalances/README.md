@@ -17,7 +17,9 @@
 - **DataAccessSetID:** 300000046975980 (US Primary Ledger)
 - **Source:** Spreadsheet (must match USER_JE_SOURCE_NAME in data exactly)
 - **LedgerID:** 300000046975971 (US Primary Ledger)
-- **GroupID:** integration_id (isolates this run's rows)
+- **GroupID:** `ALL` (backlog #173). Each journal carries its own GROUP_ID
+  (run id * 1000000 + journal number, set at transform), and one job with GroupID ALL
+  imports every group independently, so a rejected line fails only its own journal.
 - **Last 3:** N,N,N
 
 Discovered via BIP query against `gl_ledgers` + `gl_access_sets` on 2026-04-02.
@@ -38,6 +40,15 @@ None in this folder.
 None currently.
 
 ## History
+- 2026-10-07 (backlog #173, proof run 276): **real Fusion errors and per-journal
+  rejection.** Journal Import rejects a whole GROUP_ID when any line errors, so each
+  journal now gets its own GROUP_ID and Import Journals runs once per load with GroupID
+  ALL. Recon report V3 (`DMT_GL_BAL_RECON_V3_DM`) returns only Fusion's own error
+  (`GL_INTERFACE.STATUS`, plus `: STATUS_DESCRIPTION` when present) and selects rows by
+  job id (Journal Import child request id in the batch name; LOAD_REQUEST_ID).
+  `PROPAGATE_DOCUMENT_ERRORS` quotes a rejected line's error onto the other lines of its
+  journal. Unbalanced journals (accepted by Fusion with no error) fall to UNACCOUNTED.
+  Findings: `docs/findings/glbalances_real_error.md`.
 - 2026-09-20: **Conformed to the BIP reconciliation report contract v1 as the
   reference implementation.** The recon data model now returns the NINE standard
   columns in contract order (OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
@@ -93,7 +104,7 @@ with one STG + one TFM table.
    away from the tab, so it is not a finding against this audit.
 
 ## Lessons Learned
-- **GL_INTERFACE status P = success.** Unlike other interface tables where presence = failure, GL_INTERFACE keeps processed rows with status `P` until purged. BIP reconciliation must check the status value, not just presence.
+- **GL_INTERFACE status P = the line passed validation, NOT that it loaded.** When any line of its GROUP_ID is rejected, Journal Import imports nothing for the group and the valid lines stay in GL_INTERFACE with status P (run 263). Load success is proven only by the base tables.
 - **GL_INTERFACE status codes:** P=Processed(success), NEW=unprocessed, E=error, EFxx=specific error code.
 - **ParameterList must match ledger.** DataAccessSetID and LedgerID must correspond to the ledger named in the data. Query `gl_ledgers` + `gl_access_sets` to find correct IDs.
 - **Use open periods.** Test data must use a period with `closing_status = 'O'` in `gl_period_statuses`. Query to find open periods: `SELECT period_name FROM gl_period_statuses WHERE application_id = 101 AND closing_status = 'O' AND ledger_id = <id>`.

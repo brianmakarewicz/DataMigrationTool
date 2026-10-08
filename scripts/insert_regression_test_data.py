@@ -1401,7 +1401,13 @@ def main():
     # ====================================================================
     # 20. GL JOURNALS (DMT_GL_INTERFACE_STG_TBL)
     #     GOOD: 1 balanced journal (2 lines: DR/CR)
-    #     BAD:  1 unbalanced journal (DR only, no CR) [BAD-AMT]
+    #     BAD:  1 journal of 2 lines; line 1 is on natural account 99999, which is not in the
+    #           chart's value set: Journal Import rejects it with its own error
+    #           (GL_INTERFACE.STATUS EF04 + STATUS_DESCRIPTION 'FLEX-VALUE DOES NOT
+    #           EXIST ...'), proven by the gold fixture (prefix 90219). Replaces the
+    #           earlier unbalanced journal (backlog #173): Journal Import ACCEPTS an
+    #           unbalanced journal on this ledger and records no error for it, so it
+    #           was never a Fusion rejection.
     # ====================================================================
     print("\n=== 20. GL Journals ===")
     gl_lines = [
@@ -1412,9 +1418,14 @@ def main():
          "78630", 5000.00, None,    "RT-JNL-G1", "RT good journal - debit",  "04-26"),
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
          "77600", None,    5000.00, "RT-JNL-G1", "RT good journal - credit", "04-26"),
-        # BAD: unbalanced (debit only)
+        # BAD journal (2 lines, balanced): line 1 is on natural account 99999,
+        # which does not exist (Journal Import EF04, its own real error); line 2
+        # is valid and is rejected only because Journal Import rejects a journal
+        # all-or-nothing (FAILED_WITH_DOCUMENT, quoting line 1's error).
         ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
-         "78630", 9999.99, None,    "RT-JNL-BAD1", "BAD: unbalanced debit only", "04-26"),
+         "99999", 9999.99, None,    "RT-JNL-BAD1", "BAD: invalid natural account 99999", "04-26"),
+        ("NEW", LEDGER, date(2026, 4, 1), "Adjustment", "Spreadsheet",
+         "78630", None,    9999.99, "RT-JNL-BAD1", "BAD journal: valid credit line", "04-26"),
     ]
     for gl_status, ledger, acct_dt, cat, source, seg3, dr, cr, ref4, ref10, period in gl_lines:
         run_sql(cur, """

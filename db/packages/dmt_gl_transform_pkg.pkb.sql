@@ -24,6 +24,7 @@
         p_include_untagged IN VARCHAR2 DEFAULT 'N', p_run_mode IN VARCHAR2 DEFAULT 'NEW'
     ) IS
         l_prefix   VARCHAR2(30);
+        l_group_base NUMBER;
         l_ok       NUMBER := 0;
         l_fail     NUMBER := 0;
     BEGIN
@@ -34,6 +35,12 @@
             p_procedure      => 'TRANSFORM');
 
         l_prefix := get_prefix(p_run_id);
+
+        -- Next free journal group for this run (see the GROUP_ID comment below).
+        SELECT GREATEST(NVL(MAX(GROUP_ID), 0), p_run_id * 1000000)
+          INTO l_group_base
+          FROM DMT_GL_INTERFACE_TFM_TBL
+         WHERE RUN_ID = p_run_id;
 
         INSERT INTO DMT_GL_INTERFACE_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,
@@ -76,7 +83,22 @@
             s.ENTERED_DR, s.ENTERED_CR, s.ACCOUNTED_DR, s.ACCOUNTED_CR,
             DMT_UTIL_PKG.PREFIXED(l_prefix, s.REFERENCE1, 100), s.REFERENCE2, s.REFERENCE4, s.REFERENCE5,
             s.REFERENCE6, s.REFERENCE7, s.REFERENCE8, s.REFERENCE10,
-            s.STAT_AMOUNT, p_run_id, s.PERIOD_NAME,  -- GROUP_ID = run_id (matches ParameterList)
+            -- GROUP_ID = one group per JOURNAL (backlog #173): run id * 1000000
+            -- + the journal's number within this transform. Journal Import
+            -- rejects all-or-nothing per GROUP_ID, so a rejected line takes
+            -- down only its own journal; Import Journals runs once per load
+            -- with GroupID = ALL and processes every group independently
+            -- (proven 2026-10-07, probe load 10075714). The journal key is the
+            -- set of fields Journal Import groups lines into one journal on
+            -- (batch REFERENCE1, journal REFERENCE4, ledger, period, category,
+            -- currency, actual flag). l_group_base continues numbering after
+            -- any group this run already assigned, so a second transform call
+            -- in the same run never reuses a group.
+            s.STAT_AMOUNT,
+            l_group_base + DENSE_RANK() OVER (
+                ORDER BY s.LEDGER_NAME, s.REFERENCE1, s.REFERENCE4, s.PERIOD_NAME,
+                         s.USER_JE_CATEGORY_NAME, s.CURRENCY_CODE, s.ACTUAL_FLAG),
+            s.PERIOD_NAME,
             s.ATTRIBUTE_CATEGORY,
             s.ATTRIBUTE1, s.ATTRIBUTE2, s.ATTRIBUTE3, s.ATTRIBUTE4, s.ATTRIBUTE5,
             s.ATTRIBUTE6, s.ATTRIBUTE7, s.ATTRIBUTE8, s.ATTRIBUTE9, s.ATTRIBUTE10,

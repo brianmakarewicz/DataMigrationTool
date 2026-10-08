@@ -259,7 +259,7 @@
         -- CSV is built, so the CSV picks up the stamped Slot C value.
         -- Carrier config (DMT_REF_CARRIER_CFG_TBL, cemli_code GLBalances):
         --   Slot A = REFERENCE21 (carried by RECON_KEY, set at transform)
-        --   Slot B = GROUP_ID    (= run_id, set at transform)
+        --   Slot B = GROUP_ID    (one per journal: run_id * 1000000 + journal number, set at transform)
         --   Slot C = REFERENCE22 = DMT_REF_ID_PKG.BUILD_REF(run, work_queue, tfm)
         -- Slot C rides REFERENCE22 (-> GL_JE_LINES.REFERENCE_2), NOT an ATTRIBUTE
         -- column: proof-of-recipe run 301 showed GL Journal Import does not carry

@@ -64,6 +64,9 @@ REPORTS = [
     # REQUEST_ID, interface rows by LOAD_REQUEST_ID), never by the run prefix.
     ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
+    # GLBalances V3 (backlog #173): alongside V1; real Journal Import error
+    # (STATUS[: STATUS_DESCRIPTION]) only, rows selected by job id.
+    ("GLBalances",              "DMT_GL_BAL_RECON_V3_DM", "DMT_GL_BAL_RECON_V3_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
     # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
     # item's load job id (LOAD_REQUEST_ID). Deployed alongside
@@ -167,6 +170,8 @@ REPORTS = [
     ("ARInvoices",               "AR_CMP_DM",                  "AR_CMP_RPT"),
     ("PurchaseOrders",           "PO_CMP_DM",                  "PO_CMP_RPT"),
     ("GLBalances",               "GL_BAL_CMP_DM",              "GL_BAL_CMP_RPT"),
+    # GLBalances CMP V2 (backlog #173): reads the run's GROUP_ID range.
+    ("GLBalances",               "GL_BAL_CMP_V2_DM",           "GL_BAL_CMP_V2_RPT"),
     ("GLBudgets",                "GL_BUDGET_CMP_DM",           "GL_BUDGET_CMP_RPT"),
 ]
 
