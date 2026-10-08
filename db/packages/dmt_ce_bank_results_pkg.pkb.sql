@@ -198,7 +198,7 @@
     -- The LOAD step for banks: POST each GENERATED bank to Fusion. The base-table
     -- report -- not the POST response -- is the authority for LOADED, so this
     -- step NEVER marks a bank terminal. It leaves every attempted bank GENERATED.
-    -- A non-2xx / exception is a real Fusion rejection: its message is STASHED
+    -- A non-2xx with a Fusion message body is a real Fusion rejection: its message is STASHED
     -- into ERROR_TEXT (accumulate, never overwrite) so that if the reconcile step
     -- later finds the bank absent from CE_BANKS_V, the sweep can mark it FAILED
     -- with that real error. If the reconcile step DOES find the bank (e.g. a
@@ -263,8 +263,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -283,14 +282,16 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Bank POST failed (exception, stashed): ' || r.BANK_NAME,
+                        'Bank POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.BANK_NAME,
                         l_errmsg, C_PKG, C_PROC);
             END;
         END LOOP;
@@ -310,7 +311,7 @@
     -- LOAD_BRANCHES
     -- The LOAD step for branches: POST each GENERATED branch whose parent bank
     -- was base-table-confirmed LOADED. Same policy as LOAD_BANKS: never terminal,
-    -- non-2xx / exception stashed, row left GENERATED for the branch report to
+    -- non-2xx with a Fusion message body stashed, row left GENERATED for the branch report to
     -- confirm. A branch whose parent bank is not LOADED is not sent and gets
     -- no error text (left GENERATED; the shared sweep marks it UNACCOUNTED).
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
@@ -383,8 +384,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -403,14 +403,16 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BRANCH_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Branch POST failed (exception, stashed): ' || r.BRANCH_NAME,
+                        'Branch POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.BRANCH_NAME,
                         l_errmsg, C_PKG, C_PROC);
             END;
         END LOOP;
@@ -431,7 +433,7 @@
     -- LOAD_ACCOUNTS
     -- The LOAD step for bank accounts: POST each GENERATED account whose parent
     -- branch was base-table-confirmed LOADED. Same policy: never terminal,
-    -- non-2xx / exception stashed, row left GENERATED for the account report to
+    -- non-2xx with a Fusion message body stashed, row left GENERATED for the account report to
     -- confirm. An account whose parent branch is not LOADED is not sent and
     -- gets no error text (left GENERATED; the shared sweep marks it UNACCOUNTED).
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
@@ -508,8 +510,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -528,14 +529,16 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_CE_BANK_ACCT_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Account POST failed (exception, stashed): ' || r.ACCOUNT_NAME,
+                        'Account POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.ACCOUNT_NAME,
                         l_errmsg, C_PKG, C_PROC);
             END;
         END LOOP;

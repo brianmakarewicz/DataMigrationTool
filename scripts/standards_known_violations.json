@@ -80,38 +80,10 @@
     },
     {
       "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_ap_pay_term_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
-      "backlog": 161,
-      "found": "2026-10-07",
-      "detail": "line 245: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_ce_bank_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
-      "backlog": 212,
-      "found": "2026-10-07",
-      "detail": "line 266: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
       "key": "SWEEP-TAG|dmt_fa_asset_results_pkg.pkb.sql|[BATCH_REJECTED]",
       "backlog": 175,
       "found": "2026-10-07",
       "detail": "line 418: writes the unsanctioned ERROR_TEXT tag [BATCH_REJECTED] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_fnd_lookup_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
-      "backlog": 161,
-      "found": "2026-10-07",
-      "detail": "line 258: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_inv_uom_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
-      "backlog": 212,
-      "found": "2026-10-07",
-      "detail": "line 244: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
     },
     {
       "checker": "check_sweep_unaccounted",
@@ -154,13 +126,6 @@
       "backlog": 213,
       "found": "2026-10-07",
       "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-FUSION-ERROR-FORM|dmt_zx_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
-      "backlog": 161,
-      "found": "2026-10-07",
-      "detail": "line 230: [FUSION_ERROR] must be followed only by the real Fusion error (or a sanctioned prefix); found composed '[FUSION_ERROR] HTTP '"
     }
   ]
 }

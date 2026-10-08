@@ -84,6 +84,26 @@ above run over the whole extended set, plus:
      we do not fabricate a [LOAD_ERROR] timeout failure") and section 5, the
      [LOAD_ERROR] tag row (the async poll-timeout path no longer emits the tag).
 
+EXTENDED 2026-10-08 -- RULE 7 (backlog #160)
+--------------------------------------------
+  7. SWEEP-LOADED-ID -- in every CONFIGURATION-object results package (the six
+     *_results_pkg bodies without RECONCILE_BATCH: REST-loaded Lookups, UoM, Banks,
+     Taxes, PaymentTerms, and the file-loaded ValueSets), every UPDATE that sets
+     TFM_STATUS = 'LOADED' must, in the SAME statement:
+       a. write a FUSION_*_ID column (not NULL) -- no LOADED row without its Fusion
+          id or sanctioned natural key;
+       b. have a static non-null guard on every variable that id is built from
+          ('<v> IS NOT NULL' or 'IF <v> IS NULL THEN CONTINUE' earlier in the same
+          procedure);
+       c. carry ERROR_TEXT IS NULL in its WHERE (a row whose own call stashed a real
+          Fusion error is never rescued to LOADED by a base-table key collision);
+       d. on a REST-loaded package (one that records LOAD_CALL_STATUS), carry
+          LOAD_CALL_STATUS = 'CREATED' in its WHERE (only a row whose OWN create
+          returned 2xx can be LOADED).
+     Design doc section 7, "Standard LOADED-promotion shape", clauses (1), (2), (3)
+     and (5). The FBDI reconcilers are NOT CHECKED by this rule (their promotion
+     shape is reviewer-enforced and they do not use LOAD_CALL_STATUS).
+
 NOT CHECKED (declared, per the "Checker fidelity" standard in section 7):
   * NOT CHECKED: tags written through a variable built elsewhere (only literals are
     seen); the EXPIRED rule follows one level of variable indirection only by
@@ -494,9 +514,74 @@ def check_expired(path, text):
     return out
 
 
+# --------------------------------------------------------------------------
+# Rule 7: SWEEP-LOADED-ID -- a config reconciler's LOADED always carries its Fusion id
+# --------------------------------------------------------------------------
+# Backlog #160. Design doc section 7, "Standard LOADED-promotion shape": (1) LOADED only
+# when reconciliation matched a Fusion base-table row and captured its id (or the
+# sanctioned natural key); (2) the SAME update writes it into the FUSION_*_ID column;
+# (3) the guard is explicit and static -- the id source IS NOT NULL. Plus the REST
+# guards of #130/#160: a row whose own call stashed an error is never promoted
+# (ERROR_TEXT IS NULL) and, on a REST-loaded package (one that records
+# LOAD_CALL_STATUS), only a row whose OWN create returned 2xx is promoted
+# (LOAD_CALL_STATUS = 'CREATED').
+_UPD_RE = re.compile(r"\bUPDATE\b(.*?);", re.I | re.S)
+_SET_LOADED_RE = re.compile(r"(?:\b\w+\.)?TFM_STATUS\s*=\s*'LOADED'", re.I)
+_SET_ID_RE = re.compile(r"(?:\b\w+\.)?(FUSION_\w*ID)\s*=\s*([^,]+?)\s*(?:,|$)", re.I | re.S)
+_IDENT_RE = re.compile(r"\b(?:r|l|rec|x)\w*(?:\.\w+)?\b", re.I)
+
+
+def _proc_start(text, pos):
+    starts = [m.start() for m in re.finditer(r"\bPROCEDURE\s+\w+", text[:pos], re.I)]
+    return starts[-1] if starts else 0
+
+
+def check_loaded_id(path, text):
+    base = os.path.basename(path)
+    if not (base.endswith("_results_pkg.pkb.sql") and is_config_reconciler(path)):
+        return []
+    rest_loaded = re.search(r"\bLOAD_CALL_STATUS\b", text, re.I) is not None
+    out = []
+    for m in _UPD_RE.finditer(text):
+        body = m.group(1)
+        sw = re.search(r"\bSET\b(.*?)\bWHERE\b(.*)$", body, re.I | re.S)
+        if not sw:
+            continue
+        set_part, where = sw.group(1), sw.group(2)
+        if not _SET_LOADED_RE.search(set_part):
+            continue
+        line = text.count("\n", 0, m.start()) + 1
+        table = (re.match(r"\s*(\w+)", body) or re.match(r"(.*)", "?")).group(1)
+        problems = []
+        ids = [(c, e.strip()) for c, e in _SET_ID_RE.findall(set_part + ",")]
+        if not ids or all(e.upper() == "NULL" for _, e in ids):
+            problems.append("sets LOADED without writing a FUSION_*_ID column in the same update")
+        else:
+            region = text[_proc_start(text, m.start()):m.end()]
+            for col, expr in ids:
+                for ident in sorted(set(_IDENT_RE.findall(expr))):
+                    guard = re.compile(r"\b%s\s+IS\s+NOT\s+NULL\b|\b%s\s+IS\s+NULL\s+THEN\s+"
+                                       r"CONTINUE\b" % (re.escape(ident), re.escape(ident)),
+                                       re.I)
+                    if not guard.search(region):
+                        problems.append("%s = %s has no static non-null guard on %s"
+                                        % (col, expr, ident))
+        if not re.search(r"\bERROR_TEXT\s+IS\s+NULL\b", where, re.I):
+            problems.append("no ERROR_TEXT IS NULL guard (a row with a stashed error "
+                            "could be promoted)")
+        if rest_loaded and not re.search(r"\bLOAD_CALL_STATUS\s*=\s*'CREATED'", where, re.I):
+            problems.append("no LOAD_CALL_STATUS = 'CREATED' guard (REST row promoted "
+                            "without its own 2xx create)")
+        for p in problems:
+            out.append(("SWEEP-LOADED-ID|%s|%s|%s" % (base, table.upper(), p[:60]),
+                        "line %d: UPDATE %s: %s" % (line, table, p)))
+    return out
+
+
 def main():
     print("Honest-accounting conformance check (no fabricated FAILED; honest UNACCOUNTED "
-          "sweep only; sanctioned tags; no EXPIRED-as-failure)")
+          "sweep only; sanctioned tags; no EXPIRED-as-failure; config LOADED carries a "
+          "Fusion id)")
     print("=" * 76)
 
     files = scan_files()
@@ -519,6 +604,7 @@ def main():
         f += check_tags(path, text)
         f += check_fusion_error_form(path, text)
         f += check_expired(path, text)
+        f += check_loaded_id(path, text)
         label = "config" if is_config_reconciler(path) else "      "
         print("  %-4s %s %s" % ("OK" if not f else "VIOL", label, base))
         found += f

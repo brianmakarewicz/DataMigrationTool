@@ -21,7 +21,7 @@ begin
 	"LAST_UPDATED_DATE" DATE, 
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
-	"FUSION_LOOKUP_ID" NUMBER, 
+	"FUSION_LOOKUP_ID" VARCHAR2(100), 
 	"WORK_QUEUE_ID" NUMBER,
 	"LOAD_CALL_STATUS" VARCHAR2(12),
 	 CONSTRAINT "DMT_FND_LKP_VAL_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
@@ -53,7 +53,7 @@ begin
   select count(*) into l_n from user_tab_columns
   where  table_name = 'DMT_FND_LOOKUP_VALUE_TFM_TBL' and column_name = 'FUSION_LOOKUP_ID';
   if l_n = 0 then
-    execute immediate 'ALTER TABLE "DMT_FND_LOOKUP_VALUE_TFM_TBL" ADD ("FUSION_LOOKUP_ID" NUMBER)';
+    execute immediate 'ALTER TABLE "DMT_FND_LOOKUP_VALUE_TFM_TBL" ADD ("FUSION_LOOKUP_ID" VARCHAR2(100))';
   end if;
 end;
 /
@@ -90,7 +90,7 @@ end;
 
 COMMENT ON COLUMN "DMT_FND_LOOKUP_VALUE_TFM_TBL"."TFM_STATUS" IS 'Transform lifecycle: STAGED > GENERATED > LOADED / FAILED.';
 COMMENT ON COLUMN "DMT_FND_LOOKUP_VALUE_TFM_TBL"."RECON_KEY" IS 'Pre-concatenated business key (run prefix included) that BIP reconciliation matches against Fusion rows.';
-COMMENT ON COLUMN "DMT_FND_LOOKUP_VALUE_TFM_TBL"."FUSION_LOOKUP_ID" IS 'Fusion-assigned identifier captured from the Fusion base tables - written only by BIP reconciliation (positive proof of load).';
+COMMENT ON COLUMN "DMT_FND_LOOKUP_VALUE_TFM_TBL"."FUSION_LOOKUP_ID" IS 'Natural-key proof of load at the value grain (FND lookups have no numeric surrogate): LOOKUP_TYPE~LOOKUP_CODE as read back from FND_LOOKUP_VALUES_B. Written only by reconciliation (DMT_FND_LOOKUP_RESULTS_PKG.PARSE_AND_UPDATE).';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-09 conformance review F2 (STG/TFM infra-column dictionary, design

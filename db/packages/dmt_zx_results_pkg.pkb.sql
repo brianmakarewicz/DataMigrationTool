@@ -163,7 +163,7 @@
     -- The LOAD step for tier 1. POST each GENERATED regime to Fusion. The BIP
     -- base-table report -- not the POST response -- is the authority for LOADED,
     -- so this step NEVER marks a regime terminal. It leaves every attempted
-    -- regime GENERATED. A non-2xx / exception is a real Fusion rejection: its
+    -- regime GENERATED. A non-2xx with a Fusion message body is a real Fusion rejection: its
     -- message is STASHED into ERROR_TEXT (accumulate, never overwrite) so a later
     -- absent-from-base-table regime can be marked FAILED on that real error.
     -- Writes the TFM table only; no COMMIT (the runner owns the txn).
@@ -229,8 +229,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -251,14 +250,16 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_ZX_REGIME_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Regime POST failed (exception, stashed): ' || r.TAX_REGIME_CODE,
+                        'Regime POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.TAX_REGIME_CODE,
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;
@@ -283,7 +284,7 @@
     -- attempted only when its parent regime is present in Fusion -- proven by the
     -- parent regime TFM row being LOADED (base-table-confirmed) in THIS run. Like
     -- LOAD_REGIMES this NEVER marks a rate terminal: the base-table report over
-    -- ZX_RATES_B is the authority for LOADED. A non-2xx / exception is stashed
+    -- ZX_RATES_B is the authority for LOADED. A non-2xx with a Fusion message body is stashed
     -- into ERROR_TEXT (accumulate, never overwrite); the rate stays GENERATED.
     -- A rate whose parent regime was NOT confirmed is skipped (left GENERATED,
     -- no fabricated error) for the honest accounting gate to surface.
@@ -372,8 +373,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -394,14 +394,16 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_ZX_RATE_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
                     l_reject := l_reject + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Rate POST failed (exception, stashed): '
+                        'Rate POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): '
                         || r.TAX_REGIME_CODE || '.' || r.TAX_RATE_CODE,
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;

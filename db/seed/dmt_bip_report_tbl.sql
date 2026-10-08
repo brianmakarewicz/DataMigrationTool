@@ -1306,8 +1306,8 @@ commit;
 -- report proves EXISTENCE by the string key and returns RECORD_KEY +
 -- SOURCE_TYPE ONLY (no FUSION_ID column). DMT_FND_LOOKUP_RESULTS_PKG runs
 -- DMT_LOOKUP_RECON_RPT and, for each row found, marks the matching TFM row
--- LOADED while leaving FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID NULL (there is
--- no id to capture — never fabricated).
+-- LOADED and stamps the Fusion-returned natural key as its proof (#160):
+-- FUSION_LOOKUP_TYPE_ID = LOOKUP_TYPE, FUSION_LOOKUP_ID = LOOKUP_TYPE~LOOKUP_CODE.
 --   * TYPE  rows  from FND_LOOKUP_TYPES:    RECORD_KEY = LOOKUP_TYPE
 --   * VALUE rows  from FND_LOOKUP_VALUES_B: RECORD_KEY = LOOKUP_TYPE || '^' || LOOKUP_CODE
 -- INTERFACE_TABLE = 'N/A (REST)' — there is no interface table; the report reads
@@ -1332,7 +1332,8 @@ using (
              || 'FND_LOOKUP_VALUES_B (RECORD_KEY = LOOKUP_TYPE^LOOKUP_CODE). '
              || 'SPECIAL CASE: FND lookups have NO numeric surrogate id, so the '
              || 'report returns RECORD_KEY + SOURCE_TYPE only and the TFM '
-             || 'FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID columns are left NULL. '
+             || 'FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID columns carry the natural '
+             || 'key (LOOKUP_TYPE, LOOKUP_TYPE~LOOKUP_CODE) read back from Fusion. '
              || 'One report, two params: P_TYPE_CODES and P_VALUE_KEYS.' notes
     from dual
 ) s

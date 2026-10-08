@@ -243,8 +243,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -268,15 +267,17 @@
                     -- Transport exception: stash it, leave GENERATED (same policy).
                     l_errmsg := SQLERRM;
                     UPDATE DMT_INV_UOM_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'UOM POST failed (exception, stashed): ' || r.UOM_CODE,
+                        'UOM POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.UOM_CODE,
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;

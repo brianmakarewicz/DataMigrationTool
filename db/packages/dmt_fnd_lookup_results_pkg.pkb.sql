@@ -14,16 +14,20 @@
 -- SPECIAL CASE -- no numeric surrogate id. FND lookups expose only string
 -- keys: FND_LOOKUP_TYPES (key LOOKUP_TYPE) and FND_LOOKUP_VALUES_B (key
 -- LOOKUP_TYPE + LOOKUP_CODE). There is NO LOOKUP_TYPE_ID / LOOKUP_ID numeric
--- column, so reconciliation confirms EXISTENCE by the string key, marks the
--- row LOADED, and LEAVES FUSION_LOOKUP_TYPE_ID / FUSION_LOOKUP_ID NULL (there
--- is no id to capture -- never fabricated). The report returns RECORD_KEY +
--- SOURCE_TYPE only.
+-- column, so reconciliation confirms EXISTENCE by the string key and marks the
+-- row LOADED while stamping the Fusion-returned natural key as its proof
+-- (#160; design section 7, Standard LOADED-promotion shape, clause (5)):
+-- FUSION_LOOKUP_TYPE_ID = LOOKUP_TYPE, FUSION_LOOKUP_ID = LOOKUP_TYPE~LOOKUP_CODE
+-- (both VARCHAR2, read back from the base tables -- never fabricated). The
+-- report returns RECORD_KEY + SOURCE_TYPE only.
 --
 --   LOAD  (LOAD_TYPES / LOAD_VALUES): POST each GENERATED type, then each
---         GENERATED value to its type's child collection. A non-2xx / exception
---         is a real Fusion rejection -> its message is STASHED into ERROR_TEXT
---         (accumulate, never overwrite); the row is left GENERATED, pending
---         base-table proof. A 2xx is NOT treated as LOADED.
+--         GENERATED value to its type's child collection. A non-2xx with a
+--         Fusion message body is a real Fusion rejection -> '[FUSION_ERROR] ' ||
+--         that message is STASHED into ERROR_TEXT (accumulate, never overwrite);
+--         the row is left GENERATED, pending base-table proof. A blank body or a
+--         transport exception writes no error (UNACCOUNTED, never a made-up
+--         Fusion error). A 2xx is NOT treated as LOADED.
 --
 --   RECONCILE (FETCH_BIP_RESULTS + PARSE_AND_UPDATE): run DMT_LOOKUP_RECON_RPT
 --         over this run's type codes and value keys. A type found in
@@ -257,8 +261,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -281,15 +284,17 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Type POST failed (exception, stashed): ' || r.LOOKUP_TYPE,
+                        'Type POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.LOOKUP_TYPE,
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;
@@ -414,8 +419,7 @@
                     SET    LOAD_CALL_STATUS = 'REJECTED',
                            ERROR_TEXT = CASE WHEN l_body IS NOT NULL
                                              THEN DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                    '[FUSION_ERROR] HTTP ' || l_http_status || ': '
-                                                    || SUBSTR(l_body, 1, 2000))
+                                                    '[FUSION_ERROR] ' || SUBSTR(l_body, 1, 2000))
                                              ELSE ERROR_TEXT END,
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
@@ -439,15 +443,17 @@
                 WHEN OTHERS THEN
                     l_errmsg := SQLERRM;
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
+                    -- #160: an exception here is OUR transport/PL-SQL failure (SQLERRM),
+                    -- not a Fusion response, so it is never written as [FUSION_ERROR].
+                    -- REJECTED keeps the row out of LOADED; with no Fusion error it stays
+                    -- GENERATED and the shared sweep marks it UNACCOUNTED (logged below).
                     SET    LOAD_CALL_STATUS = 'REJECTED',
-                           ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                          '[FUSION_ERROR] ' || l_errmsg),
                            LAST_UPDATED_DATE = SYSDATE
                     WHERE  TFM_SEQUENCE_ID = r.TFM_SEQUENCE_ID;
 
                     l_reject_count := l_reject_count + 1;
                     DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                        'Value POST failed (exception, stashed): ' || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
+                        'Value POST failed (exception, no Fusion response -- left for the UNACCOUNTED sweep): ' || r.LOOKUP_TYPE || '.' || r.LOOKUP_CODE,
                         l_errmsg, p_package => C_PKG, p_procedure => C_PROC);
             END;
         END LOOP;
@@ -542,16 +548,15 @@
     -- surrogate id promotes on its sanctioned natural key). FND lookups have NO
     -- numeric surrogate in Fusion, so the natural key IS the proof: LOOKUP_TYPE for
     -- types, LOOKUP_TYPE^LOOKUP_CODE for values (the report's RECORD_KEY). The
-    -- registered FUSION_*_ID stays NULL by design -- there is no id to capture and
-    -- none is ever fabricated. The static base-table match on the natural key is the
-    -- non-null guard: a row is promoted ONLY when the report positively returns it.
+    -- same update stamps that Fusion-returned natural key into the registered
+    -- FUSION_*_ID column (#160), guarded non-null, so no LOADED row lacks proof.
     -- Positive base-table confirmation only. Each report row is either a type
     -- found in FND_LOOKUP_TYPES (SOURCE_TYPE='TYPE') or a value found in
     -- FND_LOOKUP_VALUES_B (SOURCE_TYPE='VALUE'):
-    --   TYPE  -> LOADED. RECORD_KEY = LOOKUP_TYPE. FUSION_LOOKUP_TYPE_ID left
-    --            NULL (no numeric surrogate exists on FND lookups).
+    --   TYPE  -> LOADED. RECORD_KEY = LOOKUP_TYPE.
+    --            FUSION_LOOKUP_TYPE_ID = LOOKUP_TYPE.
     --   VALUE -> LOADED. RECORD_KEY = LOOKUP_TYPE || '^' || LOOKUP_CODE.
-    --            FUSION_LOOKUP_ID left NULL (same -- no numeric surrogate).
+    --            FUSION_LOOKUP_ID = LOOKUP_TYPE || '~' || LOOKUP_CODE.
     -- Rows not returned are left as the load step set them (FAILED with a real
     -- REST error, else GENERATED/unaccounted) -- never a fabricated verdict.
     -- Writes the TFM tables only; no COMMIT (the runner owns the txn).
@@ -592,24 +597,28 @@
 
             IF r.source_type = 'TYPE' THEN
                 -- Positive proof: the type exists in FND_LOOKUP_TYPES. LOADED by
-                -- string-key match; FUSION_LOOKUP_TYPE_ID stays NULL (no id source).
+                -- string-key match.
                 -- #160 guard: a row whose OWN POST failed (ERROR_TEXT stashed) is NOT
                 -- promoted on a natural-key base-table hit -- the key may be a
-                -- pre-existing/duplicate type, not proof THIS record loaded. The
-                -- ERROR_TEXT IS NULL predicate is the honest surrogate for the
-                -- FBDI path's "... AND <fusion-id> IS NOT NULL" guard (lookups have
-                -- no numeric surrogate to null-check).
+                -- pre-existing/duplicate type, not proof THIS record loaded.
                 -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
                 -- THIS type returned 2xx (LOAD_CALL_STATUS = 'CREATED'). A
                 -- base-table key match alone can be a PRE-EXISTING type DMT never
                 -- created; ERROR_TEXT IS NULL is not enough because a blank-bodied
                 -- 404 stashes no error. Only a record we actually created is LOADED.
+                -- #160 (design section 7, Standard LOADED-promotion shape, clauses
+                -- (2) and (5)): the SAME update stamps the Fusion-returned natural key
+                -- (FND_LOOKUP_TYPES.LOOKUP_TYPE, read back by the report as
+                -- RECORD_KEY) into FUSION_LOOKUP_TYPE_ID, guarded non-null, so a
+                -- LOADED type always carries its base-table proof.
                 UPDATE DMT_FND_LOOKUP_TYPE_TFM_TBL
-                SET    TFM_STATUS           = 'LOADED',
-                       RESULTS_UPDATED_DATE = SYSDATE,
-                       LAST_UPDATED_DATE    = SYSDATE
+                SET    TFM_STATUS            = 'LOADED',
+                       FUSION_LOOKUP_TYPE_ID = r.record_key,
+                       RESULTS_UPDATED_DATE  = SYSDATE,
+                       LAST_UPDATED_DATE     = SYSDATE
                 WHERE  RUN_ID     = p_run_id
                 AND    LOOKUP_TYPE = r.record_key
+                AND    r.record_key IS NOT NULL
                 AND    TFM_STATUS NOT IN ('LOADED','FAILED')
                 AND    ERROR_TEXT IS NULL
                 AND    LOAD_CALL_STATUS = 'CREATED';
@@ -627,13 +636,19 @@
                     -- is the honest surrogate for the FBDI id non-null guard.
                     -- #130 hollow-LOADED guard: promote ONLY when OUR OWN create for
                     -- THIS value returned 2xx (LOAD_CALL_STATUS = 'CREATED').
+                    -- #160: stamp the Fusion-returned natural key at the value's own
+                    -- grain, LOOKUP_TYPE~LOOKUP_CODE (the '~' composite convention),
+                    -- guarded non-null, in the same update that sets LOADED.
                     UPDATE DMT_FND_LOOKUP_VALUE_TFM_TBL
                     SET    TFM_STATUS           = 'LOADED',
+                           FUSION_LOOKUP_ID     = l_type || '~' || l_code,
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID     = p_run_id
                     AND    LOOKUP_TYPE = l_type
                     AND    LOOKUP_CODE = l_code
+                    AND    l_type IS NOT NULL
+                    AND    l_code IS NOT NULL
                     AND    TFM_STATUS NOT IN ('LOADED','FAILED')
                     AND    ERROR_TEXT IS NULL
                     AND    LOAD_CALL_STATUS = 'CREATED';
@@ -643,8 +658,8 @@
         END LOOP;
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. Base-table confirmed LOADED (FUSION_*_ID left NULL '
-            || '-- no numeric surrogate on FND lookups) -- types: ' || l_types_loaded
+            C_PROC || ' complete. Base-table confirmed LOADED (FUSION_*_ID = the '
+            || 'Fusion natural key) -- types: ' || l_types_loaded
             || ', values: ' || l_values_loaded || '.',
             p_package => C_PKG, p_procedure => C_PROC);
 
