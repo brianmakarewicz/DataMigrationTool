@@ -2135,6 +2135,12 @@
           "RT-WKR-G1_PROF-IT": "LOADED",
           "RT-WKR-G1_PROF-BIT": "FAILED"
         }
+      },
+      "Item Categories": {
+        "stg_table": "DMT_EGP_ITEM_CAT_STG_TBL",
+        "rows": {
+          "RT-ITEMCAT-DMT-RT-LOT-001": "LOADED"
+        }
       }
     },
     "RegressionTest2610081435": {
