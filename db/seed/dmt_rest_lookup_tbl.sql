@@ -85,7 +85,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Absences','/hcmRestApi/resources/11.13.18.05/absences','PersonNumber={KEY}','PERSON_NUMBER','PersonAbsenceEntryId,PersonNumber,AbsenceType,AbsenceStatus,StartDate,EndDate,Duration','Entry ID,Person,Type,Status,Start,End,Duration','HCM','Y',NULL);
+  insert into "DMT_REST_LOOKUP_TBL" ("OBJECT_TYPE","REST_ENDPOINT","QUERY_FILTER","KEY_COLUMN","DISPLAY_FIELDS","DISPLAY_LABELS","AUTH_TYPE","ENABLED","NOTES") values ('Absences','/hcmRestApi/resources/11.13.18.05/absences','personAbsenceEntryId={KEY}','FUSION_ABSENCE_ENTRY_ID','personAbsenceEntryId,personNumber,absenceType,absenceStatusCd,approvalStatusCd,startDate,endDate,duration','Entry ID,Person,Type,Status,Approval,Start,End,Duration','HCM','Y',NULL);
 exception when dup_val_on_index then null;
 end;
 /

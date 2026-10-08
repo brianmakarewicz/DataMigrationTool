@@ -94,7 +94,7 @@ AS
             -- DMT_ABSENCE_HDL_GEN_PKG (prefixed PERSON_NUMBER || '_ABS'). BIP
             -- base-table reconciliation matches this against
             -- HRC_INTEGRATION_KEY_MAP.SOURCE_SYSTEM_ID.
-            DMT_UTIL_PKG.PREFIXED(l_prefix, s.PERSON_NUMBER, 30) || '_ABS',
+            NULL,  -- RECON_KEY: set to the TFM id just below (backlog #293)
             'STAGED',
             SYSDATE
         FROM DMT_ABSENCE_STG_TBL s
@@ -113,6 +113,14 @@ AS
         );
 
         l_ok_count := l_ok_count + SQL%ROWCOUNT;
+
+        -- RECON_KEY = the absence's SourceSystemId, which is its own TFM sequence
+        -- id (DMT_ABSENCE_HDL_GEN_PKG, backlog #293). One key definition: the
+        -- .dat SourceSystemId, the recon report's RECORD_KEY and this column.
+        UPDATE DMT_ABSENCE_TFM_TBL
+        SET    RECON_KEY = TO_CHAR(TFM_SEQUENCE_ID)
+        WHERE  RUN_ID    = p_run_id
+        AND    RECON_KEY IS NULL;
 
         UPDATE DMT_ABSENCE_STG_TBL
         SET    STG_STATUS = 'TRANSFORMED', LAST_UPDATED_DATE = SYSDATE

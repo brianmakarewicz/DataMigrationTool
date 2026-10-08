@@ -184,6 +184,8 @@ def main():
         "DMT_TALENT_PROF_TFM_TBL",
         "DMT_TALENT_PROF_ITEM_STG_TBL",
         "DMT_TALENT_PROF_STG_TBL",
+        "DMT_ABSENCE_TFM_TBL",
+        "DMT_ABSENCE_STG_TBL",
         # Items (were missing from this list -- caused 15x STG-row accumulation
         #  across reloads because they were inserted+tagged but never cleaned)
         "DMT_EGP_ITEM_CAT_TFM_TBL",
@@ -3155,6 +3157,45 @@ def main():
     """, label="BAD Talent Profile item: section not defined for PERSON profiles [BAD-LKP]")
     tag_scenario(cur, "DMT_TALENT_PROF_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_TALENT_PROF_ITEM_STG_TBL", scenario_id)
+
+    # ====================================================================
+    # 45b. ABSENCES (HCM HDL, PersonAbsenceEntry.dat) -> ANC_PER_ABS_ENTRIES.
+    #      Backlog #293. All three rows belong to the GOOD worker RT-WKR-G1,
+    #      which the Workers object loads earlier in the same HCM run (the
+    #      transform resolves its run-prefixed person number). The absence
+    #      SourceSystemId is the absence's own TFM id, so one person can carry
+    #      several absences in one load.
+    #      Values confirmed live 2026-10-08 (read-only): 'Bereavement' is a US
+    #      absence type used for US1 Legal Entity workers, and every absence on
+    #      the pod is AbsenceStatus SUBMITTED with ApprovalStatus APPROVED.
+    #      Both GOOD rows are Bereavement: run 311 proved it loads for a worker
+    #      DMT just hired, while 'Vacation' is rejected for that worker ("isn't
+    #      enrolled in or eligible for any absence plan": the accrual plan needs
+    #      an enrollment DMT does not create). The BAD row names an absence type
+    #      that does not exist, so Fusion rejects it with its own error.
+    # ====================================================================
+    print("\n=== 45b. Absences (HCM) ===")
+    for atype, sdate, edate, src, label in [
+        ("Bereavement", "2026/03/02", "2026/03/02", "RT-ABS-G1",
+         "GOOD Absence: RT-WKR-G1 Bereavement"),
+        ("Bereavement", "2026/04/06", "2026/04/07", "RT-ABS-G2",
+         "GOOD Absence: RT-WKR-G1 Bereavement (second absence, same person)"),
+        ("BAD NONEXISTENT ABSENCE TYPE", "2026/05/04", "2026/05/04", "RT-ABS-BAD1",
+         "BAD Absence: absence type does not exist [BAD-LKP]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_ABSENCE_STG_TBL (
+                PERSON_NUMBER, EMPLOYER_NAME, ABSENCE_TYPE,
+                ABSENCE_STATUS, APPROVAL_STATUS_CODE,
+                START_DATE, END_DATE, SOURCE_ID, STG_STATUS
+            ) VALUES (
+                'RT-WKR-G1', 'US1 Legal Entity', :atype,
+                'SUBMITTED', 'APPROVED',
+                :sdate, :edate, :src, 'NEW'
+            )
+        """, {"atype": atype, "sdate": sdate, "edate": edate, "src": src},
+        label=label)
+    tag_scenario(cur, "DMT_ABSENCE_STG_TBL", scenario_id)
 
     # ====================================================================
     # 46. UNITS OF MEASURE (REST → unitsOfMeasure endpoint). REST-based
