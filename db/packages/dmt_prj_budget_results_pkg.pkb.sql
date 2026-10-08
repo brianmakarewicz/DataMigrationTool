@@ -9,6 +9,9 @@ AS
 -- REVISIONS:
 --  1.1  2026-10-07  Drop legacy P_BATCH_ID RUN_BIP_REPORT/PARSE_AND_UPDATE path; skip #IMPORT_REPORT# marker
 --  1.2  2026-10-07  Report job resolved by exact REPORT_JOB_DEF match (no LIKE, no nested block)
+--  1.3  2026-10-07  Report V3 (DMT_PRJ_BUDGET_RECON_V3_DM): called per work item with its
+--                   own load + import ids; rows found by job id (base by the import
+--                   REQUEST_ID, interface by the load LOAD_REQUEST_ID), never by prefix
 -- No absence=LOADED fallback. A row is LOADED only from a base-table hit
 -- with its PLAN_VERSION_ID, FAILED only with a real Fusion message, and is
 -- otherwise left for the shared unaccounted sweep.
@@ -269,8 +272,9 @@ AS
     -- DMT_EXPENDITURE_RESULTS_PKG.APPLY_CONTRACT_V1_EXPENDITURES, PR #363).
     --
     -- The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS runs the ProjectBudgets
-    -- nine-column recon report over BIP (keyset paged, run-prefix scoped) and
-    -- returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
+    -- nine-column recon report over BIP (keyset paged) for ONE work item: report
+    -- V3 finds rows only by that item's own load and import job ids (owner
+    -- decision 2026-10-07), never by the run prefix, and returns the parsed rows — no dynamic SQL, no TFM reference there. The APPLY
     -- here is STATIC SQL against the compile-time-known ProjectBudgets TFM table:
     --   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID into
     --       FUSION_BUDGET_VERSION_ID. The ONLY path to LOADED.
@@ -283,16 +287,18 @@ AS
     -- line reference, persisted verbatim on PJO_PLAN_VERSIONS_B) and
     -- SRC_BUDGET_LINE_REFERENCE on the interface tier; the transform stamps
     -- RECON_KEY = SRC_BUDGET_LINE_REFERENCE, which is the same string (the source
-    -- ref carries the run prefix since 2026-10-07, and the V2 DM scopes the run
-    -- by that prefix, so a budget on an EXISTING project is matched too). The
+    -- ref carries the run prefix since 2026-10-07; the V3 DM selects the plan
+    -- versions by the import job id, so a budget on an EXISTING project is
+    -- matched too, and the reference is only the match key). The
     -- import-report harvest below keys LIST_G_12 column P (the same prefixed
     -- reference, echoed from the CSV) to RECON_KEY. Rows already terminal (LOADED/FAILED)
     -- are never touched, so this runs safely before the import-report harvest
     -- without double-counting.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_PRJ_BUDGET (
-        p_run_id     IN NUMBER,
-        p_request_id IN VARCHAR2
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_PRJ_BUDGET';
         l_gen_count NUMBER := 0;
@@ -310,13 +316,18 @@ AS
         FROM   DMT_PRJ_BUDGET_TFM_TBL
         WHERE  RUN_ID = p_run_id;
 
+        -- Report V3 finds rows only by this work item's Fusion job ids: plan
+        -- versions by the import job's REQUEST_ID, interface rows by the load
+        -- job's LOAD_REQUEST_ID. One work item = one load = one Import Budgets,
+        -- so the report is called once per work item with its own ids.
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
-            p_cemli_code  => C_CEMLI,
-            p_run_id      => p_run_id,
-            p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
-            x_rows        => l_rows,
-            x_error_code  => l_err_code);
+            p_cemli_code    => C_CEMLI,
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id,
+            p_row_cap       => l_gen_count,
+            x_rows          => l_rows,
+            x_error_code    => l_err_code);
 
         -- A transport / SOAP failure raises loudly (design section 5: never a
         -- silent retry, never a zero-row "success"); the fetch already logged detail.
@@ -480,12 +491,13 @@ AS
         -- the ONLY path to LOADED (a real base-table row). It runs FIRST so a
         -- genuinely-costed row is confirmed before the interface/import-report
         -- harvest below looks at what is left. Rows already terminal are untouched.
-        -- The import ESS id (falling back to the load ESS id) feeds the report's
-        -- LOAD_REQUEST_ID for traceability; run-scoped row selection is by the
-        -- stamped prefix (see the DM header).
+        -- The report finds rows only by this work item's own load and import
+        -- job ids (DMT_PRJ_BUDGET_RECON_V3_DM); the run prefix is never a
+        -- search value.
         APPLY_CONTRACT_V1_PRJ_BUDGET(
-            p_run_id     => p_run_id,
-            p_request_id => TO_CHAR(NVL(p_import_ess_id, p_load_ess_id)));
+            p_run_id        => p_run_id,
+            p_load_ess_id   => p_load_ess_id,
+            p_import_ess_id => p_import_ess_id);
 
         -- (The legacy second fetch of the same report with the retired P_BATCH_ID
         -- parameter, parsed by PARSE_AND_UPDATE against pre-Contract-v1 column

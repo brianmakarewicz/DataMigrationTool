@@ -41,6 +41,37 @@ refuses (`PJO_FPT_CANT_BUD_SPON_PRJ`), and the generator left the template marke
 are fixed above; the known-good comparison proved neither the ESS parameters nor budgetary
 control was the cause.
 
+## Reconciliation by Fusion job id, one call per work item (2026-10-07)
+
+Owner decision: the reconciliation report finds rows only by the Fusion job ids, never by
+searching on the run prefix or the project number. The prefixed source budget line reference
+(persisted as PM_BUDGET_REFERENCE) is used only to match a row Fusion returned back to its TFM
+row.
+
+- **Report V3** `DMT_PRJ_BUDGET_RECON_V3_DM` / `_RPT` (deployed alongside V1 and V2, which are
+  never overwritten): plan versions by `PJO_PLAN_VERSIONS_B.REQUEST_ID = :P_IMPORT_ESS_ID`;
+  interface rejections by `PJO_PLAN_VERSIONS_XFACE.LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID`. No
+  `LIKE` anywhere. Keyset ordering and comparison pinned to BINARY. Registry repointed by the
+  seed and `db/migrations/2026-10-07_project_budgets_recon_v3_registry.sql`.
+- **One call per work item.** One load and one Import Budgets job per work item, so
+  `RECONCILE_BATCH` passes that item's own load id and import id to `FETCH_ROWS`.
+- Verified read-only first: `PJO_PLAN_VERSIONS_B.REQUEST_ID` carries the Import Budgets job id
+  (runs 241 and 244 recorded 10073776 and 10073840, the values Fusion stamped). The interface
+  is purged after import on this pod (no rows since 2025-11-14), so the interface tier
+  normally returns nothing; the real per-row message still comes from the BudgetsXfaceBIP
+  report output.
+
+Proof run 275 (prefix 93331, scenario RegressionTest2610071920, STANDALONE:ProjectBudgets):
+work item 1642 recorded load 10075774 / import 10075778 (ImportBudgetsInterfaceData; its
+BudgetsXfaceBIP report job is 10075782). Plan version 100002667587274 (93331RT-PJB-GOOD1 on
+CFIT022) carries REQUEST_ID 10075778. RT-PJB-GOOD1 LOADED; RT-PJB-BAD1 FAILED with its own
+Fusion error ("The project number NOPROJ999 doesn't exist ..."); 0 UNACCOUNTED. Dollars tie
+out: 70,000 loaded = 70,000 TC raw cost on the Fusion plan lines; 70,000 failed. A
+reconcile-only rerun left both TFM rows byte-identical. `dmt_regression_run.py` PASS with one
+review item that is not about reconciliation (no REST lookup is configured for Project Budget
+Lines); Playwright click-through PASS. (Run 267 showed the same outcomes before this branch was
+rebased onto main.)
+
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjoBudgetInterface.xlsm
