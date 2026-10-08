@@ -996,6 +996,9 @@
     --     argument 2 = BatchId. Its two batches load near-simultaneously, and
     --     the proximity match gave the second batch the first batch's import
     --     id (run 251: both work items recorded 10074973).
+    --     ARInvoices passes its group's batch source NAME on 2:
+    --     AutoInvoiceImportEss argument 2 = transaction source (argument 1 is
+    --     the BU id, not its name). The value is XML-escaped in the envelope.
     --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
     --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V2_RPT.xdo (V2 adds
@@ -1096,7 +1099,7 @@
                 '            </v2:item>' ||
                 '            <v2:item>' ||
                 '              <v2:name>P_BATCH_ID</v2:name>' ||
-                '              <v2:values><v2:item>' || p_batch_id || '</v2:item></v2:values>' ||
+                '              <v2:values><v2:item>' || DBMS_XMLGEN.CONVERT(p_batch_id) || '</v2:item></v2:values>' ||
                 '            </v2:item>' ||
                 '            <v2:item>' ||
                 '              <v2:name>P_BATCH_ARG_POS</v2:name>' ||
@@ -1849,7 +1852,8 @@
         p_password        IN VARCHAR2,
         x_load_ess_id     OUT VARCHAR2,
         x_import_ess_id   OUT VARCHAR2,
-        x_success         OUT BOOLEAN
+        x_success         OUT BOOLEAN,
+        p_batch_source    IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC            CONSTANT VARCHAR2(40) := 'AR_SUBMIT_AND_RECONCILE_ONE';
         l_load_status     VARCHAR2(50);
@@ -1895,9 +1899,16 @@
             RETURN;  -- x_success stays FALSE
         END IF;
 
-        -- Find the Import ESS job ID.
+        -- Find the Import ESS job ID. AutoInvoiceImportEss is not a child of the
+        -- load job (its absparentid is itself), so tie it to THIS group's load by
+        -- its own submitted transaction source (argument 2) as well as by being the
+        -- first such import after the load: the recorded import id must be the job
+        -- that stamped this group's transactions (owner rule 2026-10-07).
         BEGIN
-            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id);
+            x_import_ess_id := get_import_ess_id(p_run_id, p_cemli_code, x_load_ess_id,
+                                                 p_batch_id      => p_batch_source,
+                                                 p_batch_arg_pos => CASE WHEN p_batch_source IS NOT NULL
+                                                                         THEN 2 END);
         EXCEPTION
             WHEN OTHERS THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
@@ -3151,7 +3162,9 @@
                 p_password          => l_ar_pass,
                 x_load_ess_id       => l_ar_load_id,
                 x_import_ess_id     => l_ar_import_id,
-                x_success           => l_ar_ok);
+                x_success           => l_ar_ok,
+                -- AutoInvoiceImportEss argument 2 = this group's transaction source.
+                p_batch_source      => grp_rec.BATCH_SOURCE_NAME);
 
             IF NOT l_ar_ok THEN
                 DECLARE
