@@ -105,6 +105,7 @@
         l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
+        l_marker    VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
     BEGIN
         -- Generated-row count drives the shared fetch's keyset page-count cap
         -- (a safety page limit, not an exact total). Done statically here (not in
@@ -317,9 +318,17 @@
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
                bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
-                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
-                               DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
-                                   DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                   (SELECT CASE WHEN DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]') > 0
+                                THEN DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
+                                         DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
+                                             DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                                -- A header failed before load (e.g. [POST_VALIDATION]) keeps
+                                -- its own tag: '<tag> Rejected with document: asset <num>: ...'.
+                                ELSE SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800, 1), '^\[[A-Z_]+\]')
+                                            || ' ' || l_marker || 'asset ' || hdr.ASSET_NUMBER || ': '
+                                            || LTRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800, 1),
+                                                                    '^\[[A-Z_]+\]')), 1, 4000)
+                           END
                     FROM   DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = bk.RUN_ID
                     AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
@@ -359,9 +368,17 @@
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS = 'FAILED',
                asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
-                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
-                               DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
-                                   DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                   (SELECT CASE WHEN DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]') > 0
+                                THEN DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
+                                         DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
+                                             DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                                -- A header failed before load (e.g. [POST_VALIDATION]) keeps
+                                -- its own tag: '<tag> Rejected with document: asset <num>: ...'.
+                                ELSE SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800, 1), '^\[[A-Z_]+\]')
+                                            || ' ' || l_marker || 'asset ' || hdr.ASSET_NUMBER || ': '
+                                            || LTRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800, 1),
+                                                                    '^\[[A-Z_]+\]')), 1, 4000)
+                           END
                     FROM   DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = asn.RUN_ID
                     AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
@@ -579,6 +596,7 @@
         l_asset      VARCHAR2(100);
         l_reason     VARCHAR2(2000);
         l_dist_seq   NUMBER;
+        l_marker     VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
         l_marked     NUMBER := 0;
         l_left       NUMBER := 0;
     BEGIN
@@ -865,9 +883,17 @@
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
                bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
-                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
-                               DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
-                                   DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                   (SELECT CASE WHEN DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]') > 0
+                                THEN DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
+                                         DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                             DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                                -- A header failed before load (e.g. [POST_VALIDATION]) keeps
+                                -- its own tag: '<tag> Rejected with document: asset <num>: ...'.
+                                ELSE SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1), '^\[[A-Z_]+\]')
+                                            || ' ' || l_marker || 'asset ' || h.ASSET_NUMBER || ': '
+                                            || LTRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                                                    '^\[[A-Z_]+\]')), 1, 4000)
+                           END
                     FROM   DMT_FA_ASSET_HDR_TFM_TBL h
                     WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
@@ -880,9 +906,17 @@
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS = 'FAILED',
                asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
-                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
-                               DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
-                                   DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                   (SELECT CASE WHEN DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]') > 0
+                                THEN DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
+                                         DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                             DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                                -- A header failed before load (e.g. [POST_VALIDATION]) keeps
+                                -- its own tag: '<tag> Rejected with document: asset <num>: ...'.
+                                ELSE SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1), '^\[[A-Z_]+\]')
+                                            || ' ' || l_marker || 'asset ' || h.ASSET_NUMBER || ': '
+                                            || LTRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                                                    '^\[[A-Z_]+\]')), 1, 4000)
+                           END
                     FROM   DMT_FA_ASSET_HDR_TFM_TBL h
                     WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
