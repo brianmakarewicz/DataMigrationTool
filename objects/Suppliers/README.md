@@ -31,14 +31,27 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - ParameterList: NEW,N (no third argument)
 - Loader Type: SQLLOADER (LOAD_JOB_NAME is NULL — loadAndImportData handles the load internally)
 - Auth User: calvin.roth (per-object override rows in DMT_ERP_INTERFACE_OPTIONS_TBL)
-- BIP reconciliation key: filter the POZ_*_INT tables by LOAD_REQUEST_ID
-  (IMPORT_REQUEST_ID is NULL when the import job errors; LOAD_REQUEST_ID is
-  always populated)
-- BIP report parameters: Contract v1 — P_RUN_ID, P_LOAD_REQUEST_ID (the
-  selection key), P_IMPORT_ESS_ID, P_PREFIX (P_BATCH_ID retired 2026-07-08,
-  conformance tranche Part 3). The seven-column Contract v1 response shape
-  and base-tier id backfill remain the tracked "Suppliers Contract v1
-  report rework" item.
+- BIP reconciliation: Contract v1 nine-column reports (backlog #217,
+  2026-10-09), one per object, deployed alongside the V1 `SUP_*_DM` models
+  (never overwritten): `DMT_SUP_RECON_V2_DM`, `DMT_SUP_ADDR_RECON_V2_DM`,
+  `DMT_SUP_SITE_RECON_V2_DM`, `DMT_SUP_SITE_ASSN_RECON_V2_DM`,
+  `DMT_SUP_CONT_RECON_V2_DM`. Six parameters (P_RUN_ID, P_LOAD_REQUEST_ID,
+  P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY), tie-safe keyset paging.
+- Row selection: the POZ_*_INT row by LOAD_REQUEST_ID only (IMPORT_REQUEST_ID
+  is NULL when the import job errors; LOAD_REQUEST_ID is always populated). The
+  base row is reached from that interface row: POZ_SUPPLIERS by VENDOR_ID,
+  HZ_PARTY_SITES by PARTY_SITE_ID, POZ_SUPPLIER_SITES_ALL_M by VENDOR_ID +
+  VENDOR_SITE_CODE, POZ_SITE_ASSIGNMENTS_ALL_M by VENDOR_SITE_ID + BU name,
+  HZ_PARTIES (PERSON) by PER_PARTY_ID. Base found = BASE/SUCCESS with the base
+  id as FUSION_ID; otherwise INTERFACE/ERROR with the real
+  POZ_SUPPLIER_INT_REJECTIONS text (or NULL, which leaves the row for the
+  UNACCOUNTED sweep).
+- Match key: RECORD_KEY = SOURCE_REF = the business key as sent, joined with
+  `~` (Suppliers VENDOR_NAME~SEGMENT1; Addresses VENDOR_NAME~PARTY_SITE_NAME;
+  Sites VENDOR_NAME~VENDOR_SITE_CODE; SiteAssignments
+  VENDOR_NAME~VENDOR_SITE_CODE~BUSINESS_UNIT_NAME; Contacts
+  VENDOR_NAME~FIRST_NAME~LAST_NAME), recorded as RECON_KEY_SQL on each
+  DMT_BIP_REPORT_TBL row. No DFF carrier, so DMT_REFERENCE is NULL.
 
 ## The five objects
 1. Suppliers
@@ -57,7 +70,7 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - Validators: `db/packages/dmt_poz_sup_validator_pkg.*`, `dmt_poz_sup_addr_validator_pkg.*`, `dmt_poz_sup_site_validator_pkg.*`, `dmt_poz_sup_site_assn_validator_pkg.*`, `dmt_poz_sup_cont_validator_pkg.*`
 - Transformer: `db/packages/dmt_poz_sup_transform_pkg.*` (one package, five TRANSFORM_* procedures — one per object)
 - FBDI Generators: `db/packages/dmt_poz_sup_fbdi_gen_pkg.*`, `dmt_poz_sup_addr_fbdi_gen_pkg.*`, `dmt_poz_sup_site_fbdi_gen_pkg.*`, `dmt_poz_sup_site_assn_fbdi_gen_pkg.*`, `dmt_poz_sup_cont_fbdi_gen_pkg.*`
-- Results/Reconciliation: `db/packages/dmt_poz_sup_results_pkg.*` (one shared package; RECONCILE_BATCH takes p_cemli_code — the registry rows set RECON_HAS_CEMLI_ARG=Y)
+- Results/Reconciliation: one package per object — `db/packages/dmt_poz_sup_results_pkg.*`, `dmt_poz_sup_addr_results_pkg.*`, `dmt_poz_sup_site_results_pkg.*`, `dmt_poz_sup_site_assn_results_pkg.*`, `dmt_poz_sup_cont_results_pkg.*`. Each reads its report through the shared fetch `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` and applies it with static SQL; RECONCILE_BATCH keeps p_cemli_code (registry rows set RECON_HAS_CEMLI_ARG=Y) and rejects any other object's code.
 - BIP Data Models/Reports: `bip/Suppliers/`, `bip/SupplierAddresses/`, `bip/SupplierSites/`, `bip/SupplierSiteAssignments/`, `bip/SupplierContacts/` — deployed to `/Custom/DMT2/{CEMLI}/` (this stack's catalog; never `/Custom/DMT/`)
 - Report deploy tool: `scripts/deploy_recon_bip_reports.py` + `DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT`
 
@@ -127,17 +140,13 @@ catalog):**
    and upload seeds, views, and BIP models for no correctness gain.
 
 ## Known Issues
-- **SupplierSites: LOADED rows can carry a NULL FUSION_VENDOR_SITE_ID.** The
-  interface tier (POZ_SUPPLIER_SITES_INT) reports the site PROCESSED but does
-  not return VENDOR_SITE_ID on this instance. The rows stay LOADED because the
-  dependent SupplierSiteAssignments — which cannot exist without the site —
-  load with real Fusion ids, proving the sites transitively. The residue is
-  never silent: the reconciler appends
-  `[RECONCILE_ERROR] Fusion id not returned by interface tier` to the affected
-  rows' ERROR_TEXT (LOADED with historical error text is a defined, legal
-  state). The proper id backfill (base-table tier) lands with the tracked
-  "Suppliers Contract v1 report rework" work item (see
-  docs/tranche-reviews/2026-07-08-suppliers-review.md, H6-H8).
+- None open for reconciliation. The former "SupplierSites LOADED with a NULL
+  FUSION_VENDOR_SITE_ID" residue is gone: the V2 report reads the base id from
+  POZ_SUPPLIER_SITES_ALL_M and a row is LOADED only with it (backlog #217).
+- The match key is the business key, not a DMT-stamped reference: the supplier
+  FBDIs carry no field DMT stamps today. Two rows of one load with the same
+  business key would match each other's report rows; the transform's business
+  keys are unique per load in practice.
 
 ## History
 - Frozen stack: E2E LOADED confirmed working — five separate imports

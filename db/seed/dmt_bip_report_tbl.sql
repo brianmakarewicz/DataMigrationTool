@@ -123,35 +123,35 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000020 bip_report_id, 'Suppliers' cemli_code, 'Supplier' object_type,
-           '/Custom/DMT2/Suppliers/SUP_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/Suppliers/SUP_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V2_RPT.xdo' report_catalog_path,
            'POZ_SUPPLIERS_INT' interface_table,
-           'Supplier header import reconciliation' notes from dual
+           'Supplier header import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~SEGMENT1. Deployed alongside V1 (SUP_DM), never overwriting it.' notes from dual
     union all select 100000012, 'Customers', 'Customer',
            '/Custom/DMT2/Customers/DMT_CUST_RECON_V6_DM.xdm',
            '/Custom/DMT2/Customers/DMT_CUST_RECON_V6_RPT.xdo',
            'HZ_IMP_PARTIES_T',
            'Customer party import reconciliation (Contract v1). V6: base rows are selected by REQUEST_ID equal to the Fusion import batch id the load sent (P_FUSION_BATCH_ID: run prefix followed by the source batch id), never by a prefix match. An interface row is returned as ERROR only with its OWN HZ_IMP_ERRORS text; a row with no error of its own is not returned. Deployed alongside V5, V4, V3, V2 and v1, never overwriting them.' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
-           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_DM.xdm',
-           '/Custom/DMT2/SupplierAddresses/SUP_ADDR_RPT.xdo',
+           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V2_DM.xdm',
+           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V2_RPT.xdo',
            'POZ_SUP_ADDRESSES_INT',
-           'Supplier address import reconciliation' from dual
+           'Supplier address import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~PARTY_SITE_NAME. Deployed alongside V1 (SUP_ADDR_DM), never overwriting it.' from dual
     union all select 100000021, 'SupplierSites', 'Supplier Site',
-           '/Custom/DMT2/SupplierSites/SUP_SITE_DM.xdm',
-           '/Custom/DMT2/SupplierSites/SUP_SITE_RPT.xdo',
+           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V2_DM.xdm',
+           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V2_RPT.xdo',
            'POZ_SUPPLIER_SITES_INT',
-           'Supplier site import reconciliation' from dual
+           'Supplier site import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~VENDOR_SITE_CODE. Deployed alongside V1 (SUP_SITE_DM), never overwriting it.' from dual
     union all select 100000010, 'SupplierSiteAssignments', 'Supplier Site Assignment',
-           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_DM.xdm',
-           '/Custom/DMT2/SupplierSiteAssignments/SUP_SITE_ASSN_RPT.xdo',
+           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V2_DM.xdm',
+           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V2_RPT.xdo',
            'POZ_SITE_ASSIGNMENTS_INT',
-           'Supplier site assignment import reconciliation' from dual
+           'Supplier site assignment import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~VENDOR_SITE_CODE~BUSINESS_UNIT_NAME. Deployed alongside V1 (SUP_SITE_ASSN_DM), never overwriting it.' from dual
     union all select 100000015, 'SupplierContacts', 'Supplier Contact',
-           '/Custom/DMT2/SupplierContacts/SUP_CONT_DM.xdm',
-           '/Custom/DMT2/SupplierContacts/SUP_CONT_RPT.xdo',
+           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V2_DM.xdm',
+           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V2_RPT.xdo',
            'POZ_SUP_CONTACTS_INT',
-           'Supplier contact import reconciliation' from dual
+           'Supplier contact import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~FIRST_NAME~LAST_NAME. Deployed alongside V1 (SUP_CONT_DM), never overwriting it.' from dual
     union all select 100000016, 'GLBalances', 'GL Balance',
            '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_DM.xdm',
            '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V4_RPT.xdo',
@@ -250,26 +250,42 @@ commit;
 -- so there is no double-write. Each (TFM_TABLE, FUSION_ID_COLUMN) is a single
 -- plain SQL identifier the auditor validates with DBMS_ASSERT.SIMPLE_SQL_NAME.
 -- MERGE on CEMLI_CODE so re-running the seed converges the existing rows and
--- is idempotent. CONTRACT_VERSION / RECON_KEY_SQL / everything else untouched.
+-- is idempotent.
+--
+-- Contract v1 (2026-10-09, backlog #217): the five supplier reconcilers now
+-- read the nine-column V2 reports through the shared fetch
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS, which requires CONTRACT_VERSION = 1, so
+-- this block also converges CONTRACT_VERSION = 1 and records RECON_KEY_SQL,
+-- the '~'-joined business-key expression each reconciler matches RECORD_KEY
+-- against (documentation for the registry; the apply SQL is static). The
+-- same values reach existing databases through
+-- db/migrations/2026-10-09_suppliers_recon_contract_v1_registry.sql.
 -- ---------------------------------------------------------------------------
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Suppliers'                 cemli_code,
            'DMT_POZ_SUPPLIERS_TFM_TBL'  tfm_table,
-           'FUSION_VENDOR_ID'           fusion_id_column from dual
+           'FUSION_VENDOR_ID'           fusion_id_column,
+           q'[VENDOR_NAME || '~' || SEGMENT1]' recon_key_sql from dual
     union all select 'SupplierAddresses',
-           'DMT_POZ_SUP_ADDR_TFM_TBL',      'FUSION_PARTY_SITE_ID'  from dual
+           'DMT_POZ_SUP_ADDR_TFM_TBL',      'FUSION_PARTY_SITE_ID',
+           q'[VENDOR_NAME || '~' || PARTY_SITE_NAME]' from dual
     union all select 'SupplierSites',
-           'DMT_POZ_SUP_SITE_TFM_TBL',      'FUSION_VENDOR_SITE_ID' from dual
+           'DMT_POZ_SUP_SITE_TFM_TBL',      'FUSION_VENDOR_SITE_ID',
+           q'[VENDOR_NAME || '~' || VENDOR_SITE_CODE]' from dual
     union all select 'SupplierSiteAssignments',
-           'DMT_POZ_SUP_SITE_ASSN_TFM_TBL', 'FUSION_ASSIGNMENT_ID'  from dual
+           'DMT_POZ_SUP_SITE_ASSN_TFM_TBL', 'FUSION_ASSIGNMENT_ID',
+           q'[VENDOR_NAME || '~' || VENDOR_SITE_CODE || '~' || BUSINESS_UNIT_NAME]' from dual
     union all select 'SupplierContacts',
-           'DMT_POZ_SUP_CONTACTS_TFM_TBL',  'FUSION_CONTACT_ID'     from dual
+           'DMT_POZ_SUP_CONTACTS_TFM_TBL',  'FUSION_CONTACT_ID',
+           q'[VENDOR_NAME || '~' || FIRST_NAME || '~' || LAST_NAME]' from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)
 when matched then update set
     t."TFM_TABLE"        = s.tfm_table,
-    t."FUSION_ID_COLUMN" = s.fusion_id_column;
+    t."FUSION_ID_COLUMN" = s.fusion_id_column,
+    t."CONTRACT_VERSION" = 1,
+    t."RECON_KEY_SQL"    = s.recon_key_sql;
 
 commit;
 
