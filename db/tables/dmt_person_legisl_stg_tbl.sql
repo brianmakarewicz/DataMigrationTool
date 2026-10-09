@@ -109,8 +109,8 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
-COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” FK to Worker business object';
-COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."ETHNICITY" IS 'Ethnicity â€” US-specific legislative data';
+COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - FK to Worker business object';
+COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."ETHNICITY" IS 'Ethnicity - US-specific legislative data';
 COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."VETERAN_SELF_IDENT_FLAG" IS 'Veteran self-identification flag';
 COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
 COMMENT ON COLUMN "DMT_PERSON_LEGISL_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';

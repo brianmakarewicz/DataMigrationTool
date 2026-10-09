@@ -169,7 +169,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_GMS_AWD_HEADERS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_GMS_AWD_HDR_STG_SEQ';
-COMMENT ON COLUMN "DMT_GMS_AWD_HEADERS_STG_TBL"."AWARD_NUMBER" IS 'Award identifier â€” prefix applied in TFM table';
+COMMENT ON COLUMN "DMT_GMS_AWD_HEADERS_STG_TBL"."AWARD_NUMBER" IS 'Award identifier - prefix applied in TFM table';
 COMMENT ON TABLE "DMT_GMS_AWD_HEADERS_STG_TBL"  IS 'Grant award header staging. Raw user data only. FBDI interface: GMS_AWARD_HEADERS_INT. CSV: GmsAwardHeadersInterface.csv.';
 
 -- ---------------------------------------------------------------------------

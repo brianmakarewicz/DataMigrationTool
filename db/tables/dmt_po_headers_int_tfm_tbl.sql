@@ -135,14 +135,14 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PO_HEADERS_INT_TFM_SEQ';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PO_HEADERS_INT_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PO_HEADERS_INT_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."DOCUMENT_NUM" IS 'PO number with run prefix applied: NVL(prefix,'''') || stg.DOCUMENT_NUM';
 COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."VENDOR_NUM" IS 'Supplier number qualified with DEPENDENT_PREFIX: NVL(dep_prefix,'''') || stg.VENDOR_NUM';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_PO_HEADER_ID" IS 'Fusion internal PO_HEADER_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_DOCUMENT_NUM" IS 'Fusion-assigned PO document number â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_PO_HEADERS_INT_TFM_TBL"  IS 'PO header transformed. Run-specific â€” one row per staging row per run attempt. DOCUMENT_NUM has run prefix applied. VENDOR_NUM qualified with dependent prefix for supplier lookup. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_PO_HEADER_ID" IS 'Fusion internal PO_HEADER_ID - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."FUSION_DOCUMENT_NUM" IS 'Fusion-assigned PO document number - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_PO_HEADERS_INT_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_PO_HEADERS_INT_TFM_TBL"  IS 'PO header transformed. Run-specific - one row per staging row per run attempt. DOCUMENT_NUM has run prefix applied. VENDOR_NUM qualified with dependent prefix for supplier lookup. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

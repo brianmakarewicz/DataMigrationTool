@@ -121,10 +121,10 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."LOCATION_ORIG_SYSTEM_REFERENCE" IS 'Unique location reference in the source system â€” primary business key';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."COUNTRY" IS 'Country code â€” required for all locations';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."ADDRESS1" IS 'Primary address line â€” required for most countries';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."LOCATION_ORIG_SYSTEM_REFERENCE" IS 'Unique location reference in the source system - primary business key';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."COUNTRY" IS 'Country code - required for all locations';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."ADDRESS1" IS 'Primary address line - required for most countries';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_HZ_LOCATIONS_STG_TBL"  IS 'Customer location staging. Raw user data only. Run-specific data in TFM table. FBDI interface: HZ_IMP_LOCATIONS_T. CSV: HzImpLocationsT.csv.';
 
 -- ---------------------------------------------------------------------------

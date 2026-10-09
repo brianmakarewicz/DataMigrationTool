@@ -106,9 +106,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user';
-COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."CUST_SITE_ORIG_SYS_REF" IS 'Account site reference â€” links this use back to the parent account site in HZ_IMP_ACCTSITES_T';
-COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."SITE_USE_CODE" IS 'Site use purpose code â€” e.g. BILL_TO, SHIP_TO';
-COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."CUST_SITE_ORIG_SYS_REF" IS 'Account site reference - links this use back to the parent account site in HZ_IMP_ACCTSITES_T';
+COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."SITE_USE_CODE" IS 'Site use purpose code - e.g. BILL_TO, SHIP_TO';
+COMMENT ON COLUMN "DMT_HZ_ACCT_SITE_USES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_HZ_ACCT_SITE_USES_STG_TBL"  IS 'Customer account site use staging. Raw user data only. Run-specific data in TFM table. FBDI interface: HZ_IMP_ACCTSITEUSES_T. CSV: HzImpAcctSiteUsesT.csv.';
 
 -- ---------------------------------------------------------------------------

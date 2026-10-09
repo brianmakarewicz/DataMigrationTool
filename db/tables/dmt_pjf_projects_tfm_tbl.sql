@@ -240,12 +240,12 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - GENERATED ALWAYS AS IDENTITY';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PJF_PROJECTS_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PJF_PROJECTS_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."PROJECT_NUMBER" IS 'Project number with run prefix applied: NVL(prefix,'''') || stg.PROJECT_NUMBER';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."FUSION_PROJECT_ID" IS 'Fusion internal PROJECT_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_PJF_PROJECTS_TFM_TBL"  IS 'Project header transformed. Run-specific â€” one row per staging row per run attempt. PROJECT_NUMBER has run prefix applied. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."FUSION_PROJECT_ID" IS 'Fusion internal PROJECT_ID - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_PJF_PROJECTS_TFM_TBL"  IS 'Project header transformed. Run-specific - one row per staging row per run attempt. PROJECT_NUMBER has run prefix applied. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

@@ -208,9 +208,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_RA_LINES_STG_SEQ';
-COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."TRX_NUMBER" IS 'Transaction number from source system â€” prefix applied in TFM table';
-COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context â€” combined with INTERFACE_LINE_ATTRIBUTE1-15 forms the unique line identifier';
-COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."TRX_NUMBER" IS 'Transaction number from source system - prefix applied in TFM table';
+COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context - combined with INTERFACE_LINE_ATTRIBUTE1-15 forms the unique line identifier';
+COMMENT ON COLUMN "DMT_RA_LINES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_RA_LINES_STG_TBL"  IS 'AR Invoice lines staging. Raw user data only. Run-specific data in DMT_RA_LINES_TFM_TBL. FBDI interface: RA_INTERFACE_LINES_ALL. CSV: RaInterfaceLinesAll.csv.';
 
 -- ---------------------------------------------------------------------------

@@ -46,11 +46,11 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_SALARY_STG_SEQ. Populated by DB default, never supplied by user.';
-COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” unique identifier in Fusion HCM';
-COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."ASSIGNMENT_NUMBER" IS 'Assignment number â€” links salary to a specific assignment';
+COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - unique identifier in Fusion HCM';
+COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."ASSIGNMENT_NUMBER" IS 'Assignment number - links salary to a specific assignment';
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."SALARY_AMOUNT" IS 'Salary amount for this record';
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."SALARY_BASIS_NAME" IS 'Name of the salary basis (e.g. Annual, Monthly)';
-COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."ACTION_CODE" IS 'HDL action code â€” typically CMP_ASG_SAL';
+COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."ACTION_CODE" IS 'HDL action code - typically CMP_ASG_SAL';
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."SALARY_APPROVED" IS 'Salary approved flag (Y/N)';
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
 COMMENT ON COLUMN "DMT_SALARY_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';

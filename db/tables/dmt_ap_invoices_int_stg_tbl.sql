@@ -173,9 +173,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_AP_INVOICES_INT_STG_SEQ';
-COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."INVOICE_NUM" IS 'Invoice number from source system â€” prefix applied in TFM table';
-COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."VENDOR_NUM" IS 'Supplier number â€” expected to have DEPENDENT_PREFIX applied when looking up migrated supplier';
-COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."INVOICE_NUM" IS 'Invoice number from source system - prefix applied in TFM table';
+COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."VENDOR_NUM" IS 'Supplier number - expected to have DEPENDENT_PREFIX applied when looking up migrated supplier';
+COMMENT ON COLUMN "DMT_AP_INVOICES_INT_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_AP_INVOICES_INT_STG_TBL"  IS 'AP Invoice header staging. Raw user data only. Run-specific data in DMT_AP_INVOICES_INT_TFM_TBL. FBDI interface: AP_INVOICES_INTERFACE. CSV: ApInvoicesInterface.csv.';
 
 -- ---------------------------------------------------------------------------

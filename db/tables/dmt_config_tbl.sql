@@ -18,4 +18,4 @@ end;
 COMMENT ON COLUMN "DMT_CONFIG_TBL"."CONFIG_KEY" IS 'Configuration key e.g. FUSION_URL, FUSION_USERNAME';
 COMMENT ON COLUMN "DMT_CONFIG_TBL"."CONFIG_VALUE" IS 'Configuration value';
 COMMENT ON COLUMN "DMT_CONFIG_TBL"."LAST_UPDATED_BY" IS 'DB session user who last updated this row';
-COMMENT ON TABLE "DMT_CONFIG_TBL"  IS 'Tool-level configuration. Use DMT_UTIL_PKG.SET_FUSION_URL and SET_CONFIG to manage â€” do not update directly.';
+COMMENT ON TABLE "DMT_CONFIG_TBL"  IS 'Tool-level configuration. Use DMT_UTIL_PKG.SET_FUSION_URL and SET_CONFIG to manage - do not update directly.';

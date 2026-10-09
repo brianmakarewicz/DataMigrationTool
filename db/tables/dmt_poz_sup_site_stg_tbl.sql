@@ -269,7 +269,7 @@ end;
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."IMPORT_ACTION" IS 'CREATE or UPDATE';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."PROCUREMENT_BUSINESS_UNIT_NAME" IS 'Procurement BU that owns this site';
-COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."PARTY_SITE_NAME" IS 'Address name â€” must match an existing record in DMT_POZ_SUP_ADDR_STG_TBL';
+COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."PARTY_SITE_NAME" IS 'Address name - must match an existing record in DMT_POZ_SUP_ADDR_STG_TBL';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
 COMMENT ON COLUMN "DMT_POZ_SUP_SITE_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';
 COMMENT ON TABLE "DMT_POZ_SUP_SITE_STG_TBL"  IS 'Supplier site staging. Raw user-loaded data only. Run-specific data in DMT_POZ_SUP_SITE_TFM_TBL. Interface table: POZ_SUPPLIER_SITES_INT. CTL: PozSupplierSitesInt.ctl (25B).';

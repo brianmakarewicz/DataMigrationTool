@@ -34,7 +34,7 @@
 
     -- --------------------------------------------------------
     -- Private: POST a SOAP envelope; return full response CLOB.
-    -- No Authorization header â€” BIP v2 authenticates via
+    -- No Authorization header - BIP v2 authenticates via
     -- session token in the SOAP body, not HTTP auth.
     -- Content-Length is always set (required by Fusion/nginx).
     -- --------------------------------------------------------
@@ -141,7 +141,7 @@
     -- --------------------------------------------------------
     -- Private: base64-encode a CLOB.
     -- Converts to BLOB (AL32UTF8) then encodes in 24576-byte
-    -- chunks (divisible by 3 â€” required for correct base64).
+    -- chunks (divisible by 3 - required for correct base64).
     -- Strips embedded newlines that UTL_ENCODE inserts every 64 chars.
     -- --------------------------------------------------------
     FUNCTION clob_to_b64 (p_clob IN CLOB) RETURN CLOB IS
@@ -170,7 +170,7 @@
 
     -- --------------------------------------------------------
     -- Private: BLOB -> base64 CLOB.
-    -- Like clob_to_b64 but input is already a BLOB â€” skips the
+    -- Like clob_to_b64 but input is already a BLOB - skips the
     -- CLOB->BLOB charset conversion step.
     -- --------------------------------------------------------
     FUNCTION blob_to_b64 (p_blob IN BLOB) RETURN CLOB IS
@@ -1455,11 +1455,11 @@
         DELETE_DATA_MODEL(l_token, p_base_url, C_DM_NAME, l_folder);
         DBMS_OUTPUT.PUT_LINE('  Cleanup complete (previous ' || C_DM_NAME || ' removed if present).');
 
-        -- Step 3: Deploy data model (persistent â€” kept for inspection)
+        -- Step 3: Deploy data model (persistent - kept for inspection)
         DEPLOY_DATA_MODEL(l_token, p_base_url, C_DM_NAME, l_xdm_xml, l_folder);
         DBMS_OUTPUT.PUT_LINE('  Data model deployed: ' || l_folder || '/' || C_DM_NAME || '.xdm');
 
-        -- Step 4: Test â€” run the data model; does NOT delete it
+        -- Step 4: Test - run the data model; does NOT delete it
         l_resp := TEST_DATA_MODEL(l_token, p_base_url, C_DM_NAME, l_folder);
         DBMS_OUTPUT.PUT_LINE('  Data model ran. Response length: ' ||
                              DBMS_LOB.GETLENGTH(l_resp));

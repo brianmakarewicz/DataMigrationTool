@@ -132,12 +132,12 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_HZ_LOCATIONS_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_HZ_LOCATIONS_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."LOCATION_ORIG_SYSTEM_REFERENCE" IS 'Location reference with run prefix applied: NVL(prefix,'''') || stg.LOCATION_ORIG_SYSTEM_REFERENCE';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FUSION_LOCATION_ID" IS 'Fusion internal LOCATION_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_HZ_LOCATIONS_TFM_TBL"  IS 'Customer location transformed. Run-specific â€” one row per staging row per run attempt. LOCATION_ORIG_SYSTEM_REFERENCE has run prefix applied. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."FUSION_LOCATION_ID" IS 'Fusion internal LOCATION_ID - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_HZ_LOCATIONS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_HZ_LOCATIONS_TFM_TBL"  IS 'Customer location transformed. Run-specific - one row per staging row per run attempt. LOCATION_ORIG_SYSTEM_REFERENCE has run prefix applied. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

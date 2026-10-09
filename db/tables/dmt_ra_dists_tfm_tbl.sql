@@ -118,11 +118,11 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_RA_DISTS_TFM_SEQ';
-COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_RA_DISTS_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
-COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context â€” links this distribution to its parent line via INTERFACE_LINE_ATTRIBUTE1-15';
-COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_RA_DISTS_TFM_TBL"  IS 'AR Invoice distributions transformed. Run-specific â€” one row per staging row per run attempt. Account segments derived as needed. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_RA_DISTS_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context - links this distribution to its parent line via INTERFACE_LINE_ATTRIBUTE1-15';
+COMMENT ON COLUMN "DMT_RA_DISTS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_RA_DISTS_TFM_TBL"  IS 'AR Invoice distributions transformed. Run-specific - one row per staging row per run attempt. Account segments derived as needed. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

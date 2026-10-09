@@ -79,7 +79,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
-COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” FK to Worker business object';
+COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - FK to Worker business object';
 COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."PHONE_TYPE" IS 'Phone type: W1 (work), H1 (home), M (mobile)';
 COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
 COMMENT ON COLUMN "DMT_PERSON_PHONE_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';

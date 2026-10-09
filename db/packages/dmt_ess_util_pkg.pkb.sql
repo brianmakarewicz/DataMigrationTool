@@ -281,7 +281,7 @@
         -- Find the next CRLF-- after the PK position (start of boundary)
         l_bound_pos := DBMS_LOB.INSTR(p_mtom, l_crlf_dash, l_pk_pos);
         IF l_bound_pos = 0 OR l_bound_pos IS NULL THEN
-            -- No boundary found â€” take everything from PK to end
+            -- No boundary found - take everything from PK to end
             l_zip_len := DBMS_LOB.GETLENGTH(p_mtom) - l_pk_pos + 1;
         ELSE
             l_zip_len := l_bound_pos - l_pk_pos;
@@ -293,7 +293,7 @@
     END extract_mtom_zip;
 
     -- --------------------------------------------------------
-    -- Private: BIP v2 SOAP HTTP POST (no HTTP auth â€” creds in body).
+    -- Private: BIP v2 SOAP HTTP POST (no HTTP auth - creds in body).
     -- Used by CAPTURE_ESS_HIERARCHY for runReport calls.
     -- --------------------------------------------------------
     FUNCTION bip_soap (
@@ -495,7 +495,7 @@
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
                 'CAPTURE_ESS_HIERARCHY failed.', SQLERRM, C_PKG, C_PROC);
-            -- Don't re-raise â€” hierarchy capture is diagnostic, not critical path
+            -- Don't re-raise - hierarchy capture is diagnostic, not critical path
     END CAPTURE_ESS_HIERARCHY;
 
     -- --------------------------------------------------------
@@ -524,7 +524,7 @@
     -- ============================================================
     -- DOWNLOAD_ESS_FILE_BLOB
     -- Calls downloadESSJobExecutionDetails, returns MTOM response as BLOB.
-    -- Use this for all ESS output downloads â€” binary-safe.
+    -- Use this for all ESS output downloads - binary-safe.
     -- Every ESS download funnels through here, so this is where the Fusion
     -- user is decided (backlog #309): a caller-supplied user+password pair
     -- (from GET_CEMLI_CREDENTIALS) wins; with no pair the request id is
@@ -840,7 +840,7 @@
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
                 'CAPTURE_ESS_OUTPUT failed for request ' || p_request_id || '.',
                 SQLERRM, C_PKG, l_log_ctx);
-            -- Non-critical â€” don't re-raise
+            -- Non-critical - don't re-raise
     END CAPTURE_ESS_OUTPUT;
 
     -- ============================================================
@@ -961,7 +961,7 @@
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
                 'ENUMERATE_ALL_ESS_FILES failed.', SQLERRM, C_PKG, C_PROC);
-            -- Non-critical â€” don't re-raise
+            -- Non-critical - don't re-raise
     END ENUMERATE_ALL_ESS_FILES;
 
     -- ============================================================
@@ -1160,7 +1160,7 @@
         l_ess_pass     VARCHAR2(100);
     BEGIN
         -- Look up the report job definition for this CEMLI.
-        -- If not seeded, this CEMLI has no report child â€” return immediately.
+        -- If not seeded, this CEMLI has no report child - return immediately.
         BEGIN
             SELECT REPORT_JOB_DEF INTO l_report_job_def
             FROM   DMT_ERP_INTERFACE_OPTIONS_TBL

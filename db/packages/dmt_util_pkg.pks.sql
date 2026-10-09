@@ -68,7 +68,7 @@ AS
     );
 
     -- --------------------------------------------------------
-    -- Logging â€” all writes use AUTONOMOUS TRANSACTION
+    -- Logging - all writes use AUTONOMOUS TRANSACTION
     -- so log entries survive even if the caller rolls back
     -- --------------------------------------------------------
 
@@ -104,7 +104,7 @@ AS
     );
 
     -- --------------------------------------------------------
-    -- HTTP â€” Fusion REST API calls
+    -- HTTP - Fusion REST API calls
     -- --------------------------------------------------------
 
     -- General-purpose HTTP request (GET or POST) — the ONE shared
@@ -223,7 +223,7 @@ AS
     ) RETURN VARCHAR2;
 
     -- --------------------------------------------------------
-    -- Credential resolution â€” per-CEMLI overrides
+    -- Credential resolution - per-CEMLI overrides
     -- --------------------------------------------------------
 
     -- THE central Fusion user resolver (backlog #309): every Fusion call DMT
@@ -292,7 +292,7 @@ AS
 
     -- Convert a CLOB to a BLOB using AL32UTF8 charset conversion.
     -- Returns an empty BLOB (not NULL) when p_clob is NULL or empty.
-    -- Centralised version â€” generators should call this instead of
+    -- Centralised version - generators should call this instead of
     -- maintaining a local copy.
     FUNCTION CLOB_TO_BLOB (p_clob IN CLOB) RETURN BLOB;
 

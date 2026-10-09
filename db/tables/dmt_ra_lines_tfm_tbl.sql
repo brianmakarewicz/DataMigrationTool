@@ -220,13 +220,13 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_RA_LINES_TFM_SEQ';
-COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_RA_LINES_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_RA_LINES_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."TRX_NUMBER" IS 'Transaction number with run prefix applied: NVL(prefix,'''') || stg.TRX_NUMBER';
-COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FUSION_CUSTOMER_TRX_ID" IS 'Fusion internal CUSTOMER_TRX_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FUSION_TRX_NUMBER" IS 'Fusion-assigned transaction number â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_RA_LINES_TFM_TBL"  IS 'AR Invoice lines transformed. Run-specific â€” one row per staging row per run attempt. TRX_NUMBER has run prefix applied. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FUSION_CUSTOMER_TRX_ID" IS 'Fusion internal CUSTOMER_TRX_ID - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."FUSION_TRX_NUMBER" IS 'Fusion-assigned transaction number - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_RA_LINES_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_RA_LINES_TFM_TBL"  IS 'AR Invoice lines transformed. Run-specific - one row per staging row per run attempt. TRX_NUMBER has run prefix applied. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

@@ -129,9 +129,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PO_LINES_INT_STG_SEQ';
-COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'Unique key for this PO line â€” links line locations back to this line';
-COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_HEADER_KEY" IS 'FK to header â€” must match DMT_PO_HEADERS_INT_STG_TBL.INTERFACE_HEADER_KEY';
-COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step. Upstream cascade: [PRE_VALIDATION] PO header [key] failed.';
+COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'Unique key for this PO line - links line locations back to this line';
+COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."INTERFACE_HEADER_KEY" IS 'FK to header - must match DMT_PO_HEADERS_INT_STG_TBL.INTERFACE_HEADER_KEY';
+COMMENT ON COLUMN "DMT_PO_LINES_INT_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step. Upstream cascade: [PRE_VALIDATION] PO header [key] failed.';
 COMMENT ON TABLE "DMT_PO_LINES_INT_STG_TBL"  IS 'Purchase Order lines staging. Raw user data only. Run-specific data in DMT_PO_LINES_INT_TFM_TBL. FBDI interface: PO_LINES_INTERFACE. CSV: PoLinesInterfaceOrder.csv.';
 
 -- ---------------------------------------------------------------------------
