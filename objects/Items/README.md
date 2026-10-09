@@ -72,6 +72,26 @@ them up. The source batch still partitions the loads (one child work item per ba
 chained Item Import is still found by this batch's id. The report needs no change: it already
 selects by the Item Import REQUEST_ID and the load LOAD_REQUEST_ID (V3).
 
+## Category rows use this run's item (backlog #610, 2026-10-09)
+Each category TFM row links by id to the item row of the same run
+(`DMT_EGP_ITEM_CAT_TFM_TBL.ITEM_TFM_SEQUENCE_ID` = the item's `TFM_SEQUENCE_ID`, matched on the
+source item number + organization) and copies that row's run-prefixed ITEM_NUMBER. Before this the
+category transform called `DMT_XREF_PKG.ITEM_NUMBER`, which returned the newest already-LOADED
+item, i.e. the previous run's, so every run assigned its categories to the previous run's item.
+When the item is not in the run the source item number is used unchanged. Details in
+objects/ItemCategories/README.md.
+
+## Partition ordering (backlog #610, 2026-10-09)
+Items spawns one child work item per batch. When a batch's category rows belong to items in a
+different batch, that batch must not import first. `DMT_EGP_ITEM_RESULTS_PKG.GET_PARTITION_KEYS`
+adds an `AFTER` array of those item batch ids to the batch token, for example
+`{"BATCH_ID":"934608102","AFTER":["934608101"]}`. `DMT_QUEUE_WORKER_PKG.EXECUTE_ONE` stores the
+token without `AFTER`, inserts the child PENDING, and appends `QUEUE_ID:<sibling queue id>` to its
+DEPENDS_ON. `DMT_QUEUE_PKG` promotes it once that sibling is DONE (HALT) or DONE/FAILED
+(CONTINUE), and under HALT skips it if the sibling fails. A wait that would close a cycle is not
+recorded (logged WARN). A batch whose categories ride with their own items has no `AFTER`, so its
+token is unchanged.
+
 ## Reconciliation
 Contract v1 report `/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm` (since 2026-10-07; V1 and V2
 stay deployed). One report returns both record types (`Item`, `ItemCategory`). It is called once

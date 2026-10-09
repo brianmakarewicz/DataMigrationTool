@@ -11,7 +11,22 @@ FBDI — **bundled with Items** (not a standalone ESS job)
 
 ## Parent/Child
 - Parent: Items (items must be loaded first — same ESS job processes both)
-- Linkage: ITEM_NUMBER + ORGANIZATION_CODE
+- Linkage in the FBDI: ITEM_NUMBER + ORGANIZATION_CODE (the only keys Fusion accepts on a category row)
+- Linkage inside DMT (backlog #610, owner decision 2026-10-09): by id. Each category TFM row stores
+  `ITEM_TFM_SEQUENCE_ID` = the TFM_SEQUENCE_ID of the item row of the SAME run, i.e. the
+  `DMT_EGP_ITEM_TFM_TBL` row transformed in this run from the item STG row with the same source
+  ITEM_NUMBER and ORGANIZATION_CODE. The category copies that row's run-prefixed ITEM_NUMBER, so
+  the FBDI carries this run's item number (prefix = run prefix).
+- **Fallback, stated on purpose:** when the item is not part of the run (a category-only load for
+  an item that already exists in Fusion), `ITEM_TFM_SEQUENCE_ID` is NULL and the category carries
+  the source item number unchanged. It never picks an earlier run's item. The old
+  `DMT_XREF_PKG.ITEM_NUMBER` lookup did exactly that (it returned the newest already-LOADED item,
+  which during a run is the previous run's) and is no longer called by the category transform.
+  Consequence: a FAILED-mode rerun that retries only a category row, whose item loaded in an
+  earlier run, sends the source item number, not the earlier run's prefixed number.
+- Ordering: items and categories in the same batch go in one zip and one Item Import. When a
+  category's item sits in a different batch of the same run, the category's batch work item waits
+  for the item's batch work item (see objects/Items/README.md, "Partition ordering").
 
 ## Staging Tables
 - STG: `DMT_ITEM_CATEGORIES_STG_TBL` (DDL: `schema/tables/192_dmt_egp_item_cat_stg_tbl.sql`)
