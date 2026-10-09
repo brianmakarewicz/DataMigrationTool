@@ -95,7 +95,9 @@ end;
 -- 2026-10-09 backlog #150 follow-up: the page-54 Activity Log list with NO run
 -- selected (all runs) orders the whole table by LOG_DATE DESC, LOG_ID DESC.
 -- Without this index it read every row and sorted them (TABLE ACCESS FULL +
--- SORT ORDER BY). Its query carries an INDEX_DESC(l DMT_LOG_N5) hint, so it now
+-- SORT ORDER BY). Its query carries an INDEX_DESC(l DMT_LOG_N5) hint (and
+-- NO_UNNEST on its per-row object lookup, which otherwise became a hash join
+-- that brought the sort back), so it now
 -- walks this index newest-first and the first page comes back without a sort.
 -- LOG_ID is NOT NULL, so every row is in the index. Guarded like the others;
 -- db/migrations/2026-10-09_log_tbl_all_runs_list_index.sql converges an

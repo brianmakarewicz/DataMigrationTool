@@ -10,7 +10,9 @@
 --
 -- This composite serves that order directly. The all-runs list query carries
 -- an INDEX_DESC(l DMT_LOG_N5) hint (apex/f501src page 54, region
--- log-entries-all). Guarded and idempotent: ORA-00955 (name in use) and
+-- log-entries-all), and its per-row object lookup carries NO_UNNEST so the
+-- optimizer keeps it as a per-row lookup instead of a hash join that would
+-- bring the sort back. Guarded and idempotent: ORA-00955 (name in use) and
 -- ORA-01408 (column list already indexed) are both ignored, so re-running this
 -- file is a no-op. The same block is in db/tables/dmt_log_tbl.sql for fresh
 -- installs.
