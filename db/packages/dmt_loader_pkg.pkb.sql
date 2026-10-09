@@ -996,8 +996,8 @@
     --   2. Chained import: the report row with MATCH_TYPE = 'OWN' -- a job of
     --      the import definition that is a child of the load or carries the
     --      load's ESS execution context id (ECID). loadAndImportData submits its
-    --      import that way for every object (run 347: all 22 recorded imports
-    --      share their load's ECID). It needs no batch or argument match.
+    --      import that way (run 347: every chained import checked shares its
+    --      load's ECID). It needs no batch or argument match.
     --   3. Fallback: the batch / argument / nearest-later match (MATCH_TYPE =
     --      'NEAREST'), accepted only after C_OWN_TRIES attempts found no own
     --      import, and logged as a WARN naming the job it took.
