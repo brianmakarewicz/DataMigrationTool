@@ -198,7 +198,7 @@ CREATE OR REPLACE PACKAGE BODY DMT_GL_COMPARE_PKG AS
         DMT_UTIL_PKG.RUN_BIP_REPORT(
             p_run_id      => p_run_id,
             p_cemli_code  => C_CEMLI,
-            p_params      => 'P_BATCH_ID|'||l_batch||'~P_BUDGET_NAME|'||l_budget_name,
+            p_params      => 'P_BATCH_ID|'||l_batch||DMT_UTIL_PKG.C_BIP_PARAM_SEP||'P_BUDGET_NAME|'||l_budget_name,
             x_report_xml  => l_xml,
             x_error_code  => l_err,
             p_report_path => l_path);

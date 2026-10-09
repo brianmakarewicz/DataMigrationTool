@@ -49,9 +49,9 @@
             p_run_id     => p_run_id,
             p_cemli_code => p_cemli_code,
             p_params     => 'P_RUN_ID|'          || TO_CHAR(p_run_id) ||
-                            '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
-                            '~P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
-                            '~P_PREFIX|'          || l_prefix,
+                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
+                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_IMPORT_ESS_ID|'   || TO_CHAR(p_import_ess_id) ||
+                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_PREFIX|'          || l_prefix,
             x_report_xml => x_report_xml,
             x_error_code => x_error_code);
 

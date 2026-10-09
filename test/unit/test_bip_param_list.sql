@@ -137,6 +137,34 @@ begin
     and    instr(text, 'CONSTANT VARCHAR2(1)  := DMT_UTIL_PKG.C_BIP_PARAM_SEP') > 0;
     assert(l_cnt = 2, 9, 'both paging callers declare C_SEP from DMT_UTIL_PKG.C_BIP_PARAM_SEP');
 
+    -- 10/11. Backlog #485: the ERP non-paging multi-parameter callers join
+    --        their pairs with the safe separator too. No ERP package body
+    --        still builds a legacy '~P_<NAME>|' pair; each of the nine
+    --        switched bodies references C_BIP_PARAM_SEP. (The configuration
+    --        reconcilers -- payment terms, banks, lookups, value sets, tax --
+    --        are outside the ERP scope and still use '~'; tracked separately.)
+    select count(*) into l_cnt
+    from   user_source
+    where  name in ('DMT_BILLING_EVENT_RESULTS_PKG', 'DMT_EGP_ITEM_CAT_RESULTS_PKG',
+                    'DMT_EXPENDITURE_RESULTS_PKG',
+                    'DMT_GL_COMPARE_PKG', 'DMT_POZ_SUP_RESULTS_PKG',
+                    'DMT_POZ_SUP_ADDR_RESULTS_PKG', 'DMT_POZ_SUP_SITE_RESULTS_PKG',
+                    'DMT_POZ_SUP_SITE_ASSN_RESULTS_PKG', 'DMT_POZ_SUP_CONT_RESULTS_PKG')
+    and    type = 'PACKAGE BODY'
+    and    instr(text, '''~P_') > 0;
+    assert(l_cnt = 0, 10, 'no ERP non-paging caller builds a legacy ''~P_<NAME>|'' pair');
+
+    select count(distinct name) into l_cnt
+    from   user_source
+    where  name in ('DMT_BILLING_EVENT_RESULTS_PKG', 'DMT_EGP_ITEM_CAT_RESULTS_PKG',
+                    'DMT_EXPENDITURE_RESULTS_PKG',
+                    'DMT_GL_COMPARE_PKG', 'DMT_POZ_SUP_RESULTS_PKG',
+                    'DMT_POZ_SUP_ADDR_RESULTS_PKG', 'DMT_POZ_SUP_SITE_RESULTS_PKG',
+                    'DMT_POZ_SUP_SITE_ASSN_RESULTS_PKG', 'DMT_POZ_SUP_CONT_RESULTS_PKG')
+    and    type = 'PACKAGE BODY'
+    and    instr(text, 'DMT_UTIL_PKG.C_BIP_PARAM_SEP') > 0;
+    assert(l_cnt = 9, 11, 'all nine ERP multi-parameter callers use DMT_UTIL_PKG.C_BIP_PARAM_SEP');
+
     dbms_output.put_line('TEST_BIP_PARAM_LIST: '||l_passed||' passed, 0 failed');
 end;
 /

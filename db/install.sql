@@ -473,8 +473,6 @@ prompt == Views (dependency order) ==
 @@views/dmt_cfg_value_sets_v.sql
 @@views/dmt_cfg_vs_values_v.sql
 @@views/dmt_config_admin_v.sql
-@@views/dmt_scenario_summary_v.sql
-@@views/dmt_dashboard_cemli_summary_v.sql
 @@views/dmt_dashboard_runs_v.sql
 @@views/dmt_ess_jobs_monitor_v.sql
 @@views/dmt_ess_job_detail_v.sql
@@ -753,7 +751,6 @@ prompt == Package specs (dependency order) ==
 @@packages/dmt_ref_id_pkg.pks.sql
 @@packages/dmt_regression_pkg.pks.sql
 @@packages/dmt_run_summary_pkg.pks.sql
-@@packages/dmt_report_pkg.pks.sql
 @@packages/dmt_req_fbdi_gen_pkg.pks.sql
 @@packages/dmt_req_results_pkg.pks.sql
 @@packages/dmt_req_transform_pkg.pks.sql
@@ -985,7 +982,6 @@ prompt == Package bodies ==
 @@packages/dmt_recon_contract_pkg.pkb.sql
 @@packages/dmt_recon_engine_pkg.pkb.sql
 @@packages/dmt_ref_id_pkg.pkb.sql
-@@packages/dmt_report_pkg.pkb.sql
 @@packages/dmt_run_summary_pkg.pkb.sql
 @@packages/dmt_req_fbdi_gen_pkg.pkb.sql
 @@packages/dmt_req_results_pkg.pkb.sql

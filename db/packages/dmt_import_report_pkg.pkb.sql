@@ -107,8 +107,15 @@
                     -- XMLType and .getStringVal() on it throws ORA-30625 (method
                     -- dispatch on NULL SELF), aborting the whole report parse. Guard
                     -- it: a missing text node is simply an empty value.
+                    -- getStringVal() on a text node returns it re-serialized as
+                    -- XML, so "isn't" came back as "isn&apos;t" and was stored
+                    -- that way in ERROR_TEXT (backlog #547). Decode the entities
+                    -- once, here, where every import-report value is read; the
+                    -- message and the identifier both come from this value.
                     BEGIN
-                        l_ch_val := l_child.extract('/' || l_ch_tag || '/text()').getStringVal();
+                        l_ch_val := DBMS_XMLGEN.CONVERT(
+                                        l_child.extract('/' || l_ch_tag || '/text()').getStringVal(),
+                                        DBMS_XMLGEN.ENTITY_DECODE);
                     EXCEPTION
                         WHEN OTHERS THEN l_ch_val := NULL;
                     END;
