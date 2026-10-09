@@ -74,11 +74,24 @@ using (
     union all select 'Expenditures', 'Project Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'ProjectBudgets', 'Project Budgets', 'DMT_PRJ_BUDGET_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'BillingEvents', 'Billing Events', 'DMT_PJB_BILL_EVENTS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    -- Grants: award headers + award projects (the dedicated Award Projects TFM
-    -- table carries its own rows, so no row filter). Other award children remain
-    -- out of the catalog view for now (section 1 #23).
+    -- Grants: the award header plus every award child TFM table (backlog #567).
+    -- Each child table carries its own rows, so no row filter. Display names are
+    -- the SUB_OBJECT labels the Grants transform writes to DMT_STG_TFM_ERROR_TBL.
     union all select 'Grants', 'Award Headers', 'DMT_GMS_AWD_HEADERS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    union all select 'Grants', 'Award Projects', 'DMT_GMS_AWD_PROJECTS_TFM_TBL', 'TFM_STATUS', null, 2 from dual
+    union all select 'Grants', 'Award Funding', 'DMT_GMS_AWD_FUNDING_TFM_TBL', 'TFM_STATUS', null, 2 from dual
+    union all select 'Grants', 'Award Projects', 'DMT_GMS_AWD_PROJECTS_TFM_TBL', 'TFM_STATUS', null, 3 from dual
+    union all select 'Grants', 'Award Personnel', 'DMT_GMS_AWD_PERSONNEL_TFM_TBL', 'TFM_STATUS', null, 4 from dual
+    union all select 'Grants', 'Award Terms', 'DMT_GMS_AWD_TERMS_TFM_TBL', 'TFM_STATUS', null, 5 from dual
+    union all select 'Grants', 'Award Funding Sources', 'DMT_GMS_AWD_FUND_SRC_TFM_TBL', 'TFM_STATUS', null, 6 from dual
+    union all select 'Grants', 'Project Funding Sources', 'DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL', 'TFM_STATUS', null, 7 from dual
+    union all select 'Grants', 'Award Keywords', 'DMT_GMS_AWD_KEYWORDS_TFM_TBL', 'TFM_STATUS', null, 8 from dual
+    union all select 'Grants', 'Award Certifications', 'DMT_GMS_AWD_CERTS_TFM_TBL', 'TFM_STATUS', null, 9 from dual
+    union all select 'Grants', 'Award CFDAs', 'DMT_GMS_AWD_CFDAS_TFM_TBL', 'TFM_STATUS', null, 10 from dual
+    union all select 'Grants', 'Funding Allocations', 'DMT_GMS_AWD_FUND_ALLOC_TFM_TBL', 'TFM_STATUS', null, 11 from dual
+    union all select 'Grants', 'Org Credits', 'DMT_GMS_AWD_ORG_CREDITS_TFM_TBL', 'TFM_STATUS', null, 12 from dual
+    union all select 'Grants', 'Budget Periods', 'DMT_GMS_AWD_BDGT_PRDS_TFM_TBL', 'TFM_STATUS', null, 13 from dual
+    union all select 'Grants', 'Project Task Burden', 'DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL', 'TFM_STATUS', null, 14 from dual
+    union all select 'Grants', 'Award References', 'DMT_GMS_AWD_REFERENCES_TFM_TBL', 'TFM_STATUS', null, 15 from dual
     union all select 'Items', 'Item Master', 'DMT_EGP_ITEM_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'Items', 'Item Categories', 'DMT_EGP_ITEM_CAT_TFM_TBL', 'TFM_STATUS', null, 2 from dual
     -- HDL objects --------------------------------------------------------

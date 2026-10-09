@@ -63,6 +63,31 @@ with two pre-existing review items (the Team Members REST lookup is NOT_FOUND, a
 the error that REST call logs); Playwright click-through PASS. The prefix-off path was not run
 live.
 
+## A failed child rejects its project (backlog #545, 2026-10-09)
+
+Proven live. Run 343 (prefix 93393, scenario RegressionTest261009013036, PROJECTS) sent project
+RTPRJ-XG1 whose only defect is its team member (`RT Nobody XG1`, `nobody.xg1@fake.com`, a person
+that does not exist). Import Projects rejected the whole project: the ImportProjectReportJob output
+(request 10084323) lists the member in `LIST_TEAM_MEMBER_ERROR` with its own message "The specified
+resource doesn't exist." and the project in `LIST_PROJECT_ERROR` only with the pointer "The project
+wasn't imported because import errors exist for the project team members." The valid task and
+transaction control were not created.
+
+`DMT_PROJECT_RESULTS_PKG` now handles that:
+- The team-member report row is matched on its project-name and member-name tokens (the generic
+  parser joins the TM_ERROR_* identifier fields with `/`, empty ones included, so run 343's member
+  was left with only the project's pointer).
+- `PROPAGATE_DOCUMENT_ERRORS` treats a task, team member or transaction control with its own real
+  error as the cause: its error is quoted onto its project and the project's other children, e.g.
+  `[FUSION_ERROR] Rejected with document: project 93395RTPRJ-XG1 (team member RT Nobody XG1): The
+  specified resource doesn't exist.` The project keeps its pointer text and gains the quote. A
+  project's own error is spread downward only when none of its children failed (RTPRJ-BAD1 as before).
+
+Proof run 345 (prefix 93395, same scenario): project, task and transaction control of RTPRJ-XG1
+FAILED with the quote, the member FAILED with its own error, all other rows as before, 0
+UNACCOUNTED, `dmt_regression_run.py` PASS (72 listed rows met). Matching a task's or transaction
+control's own report row is unchanged and has no live example yet (backlog #655).
+
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjfProjectsInterface.xlsm

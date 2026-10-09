@@ -111,9 +111,25 @@ schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
   APPEND_ERROR, idempotent, never touches LOADED rows. The old header-to-children FAILED
   cascade is retired; children of a LOADED award are still LOADED with it.
 - Regression: `RTAWD-XG1` (Good-1's shape, personnel PI `PERSON_NUMBER 99999999`, no email)
-  in scenario RegressionTest2610081853. Only the award header lane is in
-  `DMT_RECORD_DETAIL_V`, so the regression script asserts the header
-  (`FAILED_WITH_DOCUMENT`); the child rows were checked directly on the TFM tables.
+  in scenario RegressionTest2610081853.
+
+## Award children in the record views (backlog #567, 2026-10-09)
+Every award child TFM table now has its own lane in `DMT_RECORD_DETAIL_V`,
+`DMT_OBJECT_DETAIL_V`, `DMT_V_CEMLI_TFM_TABLES` and the `DMT_CEMLI_CATALOG_TBL` seed, labelled
+with the SUB_OBJECT the Grants transform already writes to `DMT_STG_TFM_ERROR_TBL`: Award Funding,
+Award Projects, Award Personnel, Award Terms, Award Funding Sources, Project Funding Sources,
+Award Keywords, Award Certifications, Award CFDAs, Funding Allocations, Org Credits, Budget
+Periods, Project Task Burden, Award References. DISPLAY_KEY starts with the prefixed award number;
+LOOKUP_KEY is the award number, so Verify in Fusion reads the award back through the object-level
+`Grants` REST row (`AwardNumber={KEY}`). Because the catalog table drives the accounting gate and
+the shared unaccounted sweep, every child row now counts toward the Grants accounting rule.
+
+`scripts/regression_scenario.json` lists every child row of the scenario: children of a LOADED
+award are LOADED, children of RTAWD-BAD1 / RTGNT-BAD2 / RTGNT-BAD3 and of RTAWD-XG1 are
+`FAILED_WITH_DOCUMENT`, and the XG1 personnel row (`RT-GNT-PERS2-RTAWD-XG1`) is `FAILED` with its
+own Fusion error. Re-evaluating local run 339 (scenario RegressionTest261008213401) with the new
+lanes: all 249 listed rows met their expected outcome, PASS, and Verify found the award for each
+child lane with a LOADED row.
 
 ## Known Issues
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.

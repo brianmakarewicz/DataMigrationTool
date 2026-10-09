@@ -30,6 +30,20 @@ UNION ALL SELECT 'Projects',             'DMT_PJC_TXN_CONTROLS_TFM_TBL',   'Txn 
 UNION ALL SELECT 'BillingEvents',        'DMT_PJB_BILL_EVENTS_TFM_TBL',    'Billing Events',           1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Expenditures',         'DMT_PJC_EXPENDITURES_TFM_TBL',   'Project Expenditures',     1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_HEADERS_TFM_TBL',    'Award Headers',            1, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_FUNDING_TFM_TBL',     'Award Funding',           2, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_PROJECTS_TFM_TBL',    'Award Projects',          3, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_PERSONNEL_TFM_TBL',   'Award Personnel',         4, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_TERMS_TFM_TBL',       'Award Terms',             5, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_FUND_SRC_TFM_TBL',    'Award Funding Sources',   6, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL','Project Funding Sources', 7, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_KEYWORDS_TFM_TBL',    'Award Keywords',          8, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_CERTS_TFM_TBL',       'Award Certifications',    9, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_CFDAS_TFM_TBL',       'Award CFDAs',             10, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_FUND_ALLOC_TFM_TBL',  'Funding Allocations',     11, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_ORG_CREDITS_TFM_TBL', 'Org Credits',             12, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_BDGT_PRDS_TFM_TBL',   'Budget Periods',          13, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL', 'Project Task Burden',     14, 'TFM_STATUS', NULL FROM DUAL
+UNION ALL SELECT 'Grants',               'DMT_GMS_AWD_REFERENCES_TFM_TBL',  'Award References',        15, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'ProjectBudgets',       'DMT_PRJ_BUDGET_TFM_TBL',         'Project Budget Lines',     1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'GLBalances',           'DMT_GL_INTERFACE_TFM_TBL',       'GL Journals',              1, 'TFM_STATUS', NULL FROM DUAL
 UNION ALL SELECT 'GLBudgets',            'DMT_GL_BUDGET_INT_TFM_TBL',      'GL Budget Balances',       1, 'TFM_STATUS', NULL FROM DUAL
