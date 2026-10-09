@@ -1,5 +1,19 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-09 — before regression: ERP follow-up batch
+
+**Bottom line.** The ERP follow-up batch from PRs #708 through #711 is merged to main and goes into a full local regression next. The run tests main at commit 41ef86e against the combined baseline RegressionTest261008213401.
+
+**What is being tested.**
+- Test tooling (PR #708). The regression harness now refuses to submit outside the pipeline's one-active-run-per-object guard, because its inline fallback was removed. A subset run reports a known issue as cleared only when the run actually contained that object. The error-text checker now traces composed `[FUSION_ERROR]` text through a local variable. The split-parent failure path has a unit test.
+- Assets (PR #709). A rejection in the distributions file is now traced back to the distribution row that caused it, so the batch fails with the real error quoted instead of being left unaccounted. Each book work item now records only its own import id rather than picking up another book's.
+- Code cleanup (PR #710). The Expenditures reconciler no longer makes the second report call with the retired batch id. The dead ItemCategories results package and its orphan report files are gone. The Requisitions reconciliation report moves to version 3, which adds a tiebreak so paging never splits or repeats rows.
+- Grants, Projects and ProjectBudgets (PR #711). Grants child rows now appear in the record view, and the bad cross-grain award has full expectations for every one of its rows. Projects now carries a child's error up to its parent project. ProjectBudgets now matches each line within a plan version to its own report row.
+
+**Known open review risk.** During the agents' proof runs, concurrent evaluations wrote two Customers REST-verify log errors that carry no run id. This is expected to be a side effect of overlapping runs and should not recur in a solo full regression, but the run should be checked for it.
+
+**Backlog.** The 14 items this batch resolves are marked IN TEST (full regression pending) until the run passes with no new failures. The summary counts table was rebuilt to match the item list (412 items).
+
 ## Session -- 2026-10-09 -- After regression: main 3b536d6 promoted to ATP
 
 **Bottom line.** Main at commit 3b536d6 passed the full gate on local and on ATP and is now promoted to ATP.
