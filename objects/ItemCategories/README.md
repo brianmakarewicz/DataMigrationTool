@@ -93,6 +93,19 @@ Both rows are physically present in `EGP_ITEM_CATEGORIES` under
 ZZZ) was correctly rejected in the interface (process_status = 3) and is absent from
 the base table.
 
+## EGP-2775085 rejection text reaches the row (backlog #154, 2026-10-09)
+
+Fusion logs the single-assignment rejection in `EGP_IMPORT_ERRORS` under the category
+interface row's own `TRANSACTION_ID` and `REQUEST_ID` (message `EGP_MULTIASSIGN_NOT_ALLOWED`,
+text "... single assignment category assignment. (EGP-2775085)"), the same place the Items
+report V3 already reads category errors from. Run 229 ended UNACCOUNTED because it ran on the
+pre-V3 report (prefix-scoped); replaying V3 for run 229's own work item (load 10065638, import
+10065647) returns the EGP-2775085 text on both Purchasing rows. No import-report parsing is
+needed. The item-number resolution of category rows is unchanged (owner decision pending).
+Regression BAD row `RT-ITEMCAT-PURCH-BAD-DMT-RT-PLAIN-001` (scenario RegressionTest261009080330):
+a second Purchasing assignment (999.99) for the GOOD plain item, expected FAILED with
+`[FUSION_ERROR] EGP_MULTIASSIGN_NOT_ALLOWED: ...`.
+
 ## History
 - DDL deployed initially.
 - 2026-05-21: All packages built (validator, transformer, FBDI gen, results, runner).

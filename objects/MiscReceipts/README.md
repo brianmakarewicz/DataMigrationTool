@@ -85,8 +85,13 @@ transaction (PROCESS_FLAG 3, real error inline on the interface row, a lot/seria
 included), `DMT_MISC_RECEIPT_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` marks every not-LOADED
 lot and serial of that transaction FAILED quoting it:
 `[FUSION_ERROR] Rejected with document: transaction <SOURCE_LINE_ID>: <real error>`.
-Children link to the parent by child STG `SOURCE_ID` = parent `STG_SEQUENCE_ID` (the same
-join the generator uses). Serials of a rejected transaction used to end UNACCOUNTED.
+Children link to the parent by the parent's TFM id (backlog #552, 2026-10-09): the transform
+reads the staged link once (child STG `SOURCE_ID` = parent `STG_SEQUENCE_ID`) and stamps the
+parent transaction's `TFM_SEQUENCE_ID` into the lot's and the serial's `SOURCE_LINE_ID` (new
+column on the serials TFM table). The generator, the lot LOADED cascade and this document
+roll-up all join `child.SOURCE_LINE_ID = parent.TFM_SEQUENCE_ID`; before, the lot cascade
+joined on the lot/serial interface number and the roll-up and generator on the STG link.
+Serials of a rejected transaction used to end UNACCOUNTED.
 Regression cross-grain rows (scenario RegressionTest2610081756): `RT-MR-XG-SER-BAD`
 (AS88000 + serial DMT-SER-XG-001..002) and `RT-MR-XG-LOT-BAD` (RA-100-4935-LOT + lot
 DMT-REG-LOT-XG), both on the nonexistent subinventory `XGNOSUB`. Proof run 315 (prefix
