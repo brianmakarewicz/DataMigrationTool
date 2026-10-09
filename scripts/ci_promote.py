@@ -87,6 +87,7 @@ sys.path.insert(0, str(WS))
 sys.path.insert(0, str(REPO / "scripts"))
 import promotion_gate as gate            # the hard gate in front of deploy-prod
 import dmt_apex_url_target as urltarget  # the one console URL knob
+import dmt_deploy_guard as guard         # shared-DB deploy rule (backlog #641)
 
 JDK  = "C:/Users/Monroe/tools/jdk-21.0.11+10"
 SQLCL= "C:/Users/Monroe/tools/sqlcl/bin/sql.exe"
@@ -201,6 +202,21 @@ def deploy_apex(target):
                          "import", "--target", target]).returncode
     print(f"[deploy-apex:{target}] {'OK' if rc == 0 else 'FAILED'}")
     return rc == 0
+
+def guarded_deploy(target, deploy_fn, timeout_s=None):
+    """The shared-database deploy rule (owner decision 2026-10-08, backlog #641):
+    wait (bounded) until USER_SCHEDULER_RUNNING_JOBS lists no DMT_WQ_ / DMT_PF_ /
+    DMT_PL_ / DMT_RC_ job, refuse when the wait times out, run deploy_fn, then
+    confirm 0 invalid objects right after. See scripts/dmt_deploy_guard.py."""
+    label = f"{target}"
+    if not guard.wait_until_no_dmt_jobs(lambda: _oracle(target), label, timeout_s=timeout_s):
+        print(f"[deploy:{target}] NOT deploying: DMT child jobs are running "
+              f"(or the check failed).")
+        return False
+    ok = deploy_fn()
+    # Always verify, even after a failed deploy, so the invalid objects are listed.
+    clean = guard.assert_no_invalid(lambda: _oracle(target), label)
+    return bool(ok) and clean
 
 # ---------------------------------------------------------------- prefix sync
 PREFIX_SEQ = "DMT_RUN_PREFIX_SEQ"
@@ -514,7 +530,7 @@ def stage_deploy_local():
     """Deploy the working tree to local, then re-assert the Fusion credentials
     (the seeds a deploy re-runs can leave them masked or stale)."""
     ident = gate.code_identity()
-    ok = deploy_db("local") and deploy_apex("local") and stage_runtime_config("local")
+    ok = guarded_deploy("local", lambda: deploy_db("local") and deploy_apex("local"))         and stage_runtime_config("local")
     gate.record("deploy_local", {"ok": ok}, ident)
     return ok
 
@@ -628,7 +644,7 @@ def stage_deploy_prod(yes, owner_override=None):
     if not gate.enforce(stage="deploy-prod", owner_override=owner_override):
         print("[deploy-prod] NOT deploying to ATP: the promotion gate refused.")
         return False
-    return deploy_db("atp") and deploy_apex("atp") and stage_runtime_config("atp")
+    return guarded_deploy("atp", lambda: deploy_db("atp") and deploy_apex("atp"))         and stage_runtime_config("atp")
 
 def stage_test_prod(yes, pipelines=None):
     """Regression on ATP, then the console click-through against ATP for that

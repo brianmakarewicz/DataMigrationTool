@@ -27,9 +27,13 @@
 #      If no source is configured, print a WARNING and exit 0 — the step never
 #      breaks a DB build on a machine (or CI runner) without the image set.
 #   4. Verify the copy by reading images/apex_version.txt.
-#   5. If dmt2-ords is running, verify "/i/apex_version.txt" serves HTTP 200;
-#      a non-200 there is a hard failure (exit 1), because the files are
-#      believed to be in place and the browser would still be broken.
+#   5. If dmt2-ords is running, verify "/i/apex_version.txt" serves HTTP 200
+#      with the expected version. If it does not, REPAIR it automatically:
+#      set standalone.static.path when missing, restart dmt2-ords (which also
+#      re-mounts the images folder) and wait, bounded, for HTTP 200. Still
+#      broken after that is a hard failure (exit 1).
+#
+# Proven offline (mocked docker/curl): test/unit/test_apex_images_rebuild.sh
 #
 # Configuration (env):
 #   APEX_IMAGES_SRC   populated APEX 26.1 images/ folder to copy FROM. No
@@ -41,6 +45,9 @@
 #   APEX_VERSION      expected version string fragment (default: 26.1)
 #   ORDS_CONTAINER    web-tier container name (default: dmt2-ords)
 #   ORDS_BASE_URL     base URL of the running web tier (default: http://localhost:8182)
+#   ORDS_CONFIG_DIR   ORDS config dir inside the container (default: /etc/ords/config)
+#   ORDS_WAIT_S       max seconds to wait for /i/ after a repair restart (default: 240)
+#   ORDS_POLL_S       seconds between those checks (default: 5)
 # ============================================================================
 set -e
 
@@ -174,22 +181,64 @@ fi
 # A DB rebuild does not start the web tier, so this only runs when it is up.
 # When it IS up and /i/ is not 200, the browser is broken even though the
 # files are in place — that is a failure, not a warning.
+#
+# Self-repair (owner-approved 2026-10-09): when /i/ is not serving the right
+# version, the script fixes the web tier itself instead of leaving the console
+# broken until someone re-sets it up by hand:
+#   a. if ORDS's standalone.static.path is not /opt/oracle/apex/images, set it;
+#   b. restart the ORDS container. The restart also RE-MOUNTS the bind mount:
+#      when the host images folder was deleted and recreated (a wipe), a running
+#      container keeps the old, empty mount until it is restarted;
+#   c. wait (bounded by ORDS_WAIT_S) until /i/apex_version.txt serves HTTP 200
+#      with the expected version. Still broken after that is a hard failure.
+STATIC_PATH="/opt/oracle/apex/images"
+ORDS_CONFIG_DIR="${ORDS_CONFIG_DIR:-/etc/ords/config}"
+ORDS_WAIT_S="${ORDS_WAIT_S:-240}"
+ORDS_POLL_S="${ORDS_POLL_S:-5}"
+
+served_code() {
+  c="$(curl -s -o /dev/null -w '%{http_code}' "$ORDS_BASE_URL/i/apex_version.txt" 2>/dev/null || true)"
+  [ -n "$c" ] || c=000
+  printf '%s\n' "$c"
+}
+served_ver() {
+  curl -s "$ORDS_BASE_URL/i/apex_version.txt" 2>/dev/null | tr -d '\r' | grep -o '[0-9][0-9]*\.[0-9][0-9]*' | head -1
+}
+# Sets CODE and SERVED; true when /i/ serves HTTP 200 with the expected version.
+serving_ok() {
+  CODE="$(served_code)"
+  SERVED=""
+  [ "$CODE" = "200" ] || return 1
+  SERVED="$(served_ver || true)"
+  [ "$SERVED" = "$EXPECT_VER" ]
+}
+
 if ords_running; then
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' "$ORDS_BASE_URL/i/apex_version.txt" 2>/dev/null || true)"
-  [ -n "$CODE" ] || CODE=000
-  if [ "$CODE" = "200" ]; then
-    SERVED="$(curl -s "$ORDS_BASE_URL/i/apex_version.txt" 2>/dev/null | tr -d '\r' | grep -o '[0-9][0-9]*\.[0-9][0-9]*' | head -1)"
-    if [ "$SERVED" != "$EXPECT_VER" ]; then
-      echo "ERROR: $ORDS_BASE_URL/i/apex_version.txt serves version '$SERVED', expected '$EXPECT_VER'." >&2
-      echo "       $ORDS_CONTAINER is not serving the folder this script provisioned ($DEST)." >&2
-      exit 1
-    fi
+  if serving_ok; then
     echo "APEX images: $ORDS_BASE_URL/i/apex_version.txt serves HTTP 200 (version $SERVED)."
   else
-    echo "ERROR: $ORDS_CONTAINER is running but $ORDS_BASE_URL/i/apex_version.txt returned HTTP $CODE, not 200." >&2
-    echo "       The files are in $DEST; ORDS may need 'standalone.static.path' set to" >&2
-    echo "       /opt/oracle/apex/images and a container restart (see apex/README.md)." >&2
-    exit 1
+    echo "APEX images: $ORDS_CONTAINER is running but /i/ is not serving version $EXPECT_VER (HTTP $CODE${SERVED:+, version $SERVED}) — repairing the web tier."
+    CUR_PATH="$(docker exec "$ORDS_CONTAINER" ords --config "$ORDS_CONFIG_DIR" config get standalone.static.path 2>/dev/null | tr -d '\r' || true)"
+    if printf '%s\n' "$CUR_PATH" | grep -q "$STATIC_PATH"; then
+      echo "APEX images: standalone.static.path already $STATIC_PATH."
+    else
+      echo "APEX images: setting standalone.static.path to $STATIC_PATH."
+      docker exec "$ORDS_CONTAINER" ords --config "$ORDS_CONFIG_DIR" config set standalone.static.path "$STATIC_PATH"
+    fi
+    echo "APEX images: restarting $ORDS_CONTAINER (re-mounts the images folder, reloads the config)."
+    docker restart "$ORDS_CONTAINER" >/dev/null
+    waited=0
+    until serving_ok; do
+      if [ "$waited" -ge "$ORDS_WAIT_S" ]; then
+        echo "ERROR: after the repair, $ORDS_BASE_URL/i/apex_version.txt still returns HTTP $CODE${SERVED:+ (version $SERVED)}, not 200 with $EXPECT_VER (waited ${waited}s)." >&2
+        echo "       The files are in $DEST; check that $ORDS_CONTAINER bind-mounts that folder's" >&2
+        echo "       parent at /opt/oracle/apex (see apex/README.md)." >&2
+        exit 1
+      fi
+      sleep "$ORDS_POLL_S"
+      waited=$((waited + ORDS_POLL_S))
+    done
+    echo "APEX images: repaired — $ORDS_BASE_URL/i/apex_version.txt serves HTTP 200 (version $SERVED) after ${waited}s."
   fi
 else
   echo "APEX images: $ORDS_CONTAINER not running — skipping the live /i/ 200 check."

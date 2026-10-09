@@ -37,6 +37,11 @@ Usage:
   python scripts/apex_deploy.py import --target local   # deploy git -> local TEST app 501
   python scripts/apex_deploy.py import --target atp      # promote git -> ATP gold app 500
 
+Shared-DB deploy rule (backlog #641): import first waits (bounded, default 45 min)
+until USER_SCHEDULER_RUNNING_JOBS lists no DMT_WQ_/DMT_PF_/DMT_PL_/DMT_RC_ job and
+refuses (exit 3) on timeout; right after the import it requires 0 invalid objects
+(exit 4 otherwise). See scripts/dmt_deploy_guard.py.
+
 This is a thin SQLcl wrapper (a dev/ops shim), not pipeline logic.
 
 --- CRLF gotcha (handled automatically on import) ---
@@ -51,6 +56,8 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 REPO   = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
+import dmt_deploy_guard as guard   # shared-DB deploy rule (backlog #641)
 # APEXLang source "root" directory (contains application.apx, pages/, etc.).
 SRC    = REPO / "apex" / "f501src" / "livedmt2"
 CONN   = Path.home() / "workspace" / "connections.json"
@@ -216,16 +223,48 @@ exit
     return ok
 
 
-def do_import(target):
-    t = TARGETS[target]
+def _connect(target):
+    """A bounded, retried python-oracledb connection to the target (used only by
+    the deploy guard's running-job and invalid-object checks)."""
+    from dmt_db_connect import connect_with_retry
     schema, pw, dsn, tns = _resolve(target)
-    app_id = t["app_id"]
-    workspace = t["workspace"]
+    kw = {}
+    if tns:
+        kw = {"config_dir": tns, "wallet_location": tns,
+              "wallet_password": _cfg()["atp_queryapp"]["wallet_password"]}
+    return connect_with_retry(call_timeout_ms=120_000, user=schema, password=pw,
+                              dsn=dsn, **kw)
+
+
+def do_import(target, connect=None, guard_timeout_s=None, importer=None):
+    """Import the committed APEXLang source under the shared-DB deploy rule
+    (backlog #641): wait (bounded) until no DMT_WQ_/DMT_PF_/DMT_PL_/DMT_RC_ job
+    runs and refuse on timeout (exit 3); import; then require 0 invalid objects
+    right after (exit 4). connect/importer are injectable for the unit test."""
+    connect = connect or (lambda: _connect(target))
+    importer = importer or _import_and_alias
     app_file = SRC / "application.apx"
     if not app_file.exists():
         print(f"[apex_deploy] missing {app_file}; nothing to import",
               file=sys.stderr)
         return 2
+    if not guard.wait_until_no_dmt_jobs(connect, f"apex:{target}",
+                                        timeout_s=guard_timeout_s):
+        print(f"[apex_deploy] NOT importing to {target}: DMT child jobs are "
+              f"running (or the check failed).", file=sys.stderr)
+        return 3
+    rc = importer(target)
+    clean = guard.assert_no_invalid(connect, f"apex:{target}")
+    if rc == 0 and not clean:
+        return 4
+    return rc
+
+
+def _import_and_alias(target):
+    t = TARGETS[target]
+    schema, pw, dsn, tns = _resolve(target)
+    app_id = t["app_id"]
+    workspace = t["workspace"]
     # Stage a CRLF-normalised copy so SQLcl's APEXLang parser accepts it.
     tmp = Path(tempfile.mkdtemp(prefix="apx_import_"))
     try:
@@ -259,8 +298,13 @@ def main():
         description="Git-first APEXLang deploy for the DMT2 console")
     ap.add_argument("action", choices=["export", "import"])
     ap.add_argument("--target", required=True, choices=list(TARGETS))
+    ap.add_argument("--guard-timeout", type=int, metavar="SECONDS",
+                    help="import only: how long to wait for running DMT child jobs "
+                         "before refusing (default: DMT_DEPLOY_GUARD_TIMEOUT_S or 2700)")
     a = ap.parse_args()
-    return do_export(a.target) if a.action == "export" else do_import(a.target)
+    if a.action == "export":
+        return do_export(a.target)
+    return do_import(a.target, guard_timeout_s=a.guard_timeout)
 
 
 if __name__ == "__main__":
