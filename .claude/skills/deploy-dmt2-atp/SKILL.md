@@ -61,9 +61,14 @@ and the verdict are recorded as evidence.
 Run prefixes (owner rule, 2026-10-08): "make sure you update the prefix WITHOUT
 WASTING THEM. don't 'grab a few extra'. Grab the next one. If you need to move back
 to local or run another test on ATP, you can always re-update." Just before it
-submits, the script sets the local `DMT_RUN_PREFIX_SEQ` so the run gets exactly the
-highest prefix ever used on local or ATP plus one. It draws nothing to probe and
-does not touch ATP; `test-prod` does the same for ATP before the ATP run. After each
+submits, the script moves the local `DMT_RUN_PREFIX_SEQ` forward so the run gets
+exactly the highest prefix ever used on local or ATP plus one. It never moves the
+sequence backwards: if the sequence already issues that number or higher (another
+run has just drawn a prefix whose run row is not committed yet), it is left alone,
+so no prefix is ever issued twice (backlog #725: runs 355 and 356 both got 93402).
+Two syncs of the same instance are serialized by a row lock on the
+`PREFIX_SYNC_LOCK` row of `DMT_CONFIG_TBL`. It draws nothing to probe and does not
+touch ATP; `test-prod` does the same for ATP before the ATP run. After each
 run the script fails the regression loudly if the other instance already used that
 prefix, because both instances write to the same Fusion pod.
 
@@ -170,8 +175,9 @@ user there and re-run; never type a password into the database by hand.
 python scripts/ci_promote.py test-prod --yes
 ```
 
-This first sets ATP's `DMT_RUN_PREFIX_SEQ` (as DMT2_OWNER) so the ATP run gets exactly
-the highest prefix ever used on local or ATP plus one, leaving local untouched. It then
+This first moves ATP's `DMT_RUN_PREFIX_SEQ` (as DMT2_OWNER) forward so the ATP run gets
+exactly the highest prefix ever used on local or ATP plus one, never backwards and under
+the same row lock, leaving local untouched. It then
 runs the same regression on ATP and then the same console click-through against
 the ATP console (`--base-url` set to the ATP ORDS URL from `connections.json`) for
 that ATP run. Both must pass. To repeat only the click-through for an existing ATP

@@ -293,4 +293,15 @@ using (select 'HDL_SOURCE_SYSTEM_OWNER' config_key,
 on (t."CONFIG_KEY" = s.config_key)
 when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
      values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
+-- Backlog #725: the row scripts/ci_promote.py sync_prefix_for locks (SELECT ... FOR
+-- UPDATE from a second session) so two DMT_RUN_PREFIX_SEQ syncs of one instance
+-- cannot interleave. The value is never read. The sync also creates it on first
+-- use if missing. MERGE inserts only when missing; re-running is a no-op.
+merge into "DMT_CONFIG_TBL" t
+using (select 'PREFIX_SYNC_LOCK' config_key, 'LOCK' config_value,
+              'Row locked by scripts/ci_promote.py sync_prefix_for to serialize DMT_RUN_PREFIX_SEQ syncs (backlog #725). The value is not read.' description
+       from dual) s
+on (t."CONFIG_KEY" = s.config_key)
+when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
+     values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
 commit;
