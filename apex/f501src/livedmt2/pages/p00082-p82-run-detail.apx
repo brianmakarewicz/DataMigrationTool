@@ -75,6 +75,9 @@ page 82 (
             type: rowsReturned
             sqlQuery: SELECT 1 FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = :P82_RUN_ID AND RUN_STATUS IN ('QUEUED','IN_PROGRESS')
         }
+        security {
+            authorizationScheme: @administration-rights
+        }
     )
 
     region activity-log-link (
@@ -232,6 +235,9 @@ page 82 (
         advanced {
             htmlDomId: P82_CANCEL_RUN_BTN
         }
+        security {
+            authorizationScheme: @administration-rights
+        }
     )
 
     validation cancel-reason-required (
@@ -250,6 +256,9 @@ page 82 (
         }
         serverSideCondition {
             whenButtonPressed: @cancel-run
+        }
+        security {
+            authorizationScheme: @administration-rights
         }
     )
 
@@ -270,6 +279,9 @@ page 82 (
         }
         serverSideCondition {
             whenButtonPressed: @cancel-run
+        }
+        security {
+            authorizationScheme: @administration-rights
         }
     )
 
@@ -331,6 +343,9 @@ page 82 (
         serverSideCondition {
             whenButtonPressed: @cancel-run
         }
+        security {
+            authorizationScheme: @administration-rights
+        }
     )
 
     branch (
@@ -349,6 +364,9 @@ page 82 (
         }
         serverSideCondition {
             whenButtonPressed: @cancel-run
+        }
+        security {
+            authorizationScheme: @administration-rights
         }
     )
 
