@@ -35,5 +35,9 @@ AS
         p_run_id IN NUMBER
     );
 
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_LINE_BREAKS (p_run_id IN NUMBER);
+
 END DMT_PO_VALIDATOR_PKG;
 /

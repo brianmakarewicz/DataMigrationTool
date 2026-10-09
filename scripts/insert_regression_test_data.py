@@ -2616,6 +2616,10 @@ def main():
         # distribution record and commits nothing for the book. XD-BAD's own
         # header and book and XD-G1 / XD-G2 must quote the distribution's real
         # error; the distribution row itself carries it as its own error.
+        # Since backlog #651 the validator fails that assignment before the CSV
+        # is written ([POST_VALIDATION] Field LOCATION_SEGMENT3 contains a line
+        # break ...), so SQL*Loader never sees it; carrying that failure to the
+        # rest of the asset is backlog #745.
         ("RT-ASSET-XD-G1", "RT XD Equipment 1"),
         ("RT-ASSET-XD-BAD", "BAD: line break in distribution location"),
         ("RT-ASSET-XD-G2", "RT XD Equipment 2"),
@@ -2689,7 +2693,7 @@ def main():
         ("RT-ASSET-XG-BAD", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XG-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XD-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
-        # Line break inside LOCATION_SEGMENT3: SQL*Loader rejects the record.
+        # Line break inside LOCATION_SEGMENT3: failed by the validator (#651).
         ("RT-ASSET-XD-BAD", "68130", "USA", "NEW YORK", "NEW\nYORK"),
         ("RT-ASSET-XD-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
     ]:

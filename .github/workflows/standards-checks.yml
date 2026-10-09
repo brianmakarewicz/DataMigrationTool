@@ -46,3 +46,7 @@ jobs:
       - name: Central Fusion credentials (no HCM_/BIP_ keys, no direct reads)
         if: always()
         run: python scripts/check_central_credentials.py
+
+      - name: Line breaks fail before FBDI generation (validators + loader)
+        if: always()
+        run: python scripts/check_line_break_validation.py

@@ -53,5 +53,25 @@ AS
     -- per-object flaggers above.
     PROCEDURE FLAG_STG_FAILED (p_run_id IN NUMBER, p_scenario_id IN NUMBER DEFAULT NULL);
 
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_SUPPLIERS_LINE_BREAKS (p_run_id IN NUMBER);
+
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_ADDRESSES_LINE_BREAKS (p_run_id IN NUMBER);
+
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_SITES_LINE_BREAKS (p_run_id IN NUMBER);
+
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_SITE_ASSIGNMENTS_LINE_BREAKS (p_run_id IN NUMBER);
+
+    -- Backlog #651: fail every STAGED TFM row of the run whose CSV value holds a
+    -- line break (CR/LF), naming the field. Called between transform and generate.
+    PROCEDURE VALIDATE_CONTACTS_LINE_BREAKS (p_run_id IN NUMBER);
+
 END DMT_POZ_SUP_VALIDATOR_PKG;
 /
