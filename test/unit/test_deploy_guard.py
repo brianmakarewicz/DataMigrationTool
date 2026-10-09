@@ -19,6 +19,10 @@ no network, no real waiting):
       invalid check runs; invalid objects after the deploy -> failure.
   * scripts/apex_deploy.py do_import: refused -> exit 3 and no import; clean
       import -> 0; invalid objects after the import -> exit 4.
+  * scripts/dmt_deploy.py run_guarded (the code and table tracks, backlog #740):
+      refused -> exit 3 and nothing deployed; idle + clean -> 0; invalid objects
+      after the deploy -> exit 4; a failed deploy keeps its own exit code and the
+      invalid check still runs; both tracks in main() go through run_guarded.
 
     python test/unit/test_deploy_guard.py
 
@@ -32,6 +36,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import dmt_deploy_guard as guard  # noqa: E402
 import ci_promote as cp           # noqa: E402
 import apex_deploy as ad          # noqa: E402
+import dmt_deploy as dd           # noqa: E402
 
 passed = 0
 failed = 0
@@ -217,6 +222,40 @@ check(rc == 0 and imports == ["local"], "apex_deploy: idle + clean -> imported, 
 rc = ad.do_import("atp", connect=FakeDB(invalid=[("PACKAGE", "DMT_APEX_PAGE_PKG")]).connect,
                   guard_timeout_s=0, importer=fake_import)
 check(rc == 4, "apex_deploy: invalid objects right after the import -> exit 4")
+
+# 9. dmt_deploy.run_guarded (code / table tracks).
+deploys = []
+
+
+def fake_code_deploy():
+    deploys.append("code")
+
+
+rc = dd.run_guarded("code", fake_code_deploy,
+                    connect_fn=FakeDB(running=[["DMT_PF_42"]]).connect, timeout_s=0)
+check(rc == 3 and deploys == [], "dmt_deploy: running DMT job -> exit 3, nothing deployed")
+db = FakeDB()
+rc = dd.run_guarded("code", fake_code_deploy, connect_fn=db.connect, timeout_s=0)
+check(rc == 0 and deploys == ["code"]
+      and any("user_objects" in s and "INVALID" in s for s in db.sql),
+      "dmt_deploy: idle + clean -> deployed, 0-invalid check ran, exit 0")
+rc = dd.run_guarded("table", fake_code_deploy,
+                    connect_fn=FakeDB(invalid=[("PACKAGE BODY", "DMT_QUEUE_PKG")]).connect,
+                    timeout_s=0)
+check(rc == 4, "dmt_deploy: invalid objects right after the deploy -> exit 4")
+
+
+def failing_deploy():
+    sys.exit(1)
+
+
+db = FakeDB(invalid=[("PACKAGE BODY", "DMT_X_PKG")])
+rc = dd.run_guarded("code", failing_deploy, connect_fn=db.connect, timeout_s=0)
+check(rc == 1 and any("INVALID" in s for s in db.sql),
+      "dmt_deploy: a failed deploy keeps its exit code and the invalid check still runs")
+src = (REPO / "scripts" / "dmt_deploy.py").read_text(encoding="utf-8")
+check('run_guarded("code"' in src and 'run_guarded("table"' in src,
+      "dmt_deploy: both the code and table tracks go through run_guarded")
 
 print(f"TEST_DEPLOY_GUARD: {passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
