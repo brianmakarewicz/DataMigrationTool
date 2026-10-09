@@ -43,10 +43,12 @@ every failure and review item is a known pre-existing one listed in
 scripts/regression_known_issues.json - owner decision 2026-10-08), 1 = NEW hard
 failures, 2 = no new failures but NEW review items (log errors / warnings needing triage).
 
-SUBMIT_PIPELINE hang workaround: the package call is attempted first with a
-90s call timeout; on timeout the run+queue rows are created inline as one
-pure-SQL transaction (documented workaround, see
-memory/project_dmt_pipeline_launch_gotchas.md), then the poller is enabled.
+Submission goes only through DMT_SCHEDULER_PKG.SUBMIT_PIPELINE (bounded connect,
+90s call timeout), so the one-active-run-per-object guard (ORA-20105) and every
+other submit check always apply. The old inline-insert fallback was removed
+(backlog #637): in 68 logged submissions it never fired on a hang, only on three
+ORA-20105 refusals, each of which it bypassed (runs 318, 325, 332). A refusal or
+timeout now stops the harness; it never creates a run by itself.
 """
 import argparse
 import datetime
@@ -241,9 +243,14 @@ def is_bad_row(display_key, error_text=None):
 # ---------------------------------------------------------------------------
 
 def submit_run(pipelines, scenario, run_mode, on_failure):
-    """Submit via SUBMIT_PIPELINE with a call timeout; fall back to the
-    documented inline-insert workaround if the package call hangs."""
-    conn = connect(90_000)  # ms — SUBMIT_PIPELINE has hung indefinitely before
+    """Submit via DMT_SCHEDULER_PKG.SUBMIT_PIPELINE only (backlog #637).
+
+    The package is the single submission path, so its one-active-run-per-object
+    guard (ORA-20105, design section 2) and its other checks always apply. Any
+    error stops the harness: a refusal names the run that holds the object, and
+    a timeout is never followed by a second, hand-built run (the call may have
+    committed; check DMT_PIPELINE_RUN_TBL before resubmitting)."""
+    conn = connect(90_000)  # ms - bounded connect + finite call timeout (#705)
     cur = conn.cursor()
     run_id_var = cur.var(oracledb.NUMBER)
     try:
@@ -265,85 +272,21 @@ def submit_run(pipelines, scenario, run_mode, on_failure):
         run_id = int(run_id_var.getvalue())
         print(f"  SUBMIT_PIPELINE ok -> RUN_ID={run_id}")
     except Exception as e:
-        print(f"  SUBMIT_PIPELINE failed/hung ({str(e)[:120]}) — using inline fallback")
+        msg = ' '.join(str(e).split())
+        if 'ORA-20105' in msg:
+            raise SystemExit(f"SUBMIT_PIPELINE refused the run: {msg[:300]}. "
+                             f"Wait for (or cancel with DMT_QUEUE_PKG.CANCEL_RUN) the run "
+                             f"that holds the object; the harness never bypasses this guard.")
+        raise SystemExit(f"SUBMIT_PIPELINE failed: {msg[:300]}. "
+                         f"No run was created by the harness. If this was a timeout, check "
+                         f"DMT_PIPELINE_RUN_TBL for a REGRESSION_AGENT run before resubmitting.")
+    finally:
         try:
             conn.close()
         except Exception:
             pass
-        return fallback_submit(pipelines, scenario, run_mode, on_failure)
-    # The run exists now: a poller problem must never fall through to the
-    # inline fallback (that would create a second run). Never call_timeout=0.
-    try:
-        conn.close()
-    except Exception:
-        pass
-    ensure_poller()
-    return run_id
-
-
-def fallback_submit(pipelines, scenario, run_mode, on_failure):
-    """Replicate create_run_and_queue as one pure-SQL transaction.
-    GET_CEMLI_SEQUENCE / GET_CEMLI_DEPENDENCIES are instant public functions;
-    only the inserts run inside the long transaction."""
-    conn = connect(30_000)
-    cur = conn.cursor()
-
-    plan = []          # (pipeline_label, cemli, depends_on, is_split)
-    all_cemlis = []
-    for code in [p.strip() for p in pipelines.split(',') if p.strip()]:
-        if code.upper().startswith('STANDALONE:'):
-            seq, label = code[11:], 'STANDALONE'
-        else:
-            seq = cur.callfunc('DMT_SCHEDULER_PKG.GET_CEMLI_SEQUENCE',
-                               oracledb.STRING, [code])
-            label = code.upper()
-            if not seq:
-                raise SystemExit(f"Unknown pipeline code: {code}")
-        for cemli in [c.strip() for c in seq.split(',') if c.strip()]:
-            deps = cur.callfunc('DMT_SCHEDULER_PKG.GET_CEMLI_DEPENDENCIES',
-                                oracledb.STRING, [label, cemli])
-            # Only the legacy in-zip split (no CHILD_PARTITION_COLUMN) takes
-            # PARTITION_KEY='ALL'; spawn-per-partition objects get NULL so the
-            # scheduler's parent-detection/spawn branch fires.
-            cur.execute("SELECT COUNT(*) FROM DMT_CEMLI_SPLIT_CFG "
-                        "WHERE CEMLI_CODE = :1 AND CHILD_PARTITION_COLUMN IS NULL", [cemli])
-            is_split = cur.fetchone()[0] > 0
-            plan.append((label, cemli, deps, is_split))
-            all_cemlis.append(cemli)
-
-    cur.execute("SELECT TO_CHAR(DMT_RUN_PREFIX_SEQ.NEXTVAL) FROM DUAL")
-    prefix = cur.fetchone()[0]
-
-    run_id_var = cur.var(oracledb.NUMBER)
-    # DEPENDENT_PREFIX and VALIDATE_UPSTREAM (Backlog #142) are intentionally
-    # omitted here: both carry table defaults (NULL = dependent-prefix auto,
-    # 'N' = upstream validation off) that match what the real SUBMIT_PIPELINE
-    # path records for a regression run, so this fallback stays equivalent.
-    cur.execute("""
-        INSERT INTO DMT_PIPELINE_RUN_TBL (
-            PIPELINE_CODES, RUN_TYPE, SUBMITTED_BY,
-            CEMLI_SEQUENCE, SCENARIO_NAME, RUN_MODE, PREFIX, ON_FAILURE_POLICY
-        ) VALUES (:pc, 'PIPELINE', 'REGRESSION_AGENT', :seq, :sc, :rm, :pfx, :onf)
-        RETURNING RUN_ID INTO :rid
-    """, pc=pipelines, seq=','.join(all_cemlis), sc=scenario, rm=run_mode,
-         pfx=prefix, onf=on_failure, rid=run_id_var)
-    run_id = int(run_id_var.getvalue()[0])
-
-    cur.executemany("""
-        INSERT INTO DMT_WORK_QUEUE_TBL (
-            RUN_ID, PIPELINE, CEMLI_CODE, SORT_ORDER, DEPENDS_ON,
-            WORK_STATUS, PARTITION_KEY, PARTITION_LABEL
-        ) VALUES (:1, :2, :3, :4, :5, :6, :7, :8)
-    """, [
-        (run_id, label, cemli, i + 1, deps,
-         'PENDING' if deps else 'READY',
-         'ALL' if is_split else None,
-         'All Groups' if is_split else None)
-        for i, (label, cemli, deps, is_split) in enumerate(plan)
-    ])
-    conn.commit()
-    print(f"  Inline fallback created RUN_ID={run_id} prefix={prefix} ({len(plan)} queue rows)")
-    conn.close()
+    # The run exists now: a poller problem is retried by ensure_poller, never
+    # answered with a second run. Never call_timeout=0.
     ensure_poller()
     return run_id
 
@@ -942,6 +885,25 @@ def classify_issues(items, kind, prefix=None, regressed_subs=(), entries=None):
     return known, new, hit
 
 
+def known_issue_in_run(entry, run_objects, run_subs):
+    """True when a known-issues entry is about something this run contained:
+    its object is one of the run's queue objects, or (an entry naming only a
+    sub-object) that sub-object has records in the run."""
+    if entry.get('object'):
+        return entry['object'] in run_objects
+    return bool(entry.get('sub')) and entry['sub'] in run_subs
+
+
+def cleared_known_issues(entries, hit, result):
+    """Entries no item of this run matched, limited to objects the run contained
+    (backlog #553): a subset run says nothing about objects it did not run, so
+    their entries are never reported as cleared."""
+    run_objects = set(result.get('objects') or ())
+    run_subs = set(result.get('record_rollup') or ())
+    return [e for i, e in enumerate(entries)
+            if i not in hit and known_issue_in_run(e, run_objects, run_subs)]
+
+
 def load_known_issues():
     """The known_issues list; an unreadable file means nothing is known (fails closed)."""
     try:
@@ -1000,7 +962,7 @@ def main():
     regressed = _regressed_subs(result.get('baseline_regressions'))
     kf, nf, hit_f = classify_issues(result['failures'], 'FAIL', result.get('prefix'), regressed, entries)
     kr, nr, hit_r = classify_issues(result['review'], 'REVIEW', result.get('prefix'), regressed, entries)
-    cleared = [e for i, e in enumerate(entries) if i not in hit_f | hit_r]
+    cleared = cleared_known_issues(entries, hit_f | hit_r, result)
     n_known = len(kf) + len(kr)
     if n_fail == 0 and n_rev == 0:
         verdict = 'PASS'

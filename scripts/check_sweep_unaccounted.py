@@ -85,10 +85,13 @@ above run over the whole extended set, plus:
      [LOAD_ERROR] tag row (the async poll-timeout path no longer emits the tag).
 
 NOT CHECKED (declared, per the "Checker fidelity" standard in section 7):
-  * NOT CHECKED: tags written through a variable built elsewhere (only literals, and a
-    name assigned the bare '[FUSION_ERROR]' literal (rule 5 extension), are
-    seen); the EXPIRED rule follows one level of variable indirection only by
-    covering the whole branch body and the rest of its block.
+  * NOT CHECKED: tags written through a variable built elsewhere beyond one level
+    (literals, a name assigned the bare '[FUSION_ERROR]' literal, and the direct
+    := assignments, in the same subprogram, of a plain variable concatenated after
+    the tag (rule 5 extension, backlog #601) are seen; SELECT ... INTO, OUT
+    parameters, record fields and collection elements are not traced); the EXPIRED
+    rule follows one level of variable indirection only by covering the whole branch
+    body and the rest of its block.
   * NOT CHECKED: whether the error text a reconciler copies is the RIGHT row's error
     (runtime; regression scenario). The BIP report side is checked by
     scripts/check_bip_recon_reports.py.
@@ -400,6 +403,109 @@ def check_fusion_error_composition(path, text):
     return out
 
 
+# Rule 5 extension (backlog #601, 2026-10-09) -- one level of assignment tracing.
+#  (c) '[FUSION_ERROR] ' || NAME (or ALIAS || NAME) where NAME is a plain local
+#      variable: every assignment to NAME in the same subprogram (NAME := ...; or a
+#      declaration initializer) is read, and a right-hand side that is a non-blank
+#      string literal, or that concatenates one (|| next to the literal), composes
+#      our own text into the Fusion error ("l_msg := 'transport failed: ' || x").
+#      Literals that are only function arguments (NVL(x, '-'), JSON paths) are not
+#      concatenated text and are not flagged; SELECT ... INTO NAME and OUT-parameter
+#      writes are not traced (declared NOT CHECKED).
+FE_VAR_FOLLOW_RE = r"(?:'\[FUSION_ERROR\] ?'%s)\s*\|\|\s*([A-Za-z_][A-Za-z0-9_$#]*)\b(?!\s*[.(])"
+SUBPROG_RE = re.compile(r"\b(?:PROCEDURE|FUNCTION)\s+[A-Za-z_][A-Za-z0-9_$#.]*", re.I)
+PLSQL_WORDS = {"NULL", "CHR", "SQLERRM", "SQLCODE", "TRUE", "FALSE", "SYSDATE", "USER"}
+
+
+def _subprogram_span(text, pos):
+    """(start, end) of the subprogram text around pos: from the last PROCEDURE /
+    FUNCTION header before pos to the next header after it (nested subprograms
+    are approximated; the span only bounds where assignments are looked for)."""
+    starts = [m.start() for m in SUBPROG_RE.finditer(text)]
+    before = [s for s in starts if s <= pos]
+    after = [s for s in starts if s > pos]
+    return (before[-1] if before else 0), (after[0] if after else len(text))
+
+
+def _assignments(text, name, a, b):
+    """Right-hand sides assigned to `name` within text[a:b] (up to the ';')."""
+    rx = re.compile(r"\b%s\s*(?:(?:CONSTANT\s+)?[A-Za-z_][A-Za-z0-9_$#.%%]*"
+                    r"(?:\s*\(\s*\d+(?:\s+(?:CHAR|BYTE))?\s*\))?\s*)?:=\s*"
+                    r"((?:[^';]|'(?:[^']|'')*')*);" % re.escape(name), re.I)
+    return [(m.start(), m.group(1)) for m in rx.finditer(text, a, b)]
+
+
+# Functions whose string arguments are patterns / search values, not message text.
+PATTERN_FUNCS = {"REGEXP_SUBSTR", "REGEXP_REPLACE", "REGEXP_INSTR", "REGEXP_LIKE",
+                 "REGEXP_COUNT", "INSTR", "REPLACE", "TRANSLATE", "JSON_VALUE",
+                 "JSON_QUERY", "XMLTABLE", "EXTRACTVALUE", "TO_CHAR", "TO_DATE",
+                 "TO_NUMBER"}
+
+
+def _enclosing_func(rhs, pos):
+    """Name of the innermost function call whose parentheses enclose rhs[pos], or None
+    (string literals are skipped so a '(' inside a literal does not count)."""
+    stack = []
+    for m in re.finditer(r"'(?:[^']|'')*'|([A-Za-z_][A-Za-z0-9_$#.]*)?\s*\(|\)", rhs[:pos]):
+        tok = m.group(0)
+        if tok.startswith("'"):
+            continue
+        if tok == ")":
+            if stack:
+                stack.pop()
+        else:
+            stack.append((m.group(1) or "").split(".")[-1].upper())
+    return stack[-1] if stack else None
+
+
+def _composed_literal(rhs):
+    """The first string literal of our own words the right-hand side concatenates (or
+    is), else None. A literal counts when it has a letter or digit (pure separators
+    such as ' | ' or ': ' between real Fusion fields are not composed text), and the
+    whole rhs is that literal or it sits directly next to a || operator outside the
+    arguments of a pattern / search function (REGEXP_SUBSTR(x, 'Error on[^' || ...))."""
+    rhs = rhs.strip()
+    for m in re.finditer(r"'((?:[^']|'')*)'", rhs):
+        if not re.search(r"[A-Za-z0-9]", m.group(1)):
+            continue
+        if m.start() == 0 and m.end() == len(rhs):
+            return m.group(1)
+        pre, post = rhs[:m.start()].rstrip(), rhs[m.end():].lstrip()
+        if not (pre.endswith("||") or post.startswith("||")):
+            continue
+        if _enclosing_func(rhs, m.start()) in PATTERN_FUNCS:
+            continue
+        return m.group(1)
+    return None
+
+
+def check_fusion_error_traced(path, text):
+    base = os.path.basename(path)
+    out, seen = [], set()
+    aliases = {m.group(1) for m in FE_ALIAS_RE.finditer(text)}
+    alias_alt = "".join(r"|\b%s\b" % re.escape(a) for a in aliases)
+    follow = re.compile(FE_VAR_FOLLOW_RE % alias_alt, re.I)
+    for m in follow.finditer(text):
+        name = m.group(1)
+        if name.upper() in PLSQL_WORDS or name in aliases or _is_read_context(text, m.start()):
+            continue
+        a, b = _subprogram_span(text, m.start())
+        for apos, rhs in _assignments(text, name, a, b):
+            lit = _composed_literal(rhs)
+            if lit is None or _fe_sanctioned_follow(lit):
+                continue
+            item = re.sub(r"\s+", " ", "composed via %s := '%s'" % (name, lit)).strip()[:80]
+            key = "SWEEP-FUSION-ERROR-FORM|%s|%s" % (base, item)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((key, "line %d: [FUSION_ERROR] || %s, and %s is assigned our own text at "
+                             "line %d ('%s'); only the real Fusion error may follow the tag"
+                             % (text.count("\n", 0, m.start()) + 1, name, name,
+                                text.count("\n", 0, apos) + 1, lit[:60])))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Rule 6: SWEEP-EXPIRED -- our poll timeout is never a failure
 # --------------------------------------------------------------------------
@@ -569,13 +675,16 @@ def main():
         f += check_tags(path, text)
         f += check_fusion_error_form(path, text)
         f += check_fusion_error_composition(path, text)
+        f += check_fusion_error_traced(path, text)
         f += check_expired(path, text)
         label = "config" if is_config_reconciler(path) else "      "
         print("  %-4s %s %s" % ("OK" if not f else "VIOL", label, base))
         found += f
 
-    print("\nNOT CHECKED: tags or messages built in a variable elsewhere (literals, and names assigned the bare "
-          "'[FUSION_ERROR]' literal, only)")
+    print("\nNOT CHECKED: tags or messages built in a variable beyond one level (seen: literals, names "
+          "assigned the bare '[FUSION_ERROR]' literal, and same-subprogram := assignments of a plain "
+          "variable concatenated after the tag; not traced: SELECT ... INTO, OUT parameters, record "
+          "fields, collection elements)")
     print("NOT CHECKED: whether a copied Fusion error belongs to the RIGHT row (runtime)")
     print("NOT CHECKED: the BIP report SQL itself -- see scripts/check_bip_recon_reports.py")
     rc = known.report(CHECKER, found)
