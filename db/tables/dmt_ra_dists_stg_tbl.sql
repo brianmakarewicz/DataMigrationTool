@@ -107,8 +107,8 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_RA_DISTS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_RA_DISTS_STG_SEQ';
-COMMENT ON COLUMN "DMT_RA_DISTS_STG_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context â€” links this distribution to its parent line via INTERFACE_LINE_ATTRIBUTE1-15';
-COMMENT ON COLUMN "DMT_RA_DISTS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_RA_DISTS_STG_TBL"."INTERFACE_LINE_CONTEXT" IS 'Flexfield context - links this distribution to its parent line via INTERFACE_LINE_ATTRIBUTE1-15';
+COMMENT ON COLUMN "DMT_RA_DISTS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_RA_DISTS_STG_TBL"  IS 'AR Invoice distributions staging. Raw user data only. Run-specific data in DMT_RA_DISTS_TFM_TBL. FBDI interface: RA_INTERFACE_DISTRIBUTIONS_ALL. CSV: RaInterfaceDistributionsAll.csv.';
 
 -- ---------------------------------------------------------------------------

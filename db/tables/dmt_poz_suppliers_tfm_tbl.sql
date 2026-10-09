@@ -229,14 +229,14 @@ end;
 
 
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS).';
-COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_POZ_SUPPLIERS_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_POZ_SUPPLIERS_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."SEGMENT1" IS 'Supplier number with run prefix applied: NVL(prefix,'''') || stg.SEGMENT1';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."FUSION_VENDOR_ID" IS 'Fusion internal VENDOR_ID - populated by BIP reconciliation';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."FUSION_VENDOR_NUMBER" IS 'Fusion-assigned vendor number - populated by BIP reconciliation';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."RESULTS_UPDATED_DATE" IS 'Timestamp of last BIP reconciliation update';
 COMMENT ON COLUMN "DMT_POZ_SUPPLIERS_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixed: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_POZ_SUPPLIERS_TFM_TBL"  IS 'Supplier header transformed. Run-specific data â€” one row per staging row per run attempt. SEGMENT1 has run prefix applied. Reconciliation populated by BIP. Interface table: POZ_SUPPLIERS_INT.';
+COMMENT ON TABLE "DMT_POZ_SUPPLIERS_TFM_TBL"  IS 'Supplier header transformed. Run-specific data - one row per staging row per run attempt. SEGMENT1 has run prefix applied. Reconciliation populated by BIP. Interface table: POZ_SUPPLIERS_INT.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

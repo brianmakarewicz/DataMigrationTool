@@ -4,7 +4,7 @@
 -- ============================================================
 -- DMT_APEX_PAGE_PKG
 -- Rendering procedures for APEX drill-through detail pages.
--- All HTML generated via HTP.P. Pages call these procs â€”
+-- All HTML generated via HTP.P. Pages call these procs -
 -- future changes = recompile package, no page rebuild needed.
 -- ============================================================
 

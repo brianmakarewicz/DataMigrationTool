@@ -157,8 +157,8 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PJC_EXPENDITURES_STG_SEQ';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."PROJECT_NUMBER" IS 'Project number from source system â€” prefix applied in TFM table';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."PROJECT_NUMBER" IS 'Project number from source system - prefix applied in TFM table';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_PJC_EXPENDITURES_STG_TBL"  IS 'Expenditures staging. Raw user data only. Run-specific data in DMT_PJC_EXPENDITURES_TFM_TBL. FBDI interface: PJC_TXN_XFACE_STAGE_ALL. CSV: PjcTxnXfaceStageAll.csv.';
 
 -- ---------------------------------------------------------------------------

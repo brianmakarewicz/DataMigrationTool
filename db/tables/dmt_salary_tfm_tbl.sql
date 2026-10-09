@@ -50,14 +50,14 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_SALARY_TFM_SEQ';
-COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_SALARY_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when DAT generator runs';
+COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_SALARY_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when DAT generator runs';
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."PERSON_NUMBER" IS 'Person number with run prefix applied';
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."ASSIGNMENT_NUMBER" IS 'Assignment number with run prefix applied (if non-null)';
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."FUSION_SALARY_ID" IS 'Fusion internal SALARY_ID - populated by reconciliation';
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."RESULTS_UPDATED_DATE" IS 'Timestamp of last reconciliation update';
 COMMENT ON COLUMN "DMT_SALARY_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixed: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_SALARY_TFM_TBL"  IS 'Salary transformed. Run-specific data â€” one row per staging row per run attempt. PERSON_NUMBER and ASSIGNMENT_NUMBER have run prefix applied. Reconciliation populated after Fusion load. HDL business object: Salary.';
+COMMENT ON TABLE "DMT_SALARY_TFM_TBL"  IS 'Salary transformed. Run-specific data - one row per staging row per run attempt. PERSON_NUMBER and ASSIGNMENT_NUMBER have run prefix applied. Reconciliation populated after Fusion load. HDL business object: Salary.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

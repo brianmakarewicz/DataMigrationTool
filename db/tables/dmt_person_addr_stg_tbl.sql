@@ -103,7 +103,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
-COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” FK to Worker business object';
+COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - FK to Worker business object';
 COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."ADDRESS_TYPE" IS 'Address type: HOME, MAIL';
 COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."REGION_1" IS 'State or province';
 COMMENT ON COLUMN "DMT_PERSON_ADDR_STG_TBL"."REGION_2" IS 'County';

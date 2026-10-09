@@ -39,7 +39,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_WORK_REL_STG_SEQ. Populated by DB default, never supplied by user.';
-COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” links to Worker record in Fusion HCM';
+COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - links to Worker record in Fusion HCM';
 COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."ACTION_CODE" IS 'HIRE, ADD_CWK, or ADD_PEND_WKR';
 COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."WORKER_TYPE" IS 'E=Employee, C=Contingent Worker';
 COMMENT ON COLUMN "DMT_WORK_REL_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';

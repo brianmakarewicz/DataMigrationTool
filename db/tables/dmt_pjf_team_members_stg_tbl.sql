@@ -87,9 +87,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - GENERATED ALWAYS AS IDENTITY';
-COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."PROJECT_NAME" IS 'Project name â€” links team member to parent project';
+COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."PROJECT_NAME" IS 'Project name - links team member to parent project';
 COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."TEAM_MEMBER_NUMBER" IS 'Employee/person number of the team member';
-COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_PJF_TEAM_MEMBERS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_PJF_TEAM_MEMBERS_STG_TBL"  IS 'Project team members staging. Raw user data only. Run-specific data in DMT_PJF_TEAM_MEMBERS_TFM_TBL. FBDI interface: PJF_PROJECT_PARTIES_INT. CSV: PjfProjectPartiesInt.csv.';
 
 -- ---------------------------------------------------------------------------

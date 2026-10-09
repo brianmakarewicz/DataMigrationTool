@@ -214,7 +214,7 @@ end;
 
 COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_AP_INVOICE_LINES_INT_TFM_SEQ';
 COMMENT ON COLUMN "DMT_AP_INVOICE_LINES_INT_TFM_TBL"."FUSION_INVOICE_LINE_NUMBER" IS 'line-grain proof: INVOICE_ID~LINE_NUMBER from AP_INVOICE_LINES_ALL. Written only by BIP reconciliation.';
-COMMENT ON TABLE "DMT_AP_INVOICE_LINES_INT_TFM_TBL"  IS 'AP Invoice lines transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP.';
+COMMENT ON TABLE "DMT_AP_INVOICE_LINES_INT_TFM_TBL"  IS 'AP Invoice lines transformed. Run-specific - one row per staging row per run attempt. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

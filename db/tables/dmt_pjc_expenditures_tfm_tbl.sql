@@ -168,12 +168,12 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PJC_EXPENDITURES_TFM_SEQ';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PJC_EXPENDITURES_STG_TBL â€” which staging row this was transformed from';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL â€” populated when FBDI generator runs';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."STG_SEQUENCE_ID" IS 'FK to DMT_PJC_EXPENDITURES_STG_TBL - which staging row this was transformed from';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."FBDI_CSV_ID" IS 'FK to DMT_FBDI_CSV_TBL - populated when FBDI generator runs';
 COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."PROJECT_NUMBER" IS 'Project number with dependent prefix applied: NVL(dep_prefix,'''') || stg.PROJECT_NUMBER';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."FUSION_EXPENDITURE_ITEM_ID" IS 'Fusion internal EXPENDITURE_ITEM_ID â€” populated by BIP reconciliation';
-COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step â€” never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
-COMMENT ON TABLE "DMT_PJC_EXPENDITURES_TFM_TBL"  IS 'Expenditures transformed. Run-specific â€” one row per staging row per run attempt. PROJECT_NUMBER has dependent prefix applied. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."FUSION_EXPENDITURE_ITEM_ID" IS 'Fusion internal EXPENDITURE_ITEM_ID - populated by BIP reconciliation';
+COMMENT ON COLUMN "DMT_PJC_EXPENDITURES_TFM_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten. Prefixes: [TRANSFORM_ERROR] [POST_VALIDATION] [FUSION_ERROR]';
+COMMENT ON TABLE "DMT_PJC_EXPENDITURES_TFM_TBL"  IS 'Expenditures transformed. Run-specific - one row per staging row per run attempt. PROJECT_NUMBER has dependent prefix applied. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

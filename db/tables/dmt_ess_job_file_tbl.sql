@@ -38,5 +38,5 @@ exception when others then
 end;
 /
 
-COMMENT ON COLUMN "DMT_ESS_JOB_FILE_TBL"."FILE_TYPE" IS 'LOG or OUT â€” passed to downloadESSJobExecutionDetails';
-COMMENT ON TABLE "DMT_ESS_JOB_FILE_TBL"  IS 'ESS job output file metadata â€” files downloaded on-demand via DOWNLOAD_ESS_FILE';
+COMMENT ON COLUMN "DMT_ESS_JOB_FILE_TBL"."FILE_TYPE" IS 'LOG or OUT - passed to downloadESSJobExecutionDetails';
+COMMENT ON TABLE "DMT_ESS_JOB_FILE_TBL"  IS 'ESS job output file metadata - files downloaded on-demand via DOWNLOAD_ESS_FILE';

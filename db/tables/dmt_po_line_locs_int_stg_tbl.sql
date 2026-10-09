@@ -124,8 +124,8 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - from DMT_PO_LINE_LOCS_INT_STG_SEQ';
-COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_LOCATION_KEY" IS 'Unique key for this shipment â€” links distributions back to this location';
-COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'FK to line â€” must match DMT_PO_LINES_INT_STG_TBL.INTERFACE_LINE_KEY';
+COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_LOCATION_KEY" IS 'Unique key for this shipment - links distributions back to this location';
+COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_STG_TBL"."INTERFACE_LINE_KEY" IS 'FK to line - must match DMT_PO_LINES_INT_STG_TBL.INTERFACE_LINE_KEY';
 COMMENT ON TABLE "DMT_PO_LINE_LOCS_INT_STG_TBL"  IS 'Purchase Order line locations (shipments) staging. Raw user data only. FBDI interface: PO_LINE_LOCATIONS_INTERFACE. CSV: PoLineLocationsInterfaceOrder.csv.';
 
 -- ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "FBT_BIP_PKG" AS
 -- ============================================================
--- FBT_BIP_PKG â€” Fusion BIP Toolkit
+-- FBT_BIP_PKG - Fusion BIP Toolkit
 -- Standalone PL/SQL package for managing BIP data models and
 -- reports on Oracle Fusion via BIP v2 SOAP from ATP (UTL_HTTP).
 --
@@ -10,9 +10,9 @@
 -- as arguments. Callers own their config.
 --
 -- BIP v2 SOAP endpoints used:
---   SecurityService  â€” login (session token)
---   CatalogService   â€” createObjectInSession / deleteObjectInSession
---   ReportService    â€” runDataModelInSession / runReport
+--   SecurityService  - login (session token)
+--   CatalogService   - createObjectInSession / deleteObjectInSession
+--   ReportService    - runDataModelInSession / runReport
 --
 -- No Authorization header on any call. Credentials go in the
 -- SecurityService SOAP body; all subsequent calls use the
@@ -47,7 +47,7 @@
     -- DEPLOY_DATA_MODEL
     -- Upload an XDM data model to the BIP catalog (persistent).
     -- p_folder: BIP folder path, e.g. '/~calvin.roth'.
-    --           Required â€” raises -20009 if NULL.
+    --           Required - raises -20009 if NULL.
     -- --------------------------------------------------------
     PROCEDURE DEPLOY_DATA_MODEL (
         p_session_token IN VARCHAR2,
@@ -92,7 +92,7 @@
     -- TEST_DATA_MODEL
     -- Run a deployed data model; return the XML CLOB.
     -- Does NOT delete the data model after running.
-    -- p_folder: BIP folder path. Required â€” raises -20009 if NULL.
+    -- p_folder: BIP folder path. Required - raises -20009 if NULL.
     -- --------------------------------------------------------
     FUNCTION TEST_DATA_MODEL (
         p_session_token IN VARCHAR2,
@@ -104,8 +104,8 @@
     -- --------------------------------------------------------
     -- DELETE_DATA_MODEL
     -- Remove a data model (.xdm) from the BIP catalog.
-    -- All errors swallowed â€” safe to call in cleanup blocks.
-    -- p_folder: BIP folder path. Required â€” raises -20009 if NULL.
+    -- All errors swallowed - safe to call in cleanup blocks.
+    -- p_folder: BIP folder path. Required - raises -20009 if NULL.
     -- --------------------------------------------------------
     PROCEDURE DELETE_DATA_MODEL (
         p_session_token IN VARCHAR2,
@@ -181,8 +181,8 @@
     -- --------------------------------------------------------
     -- DELETE_REPORT
     -- Remove a report definition (.xdo) from the BIP catalog.
-    -- All errors swallowed â€” safe to call in cleanup blocks.
-    -- p_folder: BIP folder path. Required â€” raises -20009 if NULL.
+    -- All errors swallowed - safe to call in cleanup blocks.
+    -- p_folder: BIP folder path. Required - raises -20009 if NULL.
     -- --------------------------------------------------------
     PROCEDURE DELETE_REPORT (
         p_session_token IN VARCHAR2,
@@ -275,7 +275,7 @@
     -- PRINT_CATALOG_OBJECT
     -- Download a catalog object and print its content to
     -- DBMS_OUTPUT in 4000-char chunks.
-    -- Call from SQL*Plus / APEX SQL Workshop â€” no script needed.
+    -- Call from SQL*Plus / APEX SQL Workshop - no script needed.
     --
     -- Example:
     --   SET SERVEROUTPUT ON SIZE UNLIMITED
@@ -297,7 +297,7 @@
     -- 2. Clean up any FBT_POC_DM from a previous run.
     -- 3. Deploy a minimal data model (SELECT 1, 'Alpha' FROM DUAL).
     -- 4. Run it with TEST_DATA_MODEL; log response preview.
-    -- Object is NOT deleted â€” inspect in BIP UI after running.
+    -- Object is NOT deleted - inspect in BIP UI after running.
     -- Safe to re-run: step 2 handles leftover objects.
     -- Writes progress to DBMS_OUTPUT.
     -- --------------------------------------------------------

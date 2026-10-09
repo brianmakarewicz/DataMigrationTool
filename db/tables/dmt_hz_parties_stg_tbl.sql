@@ -110,9 +110,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user';
-COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."PARTY_ORIG_SYSTEM_REFERENCE" IS 'Unique party reference in the source system â€” primary business key';
+COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."PARTY_ORIG_SYSTEM_REFERENCE" IS 'Unique party reference in the source system - primary business key';
 COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."ORGANIZATION_NAME" IS 'Organization name for PARTY_TYPE=ORGANIZATION parties';
-COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_HZ_PARTIES_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_HZ_PARTIES_STG_TBL"  IS 'Customer party staging. Raw user data only. Run-specific data in TFM table. FBDI interface: HZ_IMP_PARTIES_T. CSV: HzImpPartiesT.csv.';
 
 -- ---------------------------------------------------------------------------

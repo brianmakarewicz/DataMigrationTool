@@ -128,8 +128,8 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_TFM_TBL"."TFM_SEQUENCE_ID" IS 'PK - from DMT_PO_LINE_LOCS_INT_TFM_SEQ';
-COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_TFM_TBL"."FUSION_LINE_LOCATION_ID" IS 'Fusion internal LINE_LOCATION_ID â€” populated by BIP reconciliation';
-COMMENT ON TABLE "DMT_PO_LINE_LOCS_INT_TFM_TBL"  IS 'PO line location (shipment) transformed. Run-specific â€” one row per staging row per run attempt. Reconciliation populated by BIP.';
+COMMENT ON COLUMN "DMT_PO_LINE_LOCS_INT_TFM_TBL"."FUSION_LINE_LOCATION_ID" IS 'Fusion internal LINE_LOCATION_ID - populated by BIP reconciliation';
+COMMENT ON TABLE "DMT_PO_LINE_LOCS_INT_TFM_TBL"  IS 'PO line location (shipment) transformed. Run-specific - one row per staging row per run attempt. Reconciliation populated by BIP.';
 
 -- ---------------------------------------------------------------------------
 -- 2026-07-08 conformance tranche (design section 7: STG/TFM infra-column

@@ -229,9 +229,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - GENERATED ALWAYS AS IDENTITY';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."PROJECT_NAME" IS 'Name of the project â€” must be unique within the organization';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."PROJECT_NUMBER" IS 'Project number from source system â€” prefix applied in TFM table';
-COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."PROJECT_NAME" IS 'Name of the project - must be unique within the organization';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."PROJECT_NUMBER" IS 'Project number from source system - prefix applied in TFM table';
+COMMENT ON COLUMN "DMT_PJF_PROJECTS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_PJF_PROJECTS_STG_TBL"  IS 'Project header staging. Raw user data only. Run-specific data in DMT_PJF_PROJECTS_TFM_TBL. FBDI interface: PJF_PROJECTS_ALL_XFACE. CSV: PjfProjectsAllXface.csv.';
 
 -- ---------------------------------------------------------------------------

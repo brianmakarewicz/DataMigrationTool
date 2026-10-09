@@ -178,7 +178,7 @@ end;
 
 COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
 COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."IMPORT_ACTION" IS 'CREATE or UPDATE';
-COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."PARTY_SITE_NAME" IS 'Address name â€” unique per supplier. Maps to POZ_SUP_ADDRESSES_INT.PARTY_SITE_NAME';
+COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."PARTY_SITE_NAME" IS 'Address name - unique per supplier. Maps to POZ_SUP_ADDRESSES_INT.PARTY_SITE_NAME';
 COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';
 COMMENT ON COLUMN "DMT_POZ_SUP_ADDR_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors. Appended at each step - never overwritten.';
 COMMENT ON TABLE "DMT_POZ_SUP_ADDR_STG_TBL"  IS 'Supplier address staging. Raw user-loaded data only. Run-specific data in DMT_POZ_SUP_ADDR_TFM_TBL. Interface table: POZ_SUP_ADDRESSES_INT. CTL: PozSupAddressesInt.ctl (25B).';

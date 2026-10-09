@@ -104,6 +104,17 @@ def _atp():
 TARGET = {"local": _local, "atp": _atp}
 
 # ---------------------------------------------------------------- sqlcl helper
+# Decode child output as UTF-8 with replacement: the Windows default (cp1252)
+# raises UnicodeDecodeError on bytes like 0x9d, which kills the reader thread
+# and leaves p.stdout = None (backlog 646).
+_TEXT_KW = {"text": True, "encoding": "utf-8", "errors": "replace"}
+
+
+def _combined_output(p):
+    """stdout + stderr of a CompletedProcess, tolerating None streams."""
+    return (p.stdout or "") + (p.stderr or "")
+
+
 def _sqlcl(target, script_text):
     env = dict(os.environ)
     env["JAVA_HOME"] = JDK
@@ -114,8 +125,8 @@ def _sqlcl(target, script_text):
     if not script_text.rstrip().endswith("exit"):
         script_text += "\nexit\n"
     p = subprocess.run([SQLCL, "-s", t["connstr"]],
-                       input=script_text, capture_output=True, text=True, env=env)
-    return p.stdout + p.stderr
+                       input=script_text, capture_output=True, env=env, **_TEXT_KW)
+    return _combined_output(p)
 
 def _oracle(target):
     # Bounded connect (tcp_connect_timeout + overall deadline + keepalive),
@@ -508,9 +519,9 @@ def stage_merge(pr, wait_min=15):
     while waited <= deadline:
         j = subprocess.run(["gh", "pr", "view", str(pr), "--json",
                             "state,reviewDecision,mergeStateStatus"],
-                           capture_output=True, text=True)
+                           capture_output=True, **_TEXT_KW)
         try:
-            info = json.loads(j.stdout)
+            info = json.loads(j.stdout or "")
         except Exception:
             info = {}
         state = info.get("state"); decision = info.get("reviewDecision")
@@ -563,6 +574,13 @@ def stage_test_prod(yes, pipelines=None):
     return res["ok"] and ct_ok
 
 def main():
+    # Echoed SQLcl output may hold characters the console codec (cp1252) cannot
+    # encode; replace them rather than crash mid-promotion (backlog 646).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description="DMT2 CI/CD promotion pipeline")
     ap.add_argument("stage", choices=["deploy-local", "runtime-config", "regression-local",
                                       "clickthrough-local", "test-local", "gate",

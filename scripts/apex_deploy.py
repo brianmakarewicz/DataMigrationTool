@@ -108,11 +108,21 @@ def _sqlcl(schema, pw, dsn, tns_admin, script):
     # Stop Git-Bash / MSYS from rewriting the "/nolog"-style tokens or DSN.
     env["MSYS_NO_PATHCONV"] = "1"
     cmd = ["sql", "-s", f"{schema}/{pw}@{dsn}"]
-    p = subprocess.run(cmd, input=script, capture_output=True, text=True, env=env)
-    sys.stdout.write(p.stdout)
-    if p.stderr.strip():
-        sys.stderr.write(p.stderr)
-    return p.returncode, p.stdout
+    # UTF-8 + replace: cp1252 default dies on bytes like 0x9d (backlog 646).
+    p = subprocess.run(cmd, input=script, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", env=env)
+    out, err = p.stdout or "", p.stderr or ""
+    _echo(sys.stdout, out)
+    if err.strip():
+        _echo(sys.stderr, err)
+    return p.returncode, out
+
+
+def _echo(stream, text):
+    """Write text to a console stream whose codec (cp1252 on Windows) may not
+    hold every character (e.g. U+FFFD from a replaced byte) - never raise."""
+    enc = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
 
 
 def _stage_lf(src: Path, dst: Path):

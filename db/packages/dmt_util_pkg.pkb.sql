@@ -112,7 +112,7 @@
 
         IF l_new_host IS NULL THEN
             RAISE_APPLICATION_ERROR(-20001,
-                'Invalid Fusion URL â€” could not extract hostname: ' || p_url);
+                'Invalid Fusion URL - could not extract hostname: ' || p_url);
         END IF;
 
         -- Retrieve existing URL (if any)
@@ -153,7 +153,7 @@
             );
         EXCEPTION
             WHEN OTHERS THEN
-                -- ORA-24244: ACL/ACE already exists for this host â€” safe to ignore
+                -- ORA-24244: ACL/ACE already exists for this host - safe to ignore
                 IF SQLCODE != -24244 THEN RAISE; END IF;
         END;
 
@@ -260,7 +260,7 @@
     -- LOG
     -- PRAGMA AUTONOMOUS_TRANSACTION ensures log entries persist
     -- even if the calling transaction rolls back.
-    -- Failure to log is swallowed â€” never let logging break the caller.
+    -- Failure to log is swallowed - never let logging break the caller.
     -- --------------------------------------------------------
     PROCEDURE LOG (
         p_run_id IN NUMBER    DEFAULT NULL,
@@ -456,7 +456,7 @@
     -- --------------------------------------------------------
 
     -- --------------------------------------------------------
-    -- PREFIXED â€” prefix + value, truncated to fit column width
+    -- PREFIXED - prefix + value, truncated to fit column width
     -- --------------------------------------------------------
     FUNCTION PREFIXED (
         p_prefix  IN VARCHAR2,
@@ -855,7 +855,7 @@
         DBMS_LOB.CREATETEMPORARY(l_clob, TRUE);
 
         WHILE l_offset <= l_length LOOP
-            -- 12000 bytes â€” multiple of 3 to avoid base64 padding mid-stream
+            -- 12000 bytes - multiple of 3 to avoid base64 padding mid-stream
             l_amount := LEAST(12000, l_length - l_offset + 1);
             DBMS_LOB.READ(p_blob, l_amount, l_offset, l_raw);
             -- Trim to actual bytes read (DBMS_LOB.READ updates l_amount)
@@ -869,7 +869,7 @@
     END BASE64_ENCODE;
 
     -- --------------------------------------------------------
-    -- BASE64_DECODE_CLOB â€” decode a base64 CLOB of any size to BLOB.
+    -- BASE64_DECODE_CLOB - decode a base64 CLOB of any size to BLOB.
     -- Processes in 4-char-aligned chunks (base64 is 4-char quantized),
     -- so the whole payload decodes correctly regardless of length.
     -- --------------------------------------------------------
@@ -917,7 +917,7 @@
     END BASE64_DECODE_CLOB;
 
     -- --------------------------------------------------------
-    -- BIP_REPORT_XML â€” extract <reportBytes> from a BIP SOAP response CLOB,
+    -- BIP_REPORT_XML - extract <reportBytes> from a BIP SOAP response CLOB,
     -- decode (any size) and return as XMLTYPE. NULL when no <reportBytes>.
     -- Shared replacement for each reconciler's local b64_to_clob + the
     -- VARCHAR2(32767) reportBytes extraction (the truncation bug).
@@ -939,7 +939,7 @@
         END IF;
         l_b64_start := DBMS_LOB.INSTR(p_soap_response, '<reportBytes>');
         IF l_b64_start = 0 THEN
-            RETURN NULL;   -- no rows â€” caller applies its no-rows policy
+            RETURN NULL;   -- no rows - caller applies its no-rows policy
         END IF;
         l_b64_start := l_b64_start + LENGTH('<reportBytes>');
         l_b64_end   := DBMS_LOB.INSTR(p_soap_response, '</reportBytes>', l_b64_start);
@@ -1027,12 +1027,12 @@
     END BUILD_BIP_PARAM_ITEMS;
 
     -- --------------------------------------------------------
-    -- RUN_BIP_REPORT â€” run a deployed BIP report (SOAP v2 ReportService)
+    -- RUN_BIP_REPORT - run a deployed BIP report (SOAP v2 ReportService)
     -- through the shared HTTP_REQUEST transport and return its data as
     -- XMLTYPE via x_report_xml. Centralised replacement for the
     -- per-reconciler bip_soap_post + FETCH_BIP_RESULTS + b64_to_clob +
     -- <reportBytes> extraction. x_report_xml NULL with x_error_code =
-    -- C_SUCCESS means no <reportBytes> (zero rows) â€” the caller applies
+    -- C_SUCCESS means no <reportBytes> (zero rows) - the caller applies
     -- its own no-rows policy. PROCEDURE per the section 7 procedures-only
     -- contract: every failure is caught here, logged with the step in
     -- flight, and reported through x_error_code; exceptions never escape.

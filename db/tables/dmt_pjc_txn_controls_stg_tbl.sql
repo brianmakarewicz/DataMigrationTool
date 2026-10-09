@@ -91,9 +91,9 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - GENERATED ALWAYS AS IDENTITY';
-COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."PROJECT_NUMBER" IS 'Project number â€” links transaction control to parent project';
-COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."TASK_NUMBER" IS 'Task number â€” optional; if populated, control applies at task level';
-COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors â€” appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."PROJECT_NUMBER" IS 'Project number - links transaction control to parent project';
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."TASK_NUMBER" IS 'Task number - optional; if populated, control applies at task level';
+COMMENT ON COLUMN "DMT_PJC_TXN_CONTROLS_STG_TBL"."ERROR_TEXT" IS 'Concatenated errors - appended at each step, never overwritten. Prefixed: [PRE_VALIDATION] [TRANSFORM_ERROR] [FUSION_ERROR].';
 COMMENT ON TABLE "DMT_PJC_TXN_CONTROLS_STG_TBL"  IS 'Project transaction controls staging. Raw user data only. Run-specific data in DMT_PJC_TXN_CONTROLS_TFM_TBL. FBDI interface: PJC_TXN_CONTROLS_STAGE. CSV: PjcTxnControlsStage.csv.';
 
 -- ---------------------------------------------------------------------------

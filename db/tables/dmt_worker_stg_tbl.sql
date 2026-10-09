@@ -83,7 +83,7 @@ end;
 /
 
 COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."STG_SEQUENCE_ID" IS 'PK - identity column (GENERATED ALWAYS). Populated by the DB, never supplied by user.';
-COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."PERSON_NUMBER" IS 'Worker person number â€” unique identifier in Fusion HCM';
+COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."PERSON_NUMBER" IS 'Worker person number - unique identifier in Fusion HCM';
 COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."ACTION_CODE" IS 'HIRE or ADD_CWK';
 COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."CATEGORY_CODE" IS 'Employment category: FR (full-time regular), PT (part-time), etc.';
 COMMENT ON COLUMN "DMT_WORKER_STG_TBL"."SOURCE_ID" IS 'Natural key from source system';

@@ -4,7 +4,7 @@
 AUTHID DEFINER
 AS
 -- ============================================================
--- DMT_SCHEDULER_PKG (v2 â€” work queue model)
+-- DMT_SCHEDULER_PKG (v2 - work queue model)
 -- Creates PIPELINE_RUN + WORK_QUEUE rows.
 -- No per-run DBMS_SCHEDULER job. The poller (DMT_QUEUE_PKG)
 -- handles execution.

@@ -76,5 +76,5 @@ COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."ERRORED_RECORDS" IS 'Rows tha
 COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."PREFIX" IS '4-digit incremental prefix applied to unique identifiers e.g. 1035 turns Acme into 1035Acme';
 COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."DEPENDENT_PREFIX" IS 'Prefix from upstream CEMLI used for validation lookups - not incremented by this run';
 COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."FOLDER" IS 'YYMMDD24HHMISS subfolder created on SFTP for this run (archive, FBDIOutput, results)';
-COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."SCENARIO_ID" IS 'FK to DMT_SCENARIO_TBL â€” identifies which scenario this run belongs to';
+COMMENT ON COLUMN "DMT_CONVERSION_MASTER_ARCHIVE"."SCENARIO_ID" IS 'FK to DMT_SCENARIO_TBL - identifies which scenario this run belongs to';
 COMMENT ON TABLE "DMT_CONVERSION_MASTER_ARCHIVE"  IS 'One row per CEMLI zip file run. Updated by OIC at each pipeline stage. STATUS: OPEN > STAGED > VALIDATED > FBDI_GENERATED > LOADED / FAILED.';
