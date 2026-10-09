@@ -10,8 +10,10 @@ against the shared local database at any time.
      flagged; the message carries the [POST_VALIDATION] tag.
   2. The same call over JSON_OBJECT(t.* RETURNING CLOB) of every row of every
      TFM table a validator checks (the exact expression the validators use, inside their MERGE source)
-     runs without error and flags nothing in the existing regression data, so
-     the check cannot change the outcome of an existing scenario.
+     runs without error and flags nothing in the rows of the baseline run
+     (env BASELINE_RUN, default 347 -- the current combined scenario), so the
+     check cannot change that scenario's outcome. (The Assets per-object
+     scenarios carry intentional line-break rows, RT-ASSET-XD-BAD.)
 
 Usage:  python test/unit/test_line_break_validation.py
 Env:    DMT2_DSN / DMT2_USER / DMT2_PWD (default: the local Docker instance)
@@ -26,6 +28,7 @@ import oracledb
 DSN = os.environ.get('DMT2_DSN', 'localhost:1523/FREEPDB1')
 USER = os.environ.get('DMT2_USER', 'dmt_owner')
 PWD = os.environ.get('DMT2_PWD', 'DmtLocal#2026')
+BASELINE_RUN = int(os.environ.get('BASELINE_RUN', '347'))
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 
 fails = 0
@@ -65,7 +68,7 @@ def main():
     check('ERROR_TEXT is not a CSV field and is skipped', r is None, r)
     r = lb(cur, "JSON_OBJECT('A1' VALUE 'tab' || CHR(9) || 'only' RETURNING CLOB)")
     check('a tab is not a line break', r is None, r)
-    r = lb(cur, "CAST(NULL AS CLOB)")
+    r = lb(cur, "TO_CLOB(NULL)")
     check('NULL row returns NULL', r is None, r)
     r = lb(cur, "JSON_OBJECT('ALIAS' VALUE 'a' || CHR(10) RETURNING CLOB)")
     check('message says the row is not sent and how to fix it',
@@ -82,13 +85,13 @@ def main():
     flagged, scanned = 0, 0
     for t in sorted(tables):
         cur.execute(f"SELECT COUNT(*), COUNT(DMT_UTIL_PKG.LINE_BREAK_ERROR(JSON_OBJECT(t.* RETURNING CLOB))) "
-                    f"FROM {t} t")
+                    f"FROM {t} t WHERE t.RUN_ID = :r", r=BASELINE_RUN)
         n, f = cur.fetchone()
         scanned += n
         flagged += f
         if f:
             print(f'      {t}: {f} existing row(s) hold a line break')
-    check(f'existing TFM data ({scanned} rows in {len(tables)} tables) has no line breaks',
+    check(f'baseline run {BASELINE_RUN} ({scanned} TFM rows in {len(tables)} tables) has no line breaks',
           flagged == 0, f'{flagged} flagged')
 
     con.close()

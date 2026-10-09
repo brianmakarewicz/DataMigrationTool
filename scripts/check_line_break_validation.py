@@ -37,8 +37,8 @@ states is asserted, or explicitly declared NOT CHECKED):
 NOT CHECKED (declared, so a green run stays honest):
   * Runtime behaviour -- that a real value with a line break is failed with the
     message. Proven by test/unit/test_line_break_validation.py (SELECT-only
-    checks of LINE_BREAK_ERROR) and by a pipeline run of the regression row
-    RT-SUP-BADLB (see the PR that introduced this checker).
+    checks of LINE_BREAK_ERROR) and by a pipeline run of the Assets regression
+    row RT-ASSET-XD-BAD (see the PR that introduced this checker).
   * HCM (HDL) and configuration (FBL / setup CSV) objects -- out of scope by
     owner decision 2026-10-09 (HDL is not FBDI; configuration objects deferred).
   * Generator-derived values (columns a generator computes while writing the
@@ -222,7 +222,7 @@ def main():
     for g, why in sorted(EXEMPT.items()):
         print(f'EXEMPT: dmt_{g}_fbdi_gen_pkg -- {why}')
     print('NOT CHECKED: runtime behaviour (test/unit/test_line_break_validation.py and the '
-          'RT-SUP-BADLB regression row prove it).')
+          'RT-ASSET-XD-BAD regression row prove it).')
     print('NOT CHECKED: HDL and configuration objects -- out of scope (owner decision 2026-10-09).')
     print('NOT CHECKED: values a generator computes while writing the CSV (none carry free text).')
     if errors:

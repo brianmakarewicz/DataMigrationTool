@@ -422,23 +422,6 @@ def main():
         )
     """, label="BAD Supplier: invalid ORGANIZATION_TYPE [BAD-LKP]")
 
-    # BAD (backlog #651): ALIAS holds a line break. A line break splits the FBDI
-    # CSV record, so the validator fails the row before the CSV is written with
-    # "[POST_VALIDATION] Field ALIAS contains a line break ..."; it never reaches
-    # Fusion. No child rows name this supplier.
-    run_sql(cur, """
-        INSERT INTO DMT_POZ_SUPPLIERS_STG_TBL (
-            IMPORT_ACTION, VENDOR_NAME, SEGMENT1, ALIAS,
-            ORGANIZATION_TYPE_LOOKUP_CODE, BUSINESS_RELATIONSHIP,
-            VENDOR_TYPE_LOOKUP_CODE, SOURCE_ID
-        ) VALUES (
-            'CREATE', 'RT Supplier BAD-LineBreak', 'RT-SUP-BADLB', :alias,
-            'CORPORATION', 'SPEND_AUTHORIZED',
-            'SUPPLIER', 'RT-SUP-BADLB'
-        )
-    """, {"alias": "RT line\nbreak"},
-    label="BAD Supplier: line break in ALIAS [BAD-LB]")
-
     # Pre-existing Fusion supplier — exists in Fusion, not migrated by DMT.
     # Marked LOADED so BPA/CPA pre-validation passes.
     run_sql(cur, """
@@ -2633,6 +2616,10 @@ def main():
         # distribution record and commits nothing for the book. XD-BAD's own
         # header and book and XD-G1 / XD-G2 must quote the distribution's real
         # error; the distribution row itself carries it as its own error.
+        # Since backlog #651 the validator fails that assignment before the CSV
+        # is written ([POST_VALIDATION] Field LOCATION_SEGMENT3 contains a line
+        # break ...), so SQL*Loader never sees it; carrying that failure to the
+        # rest of the asset is backlog #745.
         ("RT-ASSET-XD-G1", "RT XD Equipment 1"),
         ("RT-ASSET-XD-BAD", "BAD: line break in distribution location"),
         ("RT-ASSET-XD-G2", "RT XD Equipment 2"),
@@ -2706,7 +2693,7 @@ def main():
         ("RT-ASSET-XG-BAD", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XG-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XD-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
-        # Line break inside LOCATION_SEGMENT3: SQL*Loader rejects the record.
+        # Line break inside LOCATION_SEGMENT3: failed by the validator (#651).
         ("RT-ASSET-XD-BAD", "68130", "USA", "NEW YORK", "NEW\nYORK"),
         ("RT-ASSET-XD-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
     ]:
