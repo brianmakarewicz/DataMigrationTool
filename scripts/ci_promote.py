@@ -118,13 +118,17 @@ def _sqlcl(target, script_text):
     return p.stdout + p.stderr
 
 def _oracle(target):
-    import oracledb
+    # Bounded connect (tcp_connect_timeout + overall deadline + keepalive),
+    # retried with backoff, finite call_timeout: an unbounded oracledb.connect()
+    # hung dmt_regression_run.py forever (runs 293, 338); see dmt_db_connect.py.
+    from dmt_db_connect import connect_with_retry
     t = TARGET[target]()
     kw = {}
     if t["tns"]:
         kw["config_dir"] = t["tns"]; kw["wallet_location"] = t["tns"]
         kw["wallet_password"] = _conns()["atp_queryapp"]["wallet_password"]
-    return oracledb.connect(user=t["schema"], password=t["pw"], dsn=t["dsn"], **kw)
+    return connect_with_retry(call_timeout_ms=300_000,
+                              user=t["schema"], password=t["pw"], dsn=t["dsn"], **kw)
 
 # ---------------------------------------------------------------- DB deploy
 def deploy_db(target):
