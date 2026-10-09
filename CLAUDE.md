@@ -140,11 +140,12 @@ Several agents share the local Docker database. Before and after every deploy th
    actually in them; never redeploy them as a side effect of deploying an object's own packages.
 
 Full text: `docs/DMT_DESIGN.html`, section 3, "How the schema is deployed".
-Rules 1 and 2 are enforced by `scripts/ci_promote.py` (deploy-local, deploy-prod) and
-`scripts/apex_deploy.py import` through `scripts/dmt_deploy_guard.py`: they wait (bounded,
-default 45 min) while any DMT_WQ_ / DMT_PF_ / DMT_PL_ / DMT_RC_ job runs, refuse on timeout,
-and fail when invalid objects remain after the deploy. `scripts/dmt_deploy.py` is not
-covered yet (backlog #740), so follow the rule by hand there.
+Rules 1 and 2 are enforced by every deploy tool, `scripts/ci_promote.py` (deploy-local,
+deploy-prod), `scripts/apex_deploy.py import` and `scripts/dmt_deploy.py` (code and table
+tracks), all through `scripts/dmt_deploy_guard.py`: they wait (bounded, default 45 min) while
+any DMT_WQ_ / DMT_PF_ / DMT_PL_ / DMT_RC_ job runs, refuse on timeout, and fail when invalid
+objects remain after the deploy. Deploy through these tools rather than raw SQLcl so the rule
+is applied for you.
 
 ## Blind tranche-review protocol (MANDATORY)
 

@@ -18,9 +18,18 @@ Why two tracks: objects differ in how they change.
                                       --migration schema/migration/2026xx_add_col.sql
 
 After any deploy: run `dmt_db_git_sync.py --pull` and COMMIT.
+
+Shared-database deploy rule (owner decision 2026-10-08, backlog #641 / #740): both
+tracks run through scripts/dmt_deploy_guard.py, the same guard ci_promote.py
+deploy-local/deploy-prod and apex_deploy.py import use. Before deploying it waits
+(bounded, DMT_DEPLOY_GUARD_TIMEOUT_S, default 45 min) while any DMT_WQ_ / DMT_PF_ /
+DMT_PL_ / DMT_RC_ scheduler job is running and REFUSES on timeout (exit 3); right
+after deploying it requires 0 invalid objects in the schema (exit 4, listing them).
 """
 import sys, os, re, hashlib
-import oracledb
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dmt_deploy_guard as guard  # noqa: E402 - shared with ci_promote.py / apex_deploy.py
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -36,6 +45,7 @@ def connect():
         sys.exit(f"Cannot parse DMT2_CONN: {conn_str!r}")
     user, password, dsn = m.groups()
     import os as _os
+    import oracledb
     _w = _os.environ.get('DMT2_WALLET')
     _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
     return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
@@ -122,20 +132,48 @@ def deploy_table(create_path, migration_path):
     print("Reminder: run `python scripts/dmt_db_git_sync.py --pull` and commit both the migration and create script.")
 
 
+def run_guarded(label, deploy_fn, connect_fn=None, timeout_s=None):
+    """Run deploy_fn under the shared-database deploy rule and return an exit code:
+    3 when DMT child jobs are still running at the timeout (or the check failed)
+    and nothing was deployed; deploy_fn's own failure code when it failed; 4 when
+    it succeeded but invalid objects remain; 0 when deployed and clean. The
+    invalid-object check runs even after a failed deploy, so they are listed.
+    connect_fn is injectable for the offline unit test (test/unit/test_deploy_guard.py)."""
+    connect_fn = connect_fn or connect
+    if not guard.wait_until_no_dmt_jobs(connect_fn, label, timeout_s=timeout_s):
+        print(f"[dmt_deploy] NOT deploying ({label}): DMT child jobs are running "
+              f"(or the check failed).", file=sys.stderr)
+        return 3
+    rc = 0
+    try:
+        deploy_fn()
+    except SystemExit as e:
+        if isinstance(e.code, int):
+            rc = e.code
+        elif e.code is not None:
+            print(e.code, file=sys.stderr)
+            rc = 1
+    clean = guard.assert_no_invalid(connect_fn, label)
+    if rc == 0 and not clean:
+        return 4
+    return rc
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     if sys.argv[1] == 'code':
         if len(sys.argv) < 3:
             sys.exit("usage: dmt_deploy.py code <file.sql> [...]")
-        deploy_code(sys.argv[2:])
+        paths = sys.argv[2:]
+        sys.exit(run_guarded("code", lambda: deploy_code(paths)))
     elif sys.argv[1] == 'table':
         args = sys.argv[2:]
         create = args[args.index('--create') + 1] if '--create' in args else None
         mig = args[args.index('--migration') + 1] if '--migration' in args else None
         if not create or not mig:
             sys.exit("usage: dmt_deploy.py table --create <create_tbl.sql> --migration <migration.sql>")
-        deploy_table(create, mig)
+        sys.exit(run_guarded("table", lambda: deploy_table(create, mig)))
     else:
         sys.exit(f"unknown track '{sys.argv[1]}'. Use: code | table")
 
