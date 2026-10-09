@@ -44,10 +44,19 @@ regression submission, sync_prefix_for(target) computes N = max(highest prefix
 ever used on local, highest ever used on ATP) + 1 ("used" = numeric PREFIX
 in DMT_PIPELINE_RUN_TBL, the values DMT_RUN_PREFIX_SEQ actually issued; the
 user-set DEPENDENT_PREFIX override is a reference, not an issued prefix, and is
-ignored) and sets ONLY that target's
-DMT_RUN_PREFIX_SEQ so its very next NEXTVAL is exactly N (ALTER SEQUENCE ...
-RESTART START WITH N as the schema owner; no probe draws, nothing skipped). The
-other instance is not touched: when work moves back there, its next run re-syncs.
+ignored) and moves ONLY that target's DMT_RUN_PREFIX_SEQ FORWARD so its very next
+NEXTVAL is N (ALTER SEQUENCE ... RESTART START WITH N as the schema owner; no probe
+draws, nothing skipped). It NEVER moves a sequence backwards: when the sequence
+already issues N or higher next (for example a run has drawn a prefix whose run row
+is not committed yet, so it is invisible to max used), it is left untouched. The
+sequence is NOCACHE on both instances, so USER_SEQUENCES.LAST_NUMBER is exactly the
+value NEXTVAL returns next; a CACHE setting is refused. Concurrent syncs of the same
+instance are serialized by a row lock (SELECT ... FOR UPDATE on DMT_CONFIG_TBL key
+PREFIX_SYNC_LOCK) held by a second session for the whole read-compare-restart, since
+the ALTER's implicit commit would release a lock taken in the same session. Backlog
+#725: runs 355 and 356 both got 93402 when a sync computed N = 93402 after run 355
+had drawn it and restarted the sequence back. The other instance is not touched:
+when work moves back there, its next run re-syncs.
 After the run, assert_prefix_unique() fails the regression loudly if the run's
 prefix was used on the other instance.
 
@@ -257,9 +266,43 @@ def _set_next(cur, n):
         raise SystemExit(f"[prefix] INCREMENT BY trick landed on {landed}, expected {int(n) - 1}")
     return "increment"
 
+PREFIX_LOCK_KEY = "PREFIX_SYNC_LOCK"   # DMT_CONFIG_TBL row the sync locks (db/seed/dmt_config_tbl.sql)
+PREFIX_LOCK_WAIT = 300                # seconds a sync waits for another sync's lock
+
+def _acquire_prefix_lock(target):
+    """Open a SEPARATE session on `target` and lock the PREFIX_SYNC_LOCK row of
+    DMT_CONFIG_TBL with SELECT ... FOR UPDATE WAIT. A second session is required:
+    ALTER SEQUENCE is DDL and commits implicitly, which would release a row lock
+    held by the session issuing it. The row is created on first use if missing
+    (MERGE, insert-only). Returns the connection; closing it (or rolling back)
+    releases the lock. DBMS_LOCK is not granted to the schema owners."""
+    lc = _oracle(target); cur = lc.cursor()
+    cur.execute("merge into DMT_CONFIG_TBL t using (select :k config_key from dual) s "
+                "on (t.config_key = s.config_key) when not matched then insert "
+                "(config_key, config_value, description, last_updated_date, last_updated_by) "
+                "values (s.config_key, 'LOCK', 'Row locked by scripts/ci_promote.py "
+                "sync_prefix_for to serialize DMT_RUN_PREFIX_SEQ syncs (backlog #725). "
+                "The value is not read.', sysdate, user)", k=PREFIX_LOCK_KEY)
+    lc.commit()
+    try:
+        cur.execute(f"select config_value from DMT_CONFIG_TBL where config_key = :k "
+                    f"for update wait {PREFIX_LOCK_WAIT}", k=PREFIX_LOCK_KEY)
+        cur.fetchone()
+    except Exception:
+        lc.close()
+        raise
+    return lc
+
+def _release_prefix_lock(lc):
+    try:
+        lc.rollback()
+    finally:
+        lc.close()
+
 def sync_prefix_for(target):
-    """Set ONLY `target`'s DMT_RUN_PREFIX_SEQ so its very next NEXTVAL is exactly
-    N = max(highest prefix ever used on local, highest ever used on ATP) + 1.
+    """Move ONLY `target`'s DMT_RUN_PREFIX_SEQ forward so its very next NEXTVAL is
+    N = max(highest prefix ever used on local, highest ever used on ATP) + 1, and
+    NEVER move it backwards.
 
     Owner rule (2026-10-08): "make sure you update the prefix WITHOUT WASTING THEM.
     don't 'grab a few extra'. Grab the next one. If you need to move back to local
@@ -268,6 +311,20 @@ def sync_prefix_for(target):
     calls this for that instance and re-syncs it. Called immediately before every
     regression submission (regression-local -> local, test-prod -> atp).
 
+    Never backwards (backlog #725, 2026-10-09): run 355 had drawn 93402 (its run row
+    not yet committed, so max used still read 93401) when another agent's sync
+    computed N = 93402 and restarted the sequence back to 93402; run 356 then also
+    got 93402. Now the sequence's next value (USER_SEQUENCES.LAST_NUMBER, exact
+    because the sequence is NOCACHE; a CACHE setting is refused) is compared with
+    N and the sequence is restarted only when N is GREATER; otherwise it is left
+    untouched, because a value at or above N means a prefix has already been drawn
+    or the sequence is already ahead. Every prefix is issued once.
+
+    Serialization: the read-compare-restart runs while a second session holds a
+    row lock on DMT_CONFIG_TBL key PREFIX_SYNC_LOCK, so two syncs of the same
+    instance cannot interleave. Run submissions do not take that lock; the
+    never-backwards rule is what protects a prefix a run has already drawn.
+
     History: replaces next_prefix_from_atp() (backlog #450, drew ATP NEXTVAL until
     above local) and reserve_atp_prefix_above_local() (backlog #520/#521, skipped
     ATP past local's used and next-to-issue values), both of which discarded
@@ -275,27 +332,43 @@ def sync_prefix_for(target):
     assert_prefix_unique() prevent.
 
     DDL runs on the target's own connection, which is the schema owner
-    (DMT_OWNER local / DMT2_OWNER ATP), never ADMIN. Idempotent: when the target
-    already issues N next, nothing is altered. Returns N."""
-    n = max(max_used_prefix("local"), max_used_prefix("atp")) + 1
-    if n > PREFIX_MAX:
-        raise SystemExit(f"[prefix] next prefix {n} exceeds {PREFIX_SEQ} MAXVALUE {PREFIX_MAX}")
-    con = _oracle(target); cur = con.cursor()
+    (DMT_OWNER local / DMT2_OWNER ATP), never ADMIN. Idempotent. Returns the value
+    the target's next NEXTVAL will issue (N, or higher when already ahead)."""
+    lc = _acquire_prefix_lock(target)
     try:
-        last, cache, inc = _seq_state(cur)
-        if last == n and cache == 0 and inc == 1:
-            how = "already set"
-        else:
-            how = _set_next(cur, n)
+        # N is computed under the lock, so a sync that waited sees the latest runs.
+        n = max(max_used_prefix("local"), max_used_prefix("atp")) + 1
+        if n > PREFIX_MAX:
+            raise SystemExit(f"[prefix] next prefix {n} exceeds {PREFIX_SEQ} MAXVALUE {PREFIX_MAX}")
+        con = _oracle(target); cur = con.cursor()
+        try:
             last, cache, inc = _seq_state(cur)
-            if last != n or inc != 1:
-                raise SystemExit(f"[prefix] {target} {PREFIX_SEQ} reads LAST_NUMBER={last} "
-                                 f"INCREMENT_BY={inc} after sync, expected {n}/1")
+            if cache:
+                raise SystemExit(f"[prefix] {target} {PREFIX_SEQ} is CACHE {cache}: LAST_NUMBER is "
+                                 f"not the next value, so the sync cannot tell whether moving it "
+                                 f"would go backwards. Refusing; the sequence must be NOCACHE.")
+            if inc != 1:
+                raise SystemExit(f"[prefix] {target} {PREFIX_SEQ} has INCREMENT BY {inc} (an "
+                                 f"interrupted earlier sync?). Refusing; reset it to 1 by hand.")
+            if last >= n:
+                how = ("already set" if last == n else
+                       f"untouched: it already issues {last} next, above N = {n}; "
+                       f"never moved backwards")
+                nxt = last
+            else:
+                how = _set_next(cur, n)
+                last, cache, inc = _seq_state(cur)
+                if last != n or inc != 1:
+                    raise SystemExit(f"[prefix] {target} {PREFIX_SEQ} reads LAST_NUMBER={last} "
+                                     f"INCREMENT_BY={inc} after sync, expected {n}/1")
+                nxt = n
+        finally:
+            con.close()
     finally:
-        con.close()
-    print(f"[prefix] {target} {PREFIX_SEQ} will issue {n} next ({how}; N = max used on "
+        _release_prefix_lock(lc)
+    print(f"[prefix] {target} {PREFIX_SEQ} will issue {nxt} next ({how}; N = max used on "
           f"local and ATP + 1; the other instance is not touched)")
-    return n
+    return nxt
 
 def prefix_used_on(target, prefix, exclude_run_id=None):
     """Run ids on `target` that already used `prefix` (other than exclude_run_id)."""
