@@ -24,10 +24,11 @@ states is asserted, or explicitly declared NOT CHECKED):
      cannot ship without the check.
   3. Each mapped validator package declares the procedure in its spec and
      defines it in its body.
-  4. The procedure holds exactly one UPDATE block per TFM table that its
+  4. The procedure holds exactly one MERGE block per TFM table that its
      generator(s) read (the *_TFM_TBL names in the generator source) -- no table
      missing, no extra table -- and every block is byte-identical to the
-     template except the table name (the EDIT-TABLE region).
+     template except the table name (the EDIT-TABLE region names it twice:
+     MERGE INTO and FROM; both must be the same table).
   5. The procedure contains no COMMIT (the caller owns the transaction).
   6. The object's loader recipe (RUN_<object> in DMT_LOADER_PKG) calls the
      procedure with p_run_id => p_run_id AFTER its last *_TRANSFORM_PKG call and
@@ -86,17 +87,23 @@ EXEMPT = {
 }
 
 # The fixed template of one block; {tbl} is the only editable region.
-BLOCK = """        UPDATE {tbl} t
+BLOCK = """        MERGE INTO {tbl} t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   {tbl} s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;"""
 
 errors = []
@@ -173,7 +180,7 @@ def check_objects():
             continue
         if re.search(r'(?im)^\s*COMMIT\s*;', strip_comment_lines(pb)):
             errors.append(f'{vname}.{proc} commits; the caller owns the transaction.')
-        found = re.findall(r'(?m)^        UPDATE (DMT_\w+_TFM_TBL) t$', pb)
+        found = re.findall(r'(?m)^        MERGE INTO (DMT_\w+_TFM_TBL) t$', pb)
         if len(found) != len(set(found)):
             errors.append(f'{vname}.{proc}: a TFM table is checked more than once.')
         got = set(found)

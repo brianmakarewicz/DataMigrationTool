@@ -9,7 +9,7 @@ against the shared local database at any time.
      order; clean rows, numbers, nulls and ERROR_TEXT (not a CSV field) are not
      flagged; the message carries the [POST_VALIDATION] tag.
   2. The same call over JSON_OBJECT(t.* RETURNING CLOB) of every row of every
-     TFM table a validator checks (the exact expression the validators use)
+     TFM table a validator checks (the exact expression the validators use, inside their MERGE source)
      runs without error and flags nothing in the existing regression data, so
      the check cannot change the outcome of an existing scenario.
 
@@ -77,7 +77,7 @@ def main():
     for v in sorted(set(re.findall(r"\('(\w+)', 'VALIDATE_\w*LINE_BREAKS'", src))):
         body = open(os.path.join(REPO, 'db', 'packages', f'dmt_{v}_validator_pkg.pkb.sql'),
                     encoding='utf-8').read()
-        tables.update(re.findall(r'(?m)^\s*UPDATE (DMT_\w+_TFM_TBL) t\s*$', body))
+        tables.update(re.findall(r'(?m)^\s*MERGE INTO (DMT_\w+_TFM_TBL) t\s*$', body))
     check('validators check 55 TFM tables', len(tables) == 55, f'{len(tables)} tables')
     flagged, scanned = 0, 0
     for t in sorted(tables):

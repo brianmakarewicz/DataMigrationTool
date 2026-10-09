@@ -150,236 +150,326 @@ AS
     -- FBDI generator: every STAGED TFM row of this run holding a carriage return
     -- or line feed in any CSV value is marked FAILED with a message naming the
     -- field(s) (DMT_UTIL_PKG.LINE_BREAK_ERROR), so it is never written to a CSV
-    -- and never silently stripped. One UPDATE block per TFM table the generator
+    -- and never silently stripped. One MERGE block per TFM table the generator
     -- reads, byte-identical except the table name (EDIT-TABLE). Does NOT commit --
     -- the caller owns the transaction. Checked by scripts/check_line_break_validation.py.
     -- ============================================================
     PROCEDURE VALIDATE_LINE_BREAKS (p_run_id IN NUMBER) IS
         l_failed NUMBER := 0;
     BEGIN
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_HEADERS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_HEADERS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_FUNDING_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_FUNDING_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_PROJECTS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_PROJECTS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_PERSONNEL_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_PERSONNEL_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_FUND_SRC_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_FUND_SRC_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_KEYWORDS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_BDGT_PRDS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_BDGT_PRDS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_CERTS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_CERTS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_CERTS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_CFDAS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_CFDAS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_FUND_ALLOC_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_FUND_ALLOC_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_ORG_CREDITS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_ORG_CREDITS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_REFERENCES_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_REFERENCES_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
-        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
-        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
-        UPDATE DMT_GMS_AWD_TERMS_TFM_TBL t
+        -- <<EDIT-TABLE -- one TFM table the generator reads, named twice (MERGE INTO
+        --   and FROM); repeat this whole block (through the ROWCOUNT line) per table>>
+        MERGE INTO DMT_GMS_AWD_TERMS_TFM_TBL t
+        USING (SELECT q.rid, q.msg
+               FROM   (SELECT s.ROWID AS rid,
+                              DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                  p_row_json => JSON_OBJECT(s.* RETURNING CLOB)) AS msg
+                       FROM   DMT_GMS_AWD_TERMS_TFM_TBL s
         -- <<END EDIT-TABLE -- everything below is FIXED>>
+                       WHERE  s.RUN_ID     = p_run_id
+                       AND    s.TFM_STATUS = 'STAGED') q
+               WHERE  q.msg IS NOT NULL) lb
+        ON (t.ROWID = lb.rid)
+        WHEN MATCHED THEN UPDATE
         SET    t.TFM_STATUS        = 'FAILED',
-               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
-                                         p_existing  => t.ERROR_TEXT,
-                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
-                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(p_existing  => t.ERROR_TEXT,
+                                                               p_new_error => lb.msg),
                t.LAST_UPDATED_DATE = SYSDATE
-        WHERE  t.RUN_ID     = p_run_id
-        AND    t.TFM_STATUS = 'STAGED'
-        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        WHERE  t.TFM_STATUS = 'STAGED';
         l_failed := l_failed + SQL%ROWCOUNT;
 
         IF l_failed > 0 THEN
