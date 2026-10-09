@@ -4,6 +4,8 @@
 AS
 -- ============================================================
 -- DMT_REST_LOOKUP_PKG body
+-- REVISIONS:
+--   2026-10-09  Hide configured display fields the REST resource does not return (#304)
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_REST_LOOKUP_PKG';
@@ -277,6 +279,14 @@ AS
             END IF;
 
             EXIT WHEN l_field_name IS NULL;
+
+            -- Backlog #304 (owner 2026-10-09): a configured display field that the
+            -- Fusion REST resource does not return at all is hidden, not shown as a
+            -- blank cell (e.g. Req Lines / Req Distributions list header-level names
+            -- such as RequisitionNumber that purchaseRequisitions never returns). A
+            -- field that IS returned with a null value still shows, empty. When the
+            -- last field is skipped, the next pass pops a NULL name and exits above.
+            CONTINUE WHEN NOT l_item0_obj.has(l_field_name);
 
             -- Extract value from items[0] via the JSON_OBJECT_T PL/SQL API. The
             -- field name is a runtime argument, so no dynamic SQL is needed

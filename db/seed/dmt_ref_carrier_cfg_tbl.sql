@@ -309,7 +309,7 @@ using (
            'CONFIRMED (run 132): DMT_BILLING_EVENT_RESULTS_PKG matches RECON_KEY = SOURCEREF, ' ||
            'which the recon DM emits from base PJB_BILLING_EVENTS.SOURCEREF (queried live, ' ||
            'populated). Base column filled in this audit.' from dual
-    union all select 'ProjectBudgets', 'Project Budgets', 'DMT_PRJ_BUDGET_TFM_TBL',
+    union all select 'ProjectBudgets', 'Project Budget Lines', 'DMT_PRJ_BUDGET_TFM_TBL',
            'PM_BUDGET_REFERENCE', null,
            'REQUEST_ID', null, null, 'FULL', 'Y',
            'UNVERIFIED: DMT_PRJ_BUDGET_RESULTS_PKG does stamp RECON_KEY = SRC_BUDGET_LINE_REFERENCE ' ||
