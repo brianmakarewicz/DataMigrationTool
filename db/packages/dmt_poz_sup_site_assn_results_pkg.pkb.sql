@@ -27,8 +27,11 @@
 --     rejection is never promoted to LOADED.
 --   * Everything else is left GENERATED for the shared unaccounted sweep.
 -- Every UPDATE is guarded TFM_STATUS NOT IN ('LOADED','FAILED'), so a proven
--- LOADED row is never flipped (report row order is not guaranteed), and is
--- scoped to the run and, when given, the work item.
+-- LOADED row is never flipped (report row order is not guaranteed). The apply
+-- is scoped to the run, exactly as before: the object runs as ONE work item per
+-- run, and the supplier transform does not stamp WORK_QUEUE_ID on its TFM rows
+-- (it is NULL on every supplier row; tracked as its own backlog item), so a
+-- work-item predicate here would match nothing.
 -- REVISIONS:
 --   1.0  2026-07-08  Split from the shared supplier results package (#43).
 --   2.0  2026-10-09  Contract v1 nine-column report via FETCH_ROWS (#217).
@@ -55,8 +58,7 @@
     PROCEDURE APPLY_CONTRACT_V1 (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER,
-        p_work_queue_id IN NUMBER
+        p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1';
         l_step      VARCHAR2(500);
@@ -66,12 +68,11 @@
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
     BEGIN
-        l_step := 'counting this work item''s rows (keyset page-count cap)';
+        l_step := 'counting this run''s rows (keyset page-count cap)';
         SELECT COUNT(*)
         INTO   l_gen_count
         FROM   DMT_POZ_SUP_SITE_ASSN_TFM_TBL
-        WHERE  RUN_ID = p_run_id
-        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
+        WHERE  RUN_ID = p_run_id;
 
         l_step := 'fetching the Contract v1 report for ' || C_CEMLI;
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
@@ -115,7 +116,6 @@
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                 AND    VENDOR_NAME || '~' || VENDOR_SITE_CODE || '~' || BUSINESS_UNIT_NAME = l_rows(i).RECORD_KEY
                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -131,7 +131,6 @@
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                 AND    VENDOR_NAME || '~' || VENDOR_SITE_CODE || '~' || BUSINESS_UNIT_NAME = l_rows(i).RECORD_KEY
                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
@@ -177,7 +176,7 @@
             p_procedure => C_PROC);
 
         CHECK_CEMLI(C_PROC, p_cemli_code);
-        APPLY_CONTRACT_V1(p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id);
+        APPLY_CONTRACT_V1(p_run_id, p_load_ess_id, p_import_ess_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
