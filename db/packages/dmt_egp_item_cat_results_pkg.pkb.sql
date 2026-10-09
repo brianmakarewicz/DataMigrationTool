@@ -165,7 +165,7 @@
             p_run_id     => p_run_id,
             p_cemli_code => C_CEMLI,
             p_params     => 'P_BATCH_ID|' || TO_CHAR(p_run_id) ||
-                            '~P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id),
+                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id),
             x_report_xml => l_xml,
             x_error_code => l_err_code);
         IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN

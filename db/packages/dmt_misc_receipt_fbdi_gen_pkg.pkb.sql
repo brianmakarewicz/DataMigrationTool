@@ -9,26 +9,6 @@ AS
 -- Per InvTransactionsInterface.ctl from FBDI template 25D.
 -- ============================================================
 
-    FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
-        l_blob         BLOB;
-        l_dest_offset  INTEGER := 1;
-        l_src_offset   INTEGER := 1;
-        l_lang_context INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
-        l_warning      INTEGER;
-    BEGIN
-        DBMS_LOB.CREATETEMPORARY(l_blob, TRUE);
-        DBMS_LOB.CONVERTTOBLOB(
-            dest_lob     => l_blob,
-            src_clob     => p_clob,
-            amount       => DBMS_LOB.LOBMAXSIZE,
-            dest_offset  => l_dest_offset,
-            src_offset   => l_src_offset,
-            blob_csid    => DBMS_LOB.DEFAULT_CSID,
-            lang_context => l_lang_context,
-            warning      => l_warning);
-        RETURN l_blob;
-    END clob_to_blob;
-
     PROCEDURE af (
         p_clob  IN OUT NOCOPY CLOB,
         p_value IN VARCHAR2,
@@ -379,8 +359,17 @@ AS
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'GENERATE_FBDI';
         l_trx_csv   CLOB;
-        l_trx_blob  BLOB;
+        l_lots_csv  CLOB;
+        l_ser_csv   CLOB;
+        l_lots_cnt  NUMBER := 0;
+        l_ser_cnt   NUMBER := 0;
         l_row_count NUMBER;
+        l_zip_id    NUMBER;
+        l_trx_csv_id  NUMBER;
+        l_lots_csv_id NUMBER;
+        l_ser_csv_id  NUMBER;
+        l_zip_bytes NUMBER;
+        l_step      VARCHAR2(200);
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id,
             C_PROC || ' start.', 'INFO', C_PKG, C_PROC);
@@ -412,157 +401,166 @@ AS
                                      p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
                                      p_tfm_seq_id    => TFM_SEQUENCE_ID,
                                      p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_INV_TRX_TFM_TBL'))),
+               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
-        -- Generate transactions CSV
-        l_trx_csv  := gen_transactions_csv(p_run_id);
-        l_trx_blob := clob_to_blob(l_trx_csv);
-        DBMS_LOB.FREETEMPORARY(l_trx_csv);
+        -- Generate the transactions CSV.
+        l_step := 'building the transactions CSV';
+        l_trx_csv := gen_transactions_csv(p_run_id);
 
-        -- Build ZIP with transactions CSV + optional lots/serials CSVs
-        DBMS_LOB.CREATETEMPORARY(x_fbdi_zip, TRUE);
-        APEX_ZIP.ADD_FILE(
-            p_zipped_blob => x_fbdi_zip,
-            p_file_name   => 'InvTransactionsInterface.csv',
-            p_content     => l_trx_blob);
-        DBMS_LOB.FREETEMPORARY(l_trx_blob);
+        -- Lots CSV (InvTransactionLotsInterface) if any lot TFM rows exist.
+        l_step := 'building the lots CSV';
+        DBMS_LOB.CREATETEMPORARY(l_lots_csv, TRUE);
+        -- Backlog #137: derive INV_LOT_INTERFACE_NUM from the PARENT transaction
+        -- TFM's INV_LOTSERIAL_INTERFACE_NUM (which the transform rewrote to a
+        -- per-load-unique value = parent TFM_SEQUENCE_ID), NOT from the lot TFM's
+        -- own INVENTORY_LOT_INTERFACE_NUMBER (a stale, possibly-colliding staged
+        -- value). Join lot TFM -> lot STG (SOURCE_ID = parent STG_SEQUENCE_ID) ->
+        -- parent TFM, mirroring the serials CSV join so both detail CSVs link on the
+        -- same unique parent key. LEFT JOINs preserve EVERY lot TFM row (same row set
+        -- as the former SELECT * loop): a lot row that cannot resolve a parent still
+        -- emits, falling back to its own staged INVENTORY_LOT_INTERFACE_NUMBER rather
+        -- than being silently dropped. NVL on SOURCE_ID avoids TO_NUMBER on a NULL.
+        FOR lr IN (
+            SELECT NVL(p.INV_LOTSERIAL_INTERFACE_NUM,
+                       l.INVENTORY_LOT_INTERFACE_NUMBER) AS INVENTORY_LOT_INTERFACE_NUMBER,
+                   l.INVENTORY_SERIAL_INTERFACE_NUM,
+                   l.SOURCE_CODE, l.SOURCE_LINE_ID, l.LOT_NUMBER, l.DESCRIPTION,
+                   l.LOT_EXPIRATION_DATE, l.TRANSACTION_QUANTITY, l.PRIMARY_QUANTITY
+            FROM   DMT_INV_TRX_LOTS_TFM_TBL l
+            LEFT JOIN DMT_INV_TRX_LOTS_STG_TBL ls
+                ON ls.STG_SEQUENCE_ID = l.STG_SEQUENCE_ID
+            LEFT JOIN DMT_INV_TRX_TFM_TBL p
+                ON p.RUN_ID  = l.RUN_ID
+               AND p.STG_SEQUENCE_ID =
+                   TO_NUMBER(ls.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
+            WHERE  l.RUN_ID = p_run_id
+            -- Backlog #137 (reviewer follow-up): a lot row the transform marked
+            -- FAILED (no resolvable parent transaction) is never sent to Fusion —
+            -- it has no valid link. Only non-FAILED lot rows are generated.
+            AND    l.TFM_STATUS <> 'FAILED'
+            ORDER BY l.TFM_SEQUENCE_ID
+        ) LOOP
+            l_lots_cnt := l_lots_cnt + 1;
+            -- CTL cols (after 6 system): INV_LOT_INTERFACE_NUM, INV_SERIAL_INTERFACE_NUM,
+            -- SOURCE_CODE, SOURCE_LINE_ID, LOT_NUMBER, DESCRIPTION, LOT_EXPIRATION_DATE,
+            -- TRANSACTION_QUANTITY, PRIMARY_QUANTITY
+            af(l_lots_csv, lr.INVENTORY_LOT_INTERFACE_NUMBER);   -- 1 (= parent INV_LOTSERIAL_INTERFACE_NUM)
+            af(l_lots_csv, lr.INVENTORY_SERIAL_INTERFACE_NUM);   -- 2
+            af(l_lots_csv, lr.SOURCE_CODE);                      -- 3
+            af(l_lots_csv, fmt_num(lr.SOURCE_LINE_ID));          -- 4
+            af(l_lots_csv, lr.LOT_NUMBER);                       -- 5
+            af(l_lots_csv, lr.DESCRIPTION);                      -- 6
+            af(l_lots_csv, fmt_date_short(lr.LOT_EXPIRATION_DATE)); -- 7
+            af(l_lots_csv, fmt_num(lr.TRANSACTION_QUANTITY));    -- 8
+            af(l_lots_csv, fmt_num(lr.PRIMARY_QUANTITY), TRUE);  -- 9 (last)
+        END LOOP;
 
-        -- Lots CSV (InvTransactionLotsInterface) if any lot TFM rows exist
-        DECLARE
-            l_lots_csv  CLOB;
-            l_lots_blob BLOB;
-            l_lots_cnt  NUMBER := 0;
-        BEGIN
-            DBMS_LOB.CREATETEMPORARY(l_lots_csv, TRUE);
-            -- Backlog #137: derive INV_LOT_INTERFACE_NUM from the PARENT transaction
-            -- TFM's INV_LOTSERIAL_INTERFACE_NUM (which the transform rewrote to a
-            -- per-load-unique value = parent TFM_SEQUENCE_ID), NOT from the lot TFM's
-            -- own INVENTORY_LOT_INTERFACE_NUMBER (a stale, possibly-colliding staged
-            -- value). Join lot TFM -> lot STG (SOURCE_ID = parent STG_SEQUENCE_ID) ->
-            -- parent TFM, mirroring the serials CSV join so both detail CSVs link on the
-            -- same unique parent key. LEFT JOINs preserve EVERY lot TFM row (same row set
-            -- as the former SELECT * loop): a lot row that cannot resolve a parent still
-            -- emits, falling back to its own staged INVENTORY_LOT_INTERFACE_NUMBER rather
-            -- than being silently dropped. NVL on SOURCE_ID avoids TO_NUMBER on a NULL.
-            FOR lr IN (
-                SELECT NVL(p.INV_LOTSERIAL_INTERFACE_NUM,
-                           l.INVENTORY_LOT_INTERFACE_NUMBER) AS INVENTORY_LOT_INTERFACE_NUMBER,
-                       l.INVENTORY_SERIAL_INTERFACE_NUM,
-                       l.SOURCE_CODE, l.SOURCE_LINE_ID, l.LOT_NUMBER, l.DESCRIPTION,
-                       l.LOT_EXPIRATION_DATE, l.TRANSACTION_QUANTITY, l.PRIMARY_QUANTITY
-                FROM   DMT_INV_TRX_LOTS_TFM_TBL l
-                LEFT JOIN DMT_INV_TRX_LOTS_STG_TBL ls
-                    ON ls.STG_SEQUENCE_ID = l.STG_SEQUENCE_ID
-                LEFT JOIN DMT_INV_TRX_TFM_TBL p
-                    ON p.RUN_ID  = l.RUN_ID
-                   AND p.STG_SEQUENCE_ID =
-                       TO_NUMBER(ls.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
-                WHERE  l.RUN_ID = p_run_id
-                -- Backlog #137 (reviewer follow-up): a lot row the transform marked
-                -- FAILED (no resolvable parent transaction) is never sent to Fusion —
-                -- it has no valid link. Only non-FAILED lot rows are generated.
-                AND    l.TFM_STATUS <> 'FAILED'
-                ORDER BY l.TFM_SEQUENCE_ID
-            ) LOOP
-                l_lots_cnt := l_lots_cnt + 1;
-                -- CTL cols (after 6 system): INV_LOT_INTERFACE_NUM, INV_SERIAL_INTERFACE_NUM,
-                -- SOURCE_CODE, SOURCE_LINE_ID, LOT_NUMBER, DESCRIPTION, LOT_EXPIRATION_DATE,
-                -- TRANSACTION_QUANTITY, PRIMARY_QUANTITY
-                af(l_lots_csv, lr.INVENTORY_LOT_INTERFACE_NUMBER);   -- 1 (= parent INV_LOTSERIAL_INTERFACE_NUM)
-                af(l_lots_csv, lr.INVENTORY_SERIAL_INTERFACE_NUM);   -- 2
-                af(l_lots_csv, lr.SOURCE_CODE);                      -- 3
-                af(l_lots_csv, fmt_num(lr.SOURCE_LINE_ID));          -- 4
-                af(l_lots_csv, lr.LOT_NUMBER);                       -- 5
-                af(l_lots_csv, lr.DESCRIPTION);                      -- 6
-                af(l_lots_csv, fmt_date_short(lr.LOT_EXPIRATION_DATE)); -- 7
-                af(l_lots_csv, fmt_num(lr.TRANSACTION_QUANTITY));    -- 8
-                af(l_lots_csv, fmt_num(lr.PRIMARY_QUANTITY), TRUE);  -- 9 (last)
-            END LOOP;
-
-            IF l_lots_cnt > 0 THEN
-                l_lots_blob := clob_to_blob(l_lots_csv);
-                APEX_ZIP.ADD_FILE(
-                    p_zipped_blob => x_fbdi_zip,
-                    p_file_name   => 'InvTransactionLotsInterface.csv',
-                    p_content     => l_lots_blob);
-                DBMS_LOB.FREETEMPORARY(l_lots_blob);
-            END IF;
-            DBMS_LOB.FREETEMPORARY(l_lots_csv);
-        END;
-
-        -- Serials CSV (InvSerialNumbersInterface) if any serial TFM rows exist
+        -- Serials CSV (InvSerialNumbersInterface) if any serial TFM rows exist.
         -- Join to parent TFM to get INV_LOTSERIAL_INTERFACE_NUM for linkage.
-        DECLARE
-            l_ser_csv  CLOB;
-            l_ser_blob BLOB;
-            l_ser_cnt  NUMBER := 0;
-        BEGIN
-            DBMS_LOB.CREATETEMPORARY(l_ser_csv, TRUE);
-            -- Join serial TFM → serial STG (for SOURCE_ID = parent STG_SEQUENCE_ID)
-            -- → parent TFM (for INV_LOTSERIAL_INTERFACE_NUM, SOURCE_CODE, SOURCE_LINE_ID).
-            -- Backlog #137: LEFT JOINs so a serial row is never silently dropped if its
-            -- parent cannot be resolved (it still emits, with a NULL link number that
-            -- Fusion will reject visibly rather than vanishing). TO_NUMBER(... DEFAULT
-            -- NULL ON CONVERSION ERROR) keeps a dirty SOURCE_ID from aborting the whole
-            -- generation with ORA-01722. INV_SERIAL_INTERFACE_NUM (col 1) is the parent's
-            -- now-unique INV_LOTSERIAL_INTERFACE_NUM, matching the transaction + lot CSVs.
-            FOR sr IN (
-                SELECT s.FM_SERIAL_NUMBER, s.TO_SERIAL_NUMBER,
-                       p.INV_LOTSERIAL_INTERFACE_NUM, p.SOURCE_CODE, p.SOURCE_LINE_ID
-                FROM   DMT_INV_TRX_SERIALS_TFM_TBL s
-                LEFT JOIN DMT_INV_TRX_SERIALS_STG_TBL ss
-                    ON ss.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                LEFT JOIN DMT_INV_TRX_TFM_TBL p
-                    ON p.RUN_ID  = s.RUN_ID
-                   AND p.STG_SEQUENCE_ID =
-                       TO_NUMBER(ss.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
-                WHERE  s.RUN_ID = p_run_id
-                ORDER BY s.TFM_SEQUENCE_ID
-            ) LOOP
-                l_ser_cnt := l_ser_cnt + 1;
-                -- CTL cols (after 6 system): INV_SERIAL_INTERFACE_NUM, SOURCE_CODE,
-                -- SOURCE_LINE_ID, FM_SERIAL_NUMBER, TO_SERIAL_NUMBER
-                af(l_ser_csv, sr.INV_LOTSERIAL_INTERFACE_NUM); -- 1 INV_SERIAL_INTERFACE_NUM
-                af(l_ser_csv, sr.SOURCE_CODE);                 -- 2 SOURCE_CODE
-                af(l_ser_csv, fmt_num(sr.SOURCE_LINE_ID));     -- 3 SOURCE_LINE_ID
-                af(l_ser_csv, sr.FM_SERIAL_NUMBER);            -- 4 FM_SERIAL_NUMBER
-                af(l_ser_csv, sr.TO_SERIAL_NUMBER, TRUE);      -- 5 TO_SERIAL_NUMBER (last)
-            END LOOP;
+        l_step := 'building the serials CSV';
+        DBMS_LOB.CREATETEMPORARY(l_ser_csv, TRUE);
+        -- Join serial TFM → serial STG (for SOURCE_ID = parent STG_SEQUENCE_ID)
+        -- → parent TFM (for INV_LOTSERIAL_INTERFACE_NUM, SOURCE_CODE, SOURCE_LINE_ID).
+        -- Backlog #137: LEFT JOINs so a serial row is never silently dropped if its
+        -- parent cannot be resolved (it still emits, with a NULL link number that
+        -- Fusion will reject visibly rather than vanishing). TO_NUMBER(... DEFAULT
+        -- NULL ON CONVERSION ERROR) keeps a dirty SOURCE_ID from aborting the whole
+        -- generation with ORA-01722. INV_SERIAL_INTERFACE_NUM (col 1) is the parent's
+        -- now-unique INV_LOTSERIAL_INTERFACE_NUM, matching the transaction + lot CSVs.
+        FOR sr IN (
+            SELECT s.FM_SERIAL_NUMBER, s.TO_SERIAL_NUMBER,
+                   p.INV_LOTSERIAL_INTERFACE_NUM, p.SOURCE_CODE, p.SOURCE_LINE_ID
+            FROM   DMT_INV_TRX_SERIALS_TFM_TBL s
+            LEFT JOIN DMT_INV_TRX_SERIALS_STG_TBL ss
+                ON ss.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
+            LEFT JOIN DMT_INV_TRX_TFM_TBL p
+                ON p.RUN_ID  = s.RUN_ID
+               AND p.STG_SEQUENCE_ID =
+                   TO_NUMBER(ss.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
+            WHERE  s.RUN_ID = p_run_id
+            ORDER BY s.TFM_SEQUENCE_ID
+        ) LOOP
+            l_ser_cnt := l_ser_cnt + 1;
+            -- CTL cols (after 6 system): INV_SERIAL_INTERFACE_NUM, SOURCE_CODE,
+            -- SOURCE_LINE_ID, FM_SERIAL_NUMBER, TO_SERIAL_NUMBER
+            af(l_ser_csv, sr.INV_LOTSERIAL_INTERFACE_NUM); -- 1 INV_SERIAL_INTERFACE_NUM
+            af(l_ser_csv, sr.SOURCE_CODE);                 -- 2 SOURCE_CODE
+            af(l_ser_csv, fmt_num(sr.SOURCE_LINE_ID));     -- 3 SOURCE_LINE_ID
+            af(l_ser_csv, sr.FM_SERIAL_NUMBER);            -- 4 FM_SERIAL_NUMBER
+            af(l_ser_csv, sr.TO_SERIAL_NUMBER, TRUE);      -- 5 TO_SERIAL_NUMBER (last)
+        END LOOP;
 
-            IF l_ser_cnt > 0 THEN
-                l_ser_blob := clob_to_blob(l_ser_csv);
-                APEX_ZIP.ADD_FILE(
-                    p_zipped_blob => x_fbdi_zip,
-                    p_file_name   => 'InvSerialNumbersInterface.csv',
-                    p_content     => l_ser_blob);
-                DBMS_LOB.FREETEMPORARY(l_ser_blob);
-            END IF;
-            DBMS_LOB.FREETEMPORARY(l_ser_csv);
-        END;
+        -- Backlog #550: register each CSV as its own DMT_FBDI_CSV_TBL row and build
+        -- the zip from those rows (the shared REGISTER_CSV / BUILD_ZIP_FROM_CSVS
+        -- pattern), so every emitted TFM row -- transaction, lot and serial -- can be
+        -- stamped with the FBDI_CSV_ID of the file that carried it. The lot and serial
+        -- files are added only when they have rows, as before.
+        l_step := 'registering the CSVs and building the zip';
+        x_filename := 'MiscReceipts_' || TO_CHAR(p_run_id) || '.zip';
+        SELECT DMT_FBDI_ZIP_ID_SEQ.NEXTVAL INTO l_zip_id FROM DUAL;
+        DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 1, 'MiscReceipts',
+            'InvTransactionsInterface.csv', l_row_count, l_trx_csv, l_trx_csv_id);
+        IF l_lots_cnt > 0 THEN
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 2, 'MiscReceipts',
+                'InvTransactionLotsInterface.csv', l_lots_cnt, l_lots_csv, l_lots_csv_id);
+        END IF;
+        IF l_ser_cnt > 0 THEN
+            DMT_UTIL_PKG.REGISTER_CSV(p_run_id, l_zip_id, 3, 'MiscReceipts',
+                'InvSerialNumbersInterface.csv', l_ser_cnt, l_ser_csv, l_ser_csv_id);
+        END IF;
+        DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'MiscReceipts', x_filename,
+                                         x_fbdi_zip, l_zip_bytes);
+        DBMS_LOB.FREETEMPORARY(l_trx_csv);
+        DBMS_LOB.FREETEMPORARY(l_lots_csv);
+        DBMS_LOB.FREETEMPORARY(l_ser_csv);
+        x_fbdi_csv_id := l_trx_csv_id;
 
-        APEX_ZIP.FINISH(p_zipped_blob => x_fbdi_zip);
-
-        x_filename    := 'MiscReceipts_' || TO_CHAR(p_run_id) || '.zip';
-        x_fbdi_csv_id := NULL;
-
-        -- Mark TFM rows as GENERATED
+        -- Mark the emitted TFM rows GENERATED and stamp each with its own file's
+        -- FBDI_CSV_ID. Backlog #550: the lot and serial rows were left STAGED with no
+        -- WORK_QUEUE_ID or FBDI_CSV_ID, so 'sent' could not be told from 'never sent'
+        -- on a child row and the unaccounted sweep (GENERATED rows only) never reached
+        -- an unresolved child. Lots: the rows the lots CSV emitted (every non-FAILED
+        -- lot row of the run). Serials: every serial row of the run is emitted; only
+        -- the STAGED ones move.
+        l_step := 'marking generated transaction rows';
         UPDATE DMT_INV_TRX_TFM_TBL
         SET    TFM_STATUS        = 'GENERATED',
+               FBDI_CSV_ID       = l_trx_csv_id,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS     = 'STAGED';
+
+        l_step := 'marking generated lot rows';
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL
+        SET    TFM_STATUS        = 'GENERATED',
+               FBDI_CSV_ID       = l_lots_csv_id,
+               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS     = 'STAGED';
+
+        l_step := 'marking generated serial rows';
+        UPDATE DMT_INV_TRX_SERIALS_TFM_TBL
+        SET    TFM_STATUS        = 'GENERATED',
+               FBDI_CSV_ID       = l_ser_csv_id,
+               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
         AND    TFM_STATUS     = 'STAGED';
 
         DMT_UTIL_PKG.LOG(p_run_id,
-            C_PROC || ' complete. Rows: ' || l_row_count
-            || ', ZIP size: ' || DBMS_LOB.GETLENGTH(x_fbdi_zip) || ' bytes.',
+            C_PROC || ' complete. Transactions: ' || l_row_count
+            || ', lots: ' || l_lots_cnt || ', serials: ' || l_ser_cnt
+            || ', ZIP size: ' || l_zip_bytes || ' bytes.',
             'INFO',
             C_PKG, C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(p_run_id,
-                C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+                C_PROC || ' failed while ' || l_step || '.', SQLERRM, C_PKG, C_PROC);
             RAISE;
     END GENERATE_FBDI;
 

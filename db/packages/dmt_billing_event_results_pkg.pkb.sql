@@ -739,7 +739,7 @@ AS
             -- Same report, same job-id parameters as the Contract v1 fetch above
             -- (the retired P_BATCH_ID and the run prefix are no longer sent).
             p_params     => 'P_LOAD_REQUEST_ID|' || TO_CHAR(p_load_ess_id) ||
-                            '~P_IMPORT_ESS_ID|' || NVL(TO_CHAR(p_import_ess_id), ''),
+                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_IMPORT_ESS_ID|' || NVL(TO_CHAR(p_import_ess_id), ''),
             x_report_xml => l_xml,
             x_error_code => l_err_code);
 

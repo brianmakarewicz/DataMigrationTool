@@ -194,8 +194,8 @@ begin
     assert(l_errors(1).error_source = 'PROJECT'
        and l_errors(1).object_type  = 'PROJECT_ERROR'
        and l_errors(1).row_identifier = 'RT Project Bad-1/9173RTPRJ-BAD1/DMT-RTPRJ-BAD1'
-       and l_errors(1).error_message like 'The source application code isn%t valid.',
-       2, 'Project rejection: source=PROJECT, key incl. 9173RTPRJ-BAD1, real Fusion message');
+       and l_errors(1).error_message = 'The source application code isn''t valid.',
+       2, 'Project rejection: source=PROJECT, key incl. 9173RTPRJ-BAD1, real Fusion message with &apos; decoded (backlog #547)');
 
     -- ----------------------------------------------------------
     -- 3. Task rejection attributed to the task row
@@ -274,6 +274,22 @@ begin
        and l_errors(1).row_identifier = 'F1'
        and l_errors(1).error_message like '%Widget exploded%',
        10, 'No-message error item falls back to raw item XML as the message');
+
+    -- ----------------------------------------------------------
+    -- 24. XML entities in message AND identifier are decoded exactly
+    --     once (backlog #547): &apos; &amp; &lt; &gt; &quot; become
+    --     the characters Fusion wrote; a literal "&amp;apos;" (an
+    --     entity Fusion itself escaped) stays one level encoded.
+    -- ----------------------------------------------------------
+    l_errors := dmt_import_report_pkg.parse_errors(to_clob(
+        '<DATA_DS><LIST_FOO_ERROR><FOO_ERROR>' ||
+        '<FOO_NUMBER>A&amp;B</FOO_NUMBER>' ||
+        '<FOO_ERR_MSG>Value &lt;X&gt; isn&apos;t &quot;valid&quot; &amp;apos;</FOO_ERR_MSG>' ||
+        '</FOO_ERROR></LIST_FOO_ERROR></DATA_DS>'));
+    assert(l_errors.count = 1
+       and l_errors(1).row_identifier = 'A&B'
+       and l_errors(1).error_message = 'Value <X> isn''t "valid" &apos;',
+       24, 'PARSE_ERRORS decodes XML entities once in message and identifier');
 
     :passed := :passed + l_passed;
 end;

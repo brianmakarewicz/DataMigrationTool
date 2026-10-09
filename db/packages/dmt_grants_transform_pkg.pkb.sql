@@ -41,15 +41,6 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_HEADERS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_HEADERS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
@@ -251,15 +242,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUNDING start.', 'INFO', C_PKG, 'TRANSFORM_FUNDING');
         l_prefix := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_FUNDING_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_FUNDING_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
@@ -370,15 +352,6 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PROJECTS start.', 'INFO', C_PKG, 'TRANSFORM_PROJECTS');
         l_prefix     := get_prefix(p_run_id);
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_PROJECTS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_PROJECTS_TFM_TBL (
@@ -523,15 +496,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PERSONNEL start.', 'INFO', C_PKG, 'TRANSFORM_PERSONNEL');
         l_prefix     := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_PERSONNEL_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_PERSONNEL_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
@@ -661,15 +625,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_SOURCES start.', 'INFO', C_PKG, 'TRANSFORM_FUND_SOURCES');
         l_prefix := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_FUND_SRC_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_FUND_SRC_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
@@ -781,15 +736,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_FUND_SRCS start.', 'INFO', C_PKG, 'TRANSFORM_PRJ_FUND_SRCS');
         l_prefix     := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID,
@@ -897,15 +843,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_KEYWORDS start.', 'INFO', C_PKG, 'TRANSFORM_KEYWORDS');
         l_prefix     := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_KEYWORDS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_KEYWORDS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, KEYWORD_NAME
@@ -1011,15 +948,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_BUDGET_PERIODS start.', 'INFO', C_PKG, 'TRANSFORM_BUDGET_PERIODS');
         l_prefix := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_BDGT_PRDS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_BDGT_PRDS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, BUDGET_PERIOD, START_DATE, END_DATE
@@ -1124,15 +1052,6 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CERTS start.', 'INFO', C_PKG, 'TRANSFORM_CERTS');
         l_prefix     := get_prefix(p_run_id);
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_CERTS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_CERTS_TFM_TBL (
@@ -1245,15 +1164,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_CFDAS start.', 'INFO', C_PKG, 'TRANSFORM_CFDAS');
         l_prefix := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_CFDAS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_CFDAS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, CFDA
@@ -1358,15 +1268,6 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_FUND_ALLOCS start.', 'INFO', C_PKG, 'TRANSFORM_FUND_ALLOCS');
         l_prefix     := get_prefix(p_run_id);
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_FUND_ALLOC_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_FUND_ALLOC_TFM_TBL (
@@ -1473,15 +1374,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_ORG_CREDITS start.', 'INFO', C_PKG, 'TRANSFORM_ORG_CREDITS');
         l_prefix     := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_ORG_CREDITS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_ORG_CREDITS_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, ORGANIZATION, CREDIT_PERCENTAGE
@@ -1586,15 +1478,6 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_PRJ_TASK_BURDEN start.', 'INFO', C_PKG, 'TRANSFORM_PRJ_TASK_BURDEN');
         l_prefix     := get_prefix(p_run_id);
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL (
@@ -1701,15 +1584,6 @@
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_REFERENCES start.', 'INFO', C_PKG, 'TRANSFORM_REFERENCES');
         l_prefix     := get_prefix(p_run_id);
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_REFERENCES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_REFERENCES_TFM_TBL (
                     STG_SEQUENCE_ID, RUN_ID, AWARD_NUMBER, PROJECT_NUMBER, REFERENCE_TYPE, VALUE, COMMENTS
@@ -1814,15 +1688,6 @@
     BEGIN
         DMT_UTIL_PKG.LOG(p_run_id, 'TRANSFORM_TERMS start.', 'INFO', C_PKG, 'TRANSFORM_TERMS');
         l_prefix := get_prefix(p_run_id);
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_GMS_AWD_TERMS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_GMS_AWD_TERMS_TFM_TBL (

@@ -43,14 +43,6 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        IF p_reprocess_errors THEN
-            UPDATE DMT_INV_TRX_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- ── Main transactions: STG → TFM ──
         INSERT INTO DMT_INV_TRX_TFM_TBL (
             STG_SEQUENCE_ID, RUN_ID,

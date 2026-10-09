@@ -48,15 +48,6 @@
         l_prefix := get_prefix(p_run_id);
 
 
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_POR_REQ_HEADERS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
-
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_HEADERS_TFM_TBL (
                     STG_SEQUENCE_ID,
@@ -255,15 +246,6 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_LINES');
 
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_POR_REQ_LINES_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_LINES_TFM_TBL (
@@ -554,15 +536,6 @@
             p_package        => C_PKG,
             p_procedure      => 'TRANSFORM_DISTS');
 
-
-        -- On reprocess: clear staging errors for rows being retried
-        IF p_reprocess_errors THEN
-            UPDATE DMT_POR_REQ_DISTS_STG_TBL
-            SET    ERROR_TEXT = NULL, LAST_UPDATED_DATE = SYSDATE
-            WHERE  STG_STATUS IN ('FAILED', 'TRANSFORM_FAILED')
-            AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
-                    OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));
-        END IF;
 
         -- Set-based INSERT: STG -> TFM (one statement, all qualifying rows)
         INSERT INTO DMT_POR_REQ_DISTS_TFM_TBL (
