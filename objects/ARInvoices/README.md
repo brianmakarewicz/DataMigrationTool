@@ -95,6 +95,19 @@ models both with one STG + one TFM table each.
    fix was required.
 
 ## History
+- 2026-10-09 recon report V5 (`DMT_AR_RECON_V5_DM`, alongside V1-V4): pages by HEADER, never by a
+  fixed row cap (owner direction, backlog #224). Each row carries a tenth column `PAGE_KEY` = the
+  run-prefixed invoice key (INTERFACE_LINE_ATTRIBUTE1); a page is the next `BIP_CHUNK_SIZE` invoices
+  plus every line and distribution of them. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers when a
+  report returns `PAGE_KEY` (other reports unchanged); the former 5-report-rows-per-sent-row allowance
+  in `DMT_AR_RESULTS_PKG` is gone (page cap = invoices sent). A loaded line now also stores its own
+  `CUSTOMER_TRX_LINE_ID` in the new column `FUSION_CUSTOMER_TRX_LINE_ID` (report FUSION_ID =
+  `trx_id~line_id`, backlog #85); the registry's row-grain id is that column, and the drill-down shows
+  `trx~line`. A distribution's Verify-in-Fusion key is its invoice's CustomerTransactionId (#675).
+  New write-once scenario RegressionTest261009074409 (id 662) adds invoice 86753501: one line with eight
+  REV distributions (RT-AR-MD-A1, -REV1..8). Proof run 362 (prefix 93405, O2C): 5 lines LOADED with line
+  ids, all 8 new distributions LOADED, the baseline rows' outcomes identical to run 347 (6 lines and 4
+  distributions FAILED with real or quoted errors), 0 UNACCOUNTED.
 - 2026-10-08 a line with no BU or batch source is failed, with the rest of its DMT invoice
   (backlog #500), and the reconcile apply is scoped to the child work item (backlog #503).
   `DMT_AR_VALIDATOR_PKG.VALIDATE_POST_TRANSFORM` runs after transform and before the split: the
