@@ -139,9 +139,23 @@ of the book that did not load, and the existing cascade carries it to their book
 assignment rows:
 `[FUSION_ERROR] Rejected with document: book batch <book> asset <asset number>: <real error>`.
 It is idempotent, never touches LOADED rows, and only runs inside the existing
-all-or-nothing gate (load process genuinely failed, nothing in the book loaded). If no asset
-of the book carries a real error (for example the rejection was in the distributions file),
-nothing is quoted and the assets stay unaccounted for the shared sweep (backlog #571).
+all-or-nothing gate (load process genuinely failed, nothing in the book loaded).
+
+**Rejection in the distributions file (backlog #571, 2026-10-09).** A `FA_MASSADD_DISTRIBUTIONS`
+rejection used to leave its book unaccounted, because there was no asset row to quote. Now
+`ACCOUNT_ALL_OR_NOTHING` maps the distributions log's "Record N" to the assignment row at that
+position of the work item's own distributions CSV (rows stamped with the work item id, generator
+order `TFM_SEQUENCE_ID`; SQL*Loader counts physical lines, so a value holding a line break spans
+several records and they all belong to the same row). That assignment row lands FAILED with its
+real SQL*Loader error. `PROPAGATE_DOCUMENT_ERRORS` treats it as a source and quotes it onto every
+asset header of the batch, its own header included (design section 5: a distribution error is
+added to its header), as `Rejected with document: book batch <book> asset <num> distribution: <error>`;
+the cascade carries it to the book and the other assignment rows.
+
+**Import id of a failed load (backlog #573, 2026-10-09).** When a load ends in error, the queue
+worker now records an import id only if the load itself ran one: a child of the load in the
+captured job hierarchy whose job is the object's import job (PrepareMassAdditions). It no longer
+searches for the nearest later import, which gave a failed book another book's id.
 
 Regression cross-grain rows (scenario RegressionTest2610081851): book SUPREMO US CORP with
 `RT-ASSET-XG-G1`, `RT-ASSET-XG-BAD` (prorate convention `CAL MONTH LONG`, 14 characters,
