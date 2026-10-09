@@ -7,7 +7,6 @@
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "BenDependent",    "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "BenBeneficiary",  "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
     {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "PerfEvaluations", "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
-    {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "WorkSchedules",   "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"},
-    {"kind": "REVIEW", "category": "REST_VERIFY", "object": "Customers",     "sub": "Locations",      "backlog": "#468", "reason": "Verify-in-Fusion REST lookup never worked; owner decision 2026-10-08"}
+    {"kind": "REVIEW", "category": "ZERO_RECORDS", "object": "WorkSchedules",   "backlog": "HCM backlog #292/#293", "reason": "unfinished HCM object, never passed; owner decision 2026-10-08"}
   ]
 }
