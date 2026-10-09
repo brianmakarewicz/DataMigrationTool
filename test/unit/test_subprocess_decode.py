@@ -93,17 +93,22 @@ def main():
             ad.subprocess.run = real_run
 
         # 4. Control: the old call shape really does lose stdout under cp1252.
-        #    (Silence the expected reader-thread traceback.)
+        #    On Windows subprocess decodes in reader threads, the thread dies and
+        #    p.stdout is None (silence that expected thread traceback). On POSIX the
+        #    decode runs in the calling thread and raises UnicodeDecodeError, so no
+        #    stdout comes back at all. Either way the output is lost.
         import threading
         saved_hook = threading.excepthook
         threading.excepthook = lambda args: None
         try:
             p = real_run([sys.executable, str(child)], input="", capture_output=True,
                          text=True, encoding="cp1252")
+            lost, detail = p.stdout is None, repr(p.stdout)
+        except UnicodeDecodeError as e:
+            lost, detail = True, repr(e)
         finally:
             threading.excepthook = saved_hook
-        check("control: cp1252 decode loses stdout (old crash shape)",
-              p.stdout is None, repr(p.stdout))
+        check("control: cp1252 decode loses stdout (old crash shape)", lost, detail)
 
     print(f"\n{'ALL PASS' if not failures else f'{len(failures)} FAILED'}")
     return 1 if failures else 0
