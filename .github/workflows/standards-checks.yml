@@ -35,6 +35,10 @@ jobs:
         if: always()
         run: python scripts/check_sweep_unaccounted.py
 
+      - name: Load failure reaches every record type (cross-grain shape d)
+        if: always()
+        run: python scripts/check_load_failure_all_types.py
+
       - name: Transformer [TRANSFORM_ERROR] accounting path
         if: always()
         run: python scripts/check_transform_error.py
