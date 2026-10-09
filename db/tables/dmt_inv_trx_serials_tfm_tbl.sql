@@ -122,6 +122,7 @@ begin
 	"FUSION_SERIAL_ID" NUMBER,
 	"FBDI_CSV_ID" NUMBER,
 	"WORK_QUEUE_ID" NUMBER,
+	"SOURCE_LINE_ID" NUMBER,
 	 CONSTRAINT "DMT_INV_TRX_SERIALS_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -244,3 +245,21 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- SOURCE_LINE_ID (backlog #552, 2026-10-09): the parent transaction's TFM
+-- sequence id, stamped by DMT_MISC_RECEIPT_TRANSFORM_PKG. It is the one link
+-- from a serial to its transaction (design section 6, parent-child join keys
+-- are the TFM sequence id): the generator writes it as the serial CSV's
+-- SOURCE_LINE_ID and the reconciler joins on it. Guarded in-file ALTER so an
+-- existing database converges; the CREATE above carries it for fresh installs.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where  table_name = 'DMT_INV_TRX_SERIALS_TFM_TBL' and column_name = 'SOURCE_LINE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_INV_TRX_SERIALS_TFM_TBL" ADD ("SOURCE_LINE_ID" NUMBER)';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_INV_TRX_SERIALS_TFM_TBL"."SOURCE_LINE_ID" IS 'Parent inventory transaction TFM_SEQUENCE_ID (= its SOURCE_LINE_ID). The one serial-to-transaction link (backlog #552).';

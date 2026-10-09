@@ -9,9 +9,9 @@ begin
 	"ORIGINAL_COST" NUMBER, 
 	"SALVAGE_VALUE" NUMBER, 
 	"LIFE_IN_MONTHS" NUMBER, 
-	"DEPRECIATION_METHOD" VARCHAR2(30), 
+	"DEPRECIATION_METHOD" VARCHAR2(12), 
 	"DATE_PLACED_IN_SERVICE" DATE, 
-	"PRORATE_CONVENTION_CODE" VARCHAR2(30), 
+	"PRORATE_CONVENTION_CODE" VARCHAR2(10), 
 	"DEPRN_START_DATE" DATE, 
 	"CURRENT_UNITS" NUMBER, 
 	"UNREVALUED_COST" NUMBER, 
@@ -81,5 +81,41 @@ begin
     execute immediate 'UPDATE "DMT_FA_ASSET_BOOK_STG_TBL" SET "STG_STATUS" = ''NEW'' WHERE "STG_STATUS" IS NULL';
     execute immediate 'ALTER TABLE "DMT_FA_ASSET_BOOK_STG_TBL" MODIFY ("STG_STATUS" DEFAULT ''NEW'' NOT NULL)';
   end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- 2026-10-09 backlog #574 (owner rule: field width is constrained by the STG
+-- and TFM tables). These columns now match the Fusion FBDI interface column
+-- FA_MASS_ADDITIONS.METHOD_CODE (12) / PRORATE_CONVENTION_CODE (10), so a value too long for Fusion is
+-- rejected here, when it is staged, with a clear error naming the column,
+-- instead of by SQL*Loader (which rolls back the whole book). Re-runnable and
+-- non-destructive: widening is always applied; narrowing is applied only when
+-- no existing row is longer than the new width, otherwise the column is left as
+-- it is and a line says so. Data is never truncated. Fresh installs get these
+-- widths from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  procedure fit_width (p_col in varchar2, p_len in pls_integer) is
+    l_cur pls_integer;
+    l_max pls_integer;
+  begin
+    select char_length into l_cur from user_tab_columns
+     where table_name = 'DMT_FA_ASSET_BOOK_STG_TBL' and column_name = p_col;
+    if l_cur < p_len then
+      execute immediate 'ALTER TABLE "DMT_FA_ASSET_BOOK_STG_TBL" MODIFY ("' || p_col || '" VARCHAR2(' || p_len || '))';
+    elsif l_cur > p_len then
+      execute immediate 'SELECT NVL(MAX(LENGTH("' || p_col || '")), 0) FROM "DMT_FA_ASSET_BOOK_STG_TBL"' into l_max;
+      if l_max <= p_len then
+        execute immediate 'ALTER TABLE "DMT_FA_ASSET_BOOK_STG_TBL" MODIFY ("' || p_col || '" VARCHAR2(' || p_len || '))';
+      else
+        dbms_output.put_line('DMT_FA_ASSET_BOOK_STG_TBL.' || p_col || ' left at ' || l_cur
+          || ': existing rows hold values up to ' || l_max || ' characters (target ' || p_len || ').');
+      end if;
+    end if;
+  end fit_width;
+begin
+  fit_width('DEPRECIATION_METHOD', 12);
+  fit_width('PRORATE_CONVENTION_CODE', 10);
 end;
 /

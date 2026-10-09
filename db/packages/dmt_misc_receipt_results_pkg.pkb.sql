@@ -56,17 +56,20 @@ AS
 --                   #167): serials of a rejected transaction no longer end
 --                   UNACCOUNTED; the lot cascade quotes the transaction's real
 --                   error in the shared FORMAT_DOCUMENT_ERROR format.
+--   2026-10-09  BM  Backlog #552: the lot LOADED cascade and the document
+--                   roll-up both find a child's transaction by the parent TFM
+--                   id the child carries in SOURCE_LINE_ID (one parent link).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_MISC_RECEIPT_RESULTS_PKG';
     C_CEMLI CONSTANT VARCHAR2(30) := 'MiscReceipts';
 
     -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #167).
-    -- Working set: "the transaction staged as PARENT_STG_SEQ was rejected with its
-    -- own real Fusion error, so every not-LOADED lot and serial whose STG
-    -- SOURCE_ID points at it must carry QUOTED_ERROR".
+    -- Working set: "the transaction PARENT_TFM_SEQ was rejected with its own real
+    -- Fusion error, so every not-LOADED lot and serial whose SOURCE_LINE_ID points
+    -- at it must carry QUOTED_ERROR".
     TYPE T_DOC_PAIR IS RECORD (
-        PARENT_STG_SEQ NUMBER,           -- the transaction's STG_SEQUENCE_ID
+        PARENT_TFM_SEQ NUMBER,           -- the transaction's TFM_SEQUENCE_ID
         QUOTED_ERROR   VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
     );
     TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
@@ -309,7 +312,9 @@ AS
 
         -- Cascade a base-confirmed transaction to its lot detail. A lot line is
         -- child detail of an inventory transaction and loads with it in the same
-        -- FBDI, linked by the lot/serial interface number. A lot whose transaction
+        -- FBDI, linked to it by the parent's TFM_SEQUENCE_ID the lot carries in
+        -- SOURCE_LINE_ID (backlog #552: the one parent link the generator and
+        -- PROPAGATE_DOCUMENT_ERRORS use too). A lot whose transaction
         -- is base-confirmed LOADED is LOADED (found outcome via the parent, not a
         -- fabricated verdict). A lot or serial whose transaction was rejected is
         -- FAILED by PROPAGATE_DOCUMENT_ERRORS, quoting the transaction's real error.
@@ -323,12 +328,12 @@ AS
                l.FUSION_TRANSACTION_ID=(
                    SELECT TO_NUMBER(t.FUSION_ID) FROM DMT_INV_TRX_TFM_TBL t
                    WHERE  t.RUN_ID=p_run_id
-                   AND    t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                   AND    t.TFM_SEQUENCE_ID=l.SOURCE_LINE_ID
                    AND    t.TFM_STATUS='LOADED' AND ROWNUM=1),
                l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
         WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
         AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
-                       AND t.INV_LOTSERIAL_INTERFACE_NUM=l.INVENTORY_LOT_INTERFACE_NUMBER
+                       AND t.TFM_SEQUENCE_ID=l.SOURCE_LINE_ID
                        AND t.TFM_STATUS='LOADED');
 
         -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
@@ -364,10 +369,10 @@ AS
     -- that transaction (design section 5, "Whole-document rejection carries the
     -- real error to every grain"), in the shared format
     -- '[FUSION_ERROR] Rejected with document: transaction <SOURCE_LINE_ID>: <msg>'.
-    -- Child-to-parent link: the child STG SOURCE_ID is the parent transaction's
-    -- STG_SEQUENCE_ID, the same join DMT_MISC_RECEIPT_FBDI_GEN_PKG uses to write
-    -- the lot and serial CSVs (lot/serial TFM rows carry no parent key of their
-    -- own). Only a transaction whose own error is a real [FUSION_ERROR] (not
+    -- Child-to-parent link (backlog #552): the child's SOURCE_LINE_ID is the
+    -- parent transaction's TFM_SEQUENCE_ID, stamped by the transform -- the same
+    -- join DMT_MISC_RECEIPT_FBDI_GEN_PKG uses to write the lot and serial CSVs and
+    -- the lot LOADED cascade above uses. Only a transaction whose own error is a real [FUSION_ERROR] (not
     -- itself a quote) is a source. Idempotent: a row already carrying the quote is
     -- skipped. LOADED rows are never touched. Scoped to the run and work item;
     -- static SQL; NO COMMIT.
@@ -385,7 +390,7 @@ AS
         l_step   VARCHAR2(200);
     BEGIN
         l_step := 'collecting rejected transactions for run ' || p_run_id;
-        SELECT t.STG_SEQUENCE_ID,
+        SELECT t.TFM_SEQUENCE_ID,
                -- Names the transaction by its SOURCE_LINE_ID (its RECON_KEY) so a
                -- reader of the lot or serial row sees which transaction failed.
                DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
@@ -411,10 +416,7 @@ AS
             AND    l.TFM_STATUS <> 'LOADED'
             AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
             AND    NVL(DBMS_LOB.INSTR(l.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0
-            AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_LOTS_STG_TBL ls
-                           WHERE  ls.STG_SEQUENCE_ID = l.STG_SEQUENCE_ID
-                           AND    TO_NUMBER(ls.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
-                                  = l_pairs(i).PARENT_STG_SEQ);
+            AND    l.SOURCE_LINE_ID = l_pairs(i).PARENT_TFM_SEQ;
         l_lots := SQL%ROWCOUNT;
 
         l_step := 'appending quoted transaction errors to its serials';
@@ -428,10 +430,7 @@ AS
             AND    s.TFM_STATUS <> 'LOADED'
             AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
             AND    NVL(DBMS_LOB.INSTR(s.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0
-            AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_SERIALS_STG_TBL ss
-                           WHERE  ss.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                           AND    TO_NUMBER(ss.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)
-                                  = l_pairs(i).PARENT_STG_SEQ);
+            AND    s.SOURCE_LINE_ID = l_pairs(i).PARENT_TFM_SEQ;
         l_sers := SQL%ROWCOUNT;
 
         DMT_UTIL_PKG.LOG(

@@ -293,7 +293,17 @@
         SELECT
             s.STG_SEQUENCE_ID, p_run_id,
             s.INVENTORY_LOT_INTERFACE_NUMBER, s.INVENTORY_SERIAL_INTERFACE_NUM,
-            NVL(s.SOURCE_CODE, 'DMT'), s.SOURCE_ID, s.SOURCE_LINE_ID, s.LOT_NUMBER, s.DESCRIPTION,
+            NVL(s.SOURCE_CODE, 'DMT'), s.SOURCE_ID,
+            -- Backlog #552 / #218: SOURCE_LINE_ID is the lot's ONE link to its
+            -- transaction -- the parent's TFM_SEQUENCE_ID (= the parent's
+            -- SOURCE_LINE_ID), resolved here once from the staged link (lot STG
+            -- SOURCE_ID = parent transaction STG_SEQUENCE_ID). The generator and
+            -- the reconciler join on it; NULL when no parent transaction of this
+            -- run matches (that lot is failed below).
+            (SELECT p.TFM_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL p
+             WHERE  p.RUN_ID = p_run_id
+             AND    p.STG_SEQUENCE_ID = TO_NUMBER(s.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)),
+            s.LOT_NUMBER, s.DESCRIPTION,
             s.LOT_EXPIRATION_DATE, s.TRANSACTION_QUANTITY, s.PRIMARY_QUANTITY,
             s.SECONDARY_TRANSACTION_QUANTITY,
             s.ORIGINATION_TYPE, s.ORIGINATION_DATE, s.STATUS_CODE, s.GRADE_CODE,
@@ -345,25 +355,22 @@
         -- link is preserved end-to-end (transform, FBDI CSVs, and results cascade all
         -- key on the one unique parent number).
         --
-        -- The parent is resolved by the STABLE relationship, not the old number:
-        -- lot STG SOURCE_ID -> parent transaction STG_SEQUENCE_ID -> parent TFM
-        -- (the exact path the FBDI lot/serial generators use). TO_NUMBER(... DEFAULT
-        -- NULL ON CONVERSION ERROR) so a dirty SOURCE_ID cannot abort the transform.
+        -- The parent is the transaction whose TFM_SEQUENCE_ID the lot carries in
+        -- SOURCE_LINE_ID (stamped by the INSERT above, backlog #552) -- the same
+        -- link the generator and the reconciler use.
         UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
         SET    l.INVENTORY_LOT_INTERFACE_NUMBER = (
                    SELECT p.INV_LOTSERIAL_INTERFACE_NUM
                    FROM   DMT_INV_TRX_TFM_TBL p
                    WHERE  p.RUN_ID = p_run_id
-                   AND    p.STG_SEQUENCE_ID =
-                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)),
+                   AND    p.TFM_SEQUENCE_ID = l.SOURCE_LINE_ID),
                l.LAST_UPDATED_DATE = SYSDATE
         WHERE  l.RUN_ID = p_run_id
         AND    l.TFM_STATUS = 'STAGED'
         AND    EXISTS (
                    SELECT 1 FROM DMT_INV_TRX_TFM_TBL p
                    WHERE  p.RUN_ID = p_run_id
-                   AND    p.STG_SEQUENCE_ID =
-                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR));
+                   AND    p.TFM_SEQUENCE_ID = l.SOURCE_LINE_ID);
 
         -- Honest handling (reviewer point #2): a lot row whose parent transaction
         -- cannot be resolved has no valid link to carry into the load and could never
@@ -380,11 +387,7 @@
                l.LAST_UPDATED_DATE = SYSDATE
         WHERE  l.RUN_ID = p_run_id
         AND    l.TFM_STATUS = 'STAGED'
-        AND    NOT EXISTS (
-                   SELECT 1 FROM DMT_INV_TRX_TFM_TBL p
-                   WHERE  p.RUN_ID = p_run_id
-                   AND    p.STG_SEQUENCE_ID =
-                          TO_NUMBER(l.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR));
+        AND    l.SOURCE_LINE_ID IS NULL;
 
         -- ── Serials: STG → TFM (if any exist) ──
         INSERT INTO DMT_INV_TRX_SERIALS_TFM_TBL (
@@ -392,6 +395,7 @@
             FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
             VENDOR_SERIAL_NUMBER, VENDOR_LOT_NUMBER, PARENT_SERIAL_NUMBER,
             STATUS_NAME, STATUS_CODE, ORIGINATION_DATE,
+            SOURCE_LINE_ID,
             TFM_STATUS, LAST_UPDATED_DATE
         )
         SELECT
@@ -404,6 +408,12 @@
             l_prefix || s.FM_SERIAL_NUMBER, l_prefix || s.TO_SERIAL_NUMBER,
             s.VENDOR_SERIAL_NUMBER, s.VENDOR_LOT_NUMBER, s.PARENT_SERIAL_NUMBER,
             s.STATUS_NAME, s.STATUS_CODE, s.ORIGINATION_DATE,
+            -- Backlog #552: the serial's ONE link to its transaction, the
+            -- parent's TFM_SEQUENCE_ID, resolved once from the staged link
+            -- (serial STG SOURCE_ID = parent transaction STG_SEQUENCE_ID).
+            (SELECT p.TFM_SEQUENCE_ID FROM DMT_INV_TRX_TFM_TBL p
+             WHERE  p.RUN_ID = p_run_id
+             AND    p.STG_SEQUENCE_ID = TO_NUMBER(s.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)),
             'STAGED', SYSDATE
         FROM DMT_INV_TRX_SERIALS_STG_TBL s
         -- Same selection as the parent transaction tier: the run mode picks the

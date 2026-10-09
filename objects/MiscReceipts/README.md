@@ -85,13 +85,27 @@ transaction (PROCESS_FLAG 3, real error inline on the interface row, a lot/seria
 included), `DMT_MISC_RECEIPT_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS` marks every not-LOADED
 lot and serial of that transaction FAILED quoting it:
 `[FUSION_ERROR] Rejected with document: transaction <SOURCE_LINE_ID>: <real error>`.
-Children link to the parent by child STG `SOURCE_ID` = parent `STG_SEQUENCE_ID` (the same
-join the generator uses). Serials of a rejected transaction used to end UNACCOUNTED.
+Children link to the parent by the parent's TFM id (backlog #552, 2026-10-09): the transform
+reads the staged link once (child STG `SOURCE_ID` = parent `STG_SEQUENCE_ID`) and stamps the
+parent transaction's `TFM_SEQUENCE_ID` into the lot's and the serial's `SOURCE_LINE_ID` (new
+column on the serials TFM table). The generator, the lot LOADED cascade and this document
+roll-up all join `child.SOURCE_LINE_ID = parent.TFM_SEQUENCE_ID`; before, the lot cascade
+joined on the lot/serial interface number and the roll-up and generator on the STG link.
+Serials of a rejected transaction used to end UNACCOUNTED.
 Regression cross-grain rows (scenario RegressionTest2610081756): `RT-MR-XG-SER-BAD`
 (AS88000 + serial DMT-SER-XG-001..002) and `RT-MR-XG-LOT-BAD` (RA-100-4935-LOT + lot
 DMT-REG-LOT-XG), both on the nonexistent subinventory `XGNOSUB`. Proof run 315 (prefix
 93370): both transactions FAILED with `INV_INSTP_CNTXT_SYS_DEFINED ... SUBINVENTORY_CODE`,
 the lot and serial FAILED quoting it, GOOD rows LOADED, 0 UNACCOUNTED.
+
+**Child-grain-only defects (backlog #551, 2026-10-09).** Scenario RegressionTest261009080330
+adds two documents whose transaction is valid and only the detail is wrong:
+`RT-MR-XL-LOT-BAD` (qty-3 receipt of RA-100-4935-LOT, its one lot `DMT-REG-LOT-XL` carries 5) and
+`RT-MR-XS-SER-BAD` (qty-2 receipt of AS88000, serial range DMT-SER-XS-001..003). Fusion writes the
+detail error inline on the transaction row. Proof run 372 (prefix 93415, STANDALONE:Items +
+MiscReceipts): the transactions FAILED with `INV_LOTSR_LOT_QTY` and
+`INV_MATRX_INVALID_SERIAL_RANGE`, the lot and serial FAILED quoting them, every GOOD row (lot and
+serial included) LOADED, all 14 listed rows met, 0 UNACCOUNTED, harness PASS.
 
 ## Status
 WIRED INTO PIPELINE. Code built. Now in P2P scheduler sequence (last position).

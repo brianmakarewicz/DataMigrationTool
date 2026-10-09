@@ -168,6 +168,40 @@ FA_MASS_ADDITIONS, column PRORATE_CONVENTION_CODE. ORA-12899: value too large fo
 0 UNACCOUNTED; `dmt_regression_run.py` PASS with all 18 listed rows matching. A
 reconcile-only rerun of work item 2010 (rolled back) left every TFM row identical.
 
+## Field widths match the interface; asset-named cascade; line breaks in the header file (2026-10-09)
+
+- **Widths (backlog #574, owner rule: field width is constrained by the STG and TFM tables).**
+  The STG and TFM columns now match the FBDI interface: header `DESCRIPTION` 80 (was 240),
+  `MANUFACTURER_NAME` 360 (was 30), `ATTRIBUTE_CATEGORY` 30 (`ATTRIBUTE_CATEGORY_CODE`, was 210);
+  book `DEPRECIATION_METHOD` 12 (`METHOD_CODE`, was 30), `PRORATE_CONVENTION_CODE` 10 (was 30).
+  Every other Assets column already matched. A value too long for Fusion is now rejected when
+  it is staged, naming the column, instead of by SQL*Loader (which rolls back the whole book).
+  The table files carry a re-runnable `fit_width` block: widening always applies; narrowing
+  applies only when no existing row is longer, otherwise the column is left as it is and a
+  line says so (data is never truncated). On the local database `PRORATE_CONVENTION_CODE`
+  stays 30 on STG and TFM because older scenarios hold the 14-character `CAL MONTH LONG`.
+- **Cascade names the asset (backlog #572).** A book or assignment row of a failed asset now
+  carries `[FUSION_ERROR] Rejected with document: asset <asset number>: <header's real error>`
+  (shared `FORMAT_DOCUMENT_ERROR`), instead of the unnamed "parent record" form.
+- **Header-file line breaks (backlog #650).** `ACCOUNT_ALL_OR_NOTHING` maps a
+  FA_MASS_ADDITIONS "Record N" to its header/book row counting the line breaks in every text
+  value the generator writes (same approach as the distributions mapping, #571).
+- **Regression row change.** `RT-ASSET-XG-BAD` can no longer carry a 14-character prorate
+  code (the column is 10 now), so from scenario RegressionTest261009080330 its description
+  holds a line break instead. Proof run 357 (prefix 93403, STANDALONE:Assets): SQL*Loader
+  rejected SUPREMO records 2 (DESCRIPTION, "second enclosure string not present") and 3 (the
+  continuation line, DATE_PLACED_IN_SERVICE); both map to XG-BAD, so XG-G2 (record 4) quotes
+  XG-BAD's error instead of taking record 3's as its own. All 27 listed rows met their
+  expected outcome, 0 UNACCOUNTED, harness PASS.
+- **After #651 (PR #730, line breaks fail in the validator).** XG-BAD is now failed before the
+  CSV is written, so XG-G1/XG-G2 load and the header mapping above is a safety net only. The
+  book and assignment of a header failed before load now quote it under its own tag
+  (`[POST_VALIDATION] Rejected with document: asset <num>: ...`) instead of being left FAILED
+  with no text. Run 378 (prefix 93421, scenario RegressionTest261009113635): G1/G2 and
+  XG-G1/XG-G2 LOADED on all three grains, BAD1 and XG-BAD FAILED with their real errors. The
+  US FIN SVCS batch (XD rows, 8 rows) ends UNACCOUNTED: its assignment is failed by the new
+  validator and the rest of the asset is still sent (backlog #745, not this change).
+
 ## Known Issues
 - ~~**APPROVAL_TYPE_CODE missing from FBDI generator.**~~ **FIXED 2026-04-03.** APPROVAL_TYPE_CODE is a CTL expression column (`nvl2(:BATCH_NAME, 'ORA_FA_MASS', NULL)`) — it doesn't consume a CSV field. Fix: populate BATCH_NAME (CSV pos 419) with 'DMT' so the expression evaluates to 'ORA_FA_MASS'.
 - ~~**PRORATE_CONVENTION_CODE may be invalid.**~~ **FIXED 2026-04-03.** Valid value is `MID-MONTH` (hyphen), not `MID MONTH` (space). All test scripts updated. Valid values from FA_CONVENTION_TYPES: CAL MONTH, CAL DAILY, CAL NMB, FOL-MTH, HALF YEAR, MID-MONTH, plus others.
