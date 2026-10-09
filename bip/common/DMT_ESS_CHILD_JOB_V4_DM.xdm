@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ess_child_job" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- V4 (2026-10-09, backlog #653): the OWN import of the load first. A
+-- loadAndImportData load chains its import job in the same ESS execution
+-- context: the import is either a child of the load (absparentid = load,
+-- e.g. Assets PrepareMassAdditions) or a top-level job submitted by the
+-- load carrying the ECID of the load (every other object; proven on run 347,
+-- e.g. Suppliers load 10084902 -> ImportSuppliers 10084914, same ECID).
+-- Such a row is returned with MATCH_TYPE = 'OWN' and needs no batch or
+-- argument match: it is this load's import by construction. Only when the
+-- load has no own import of the definition is the V3 search used (the
+-- batch / second-argument filters, else the nearest later job), returned
+-- with MATCH_TYPE = 'NEAREST' so the caller can log the fallback.
+-- V3 (2026-10-08, backlog #501): optional SECOND submitted-argument match
+-- (:P_MATCH2_ARG_POS / :P_MATCH2_VALUE). V2 (2026-10-07): batch id on any
+-- argument (:P_BATCH_ARG_POS). V4 is deployed alongside V1-V3 (never
+-- overwritten).
+SELECT q.requestid, q.match_type
+FROM (
+    SELECT r.requestid,
+           CASE WHEN r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID)
+                  OR r.ecid = (SELECT l.ecid
+                               FROM   fusion.ess_request_history l
+                               WHERE  l.requestid = TO_NUMBER(:P_LOAD_ESS_ID))
+                THEN 'OWN' ELSE 'NEAREST' END AS match_type,
+           pb.value AS batch_value,
+           pm.value AS match2_value
+    FROM   fusion.ess_request_history r
+    LEFT JOIN fusion.ess_request_property pb
+           ON pb.requestid = r.requestid
+          AND pb.name = 'submit.argument' || NVL(:P_BATCH_ARG_POS, '1')
+    LEFT JOIN fusion.ess_request_property pm
+           ON pm.requestid = r.requestid
+          AND pm.name = 'submit.argument' || :P_MATCH2_ARG_POS
+    WHERE  r.definition LIKE '%' || :P_JOB_DEF || '%'
+    AND    r.requestid  > TO_NUMBER(:P_LOAD_ESS_ID)
+) q
+WHERE  q.match_type = 'OWN'
+OR     (    (:P_BATCH_ID IS NULL OR q.batch_value = :P_BATCH_ID)
+        AND (:P_MATCH2_VALUE IS NULL OR q.match2_value = :P_MATCH2_VALUE))
+ORDER BY CASE WHEN q.match_type = 'OWN' THEN 0 ELSE 1 END,
+         q.requestid ASC
+FETCH FIRST 1 ROW ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ess_child_job">
+          <element name="REQUESTID" value="REQUESTID" dataType="xsd:string" tagName="REQUESTID"/>
+          <element name="MATCH_TYPE" value="MATCH_TYPE" dataType="xsd:string" tagName="MATCH_TYPE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_LOAD_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_JOB_DEF" dataType="character" rowPlacement="2"
+               labelID="P_JOB_DEF" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="3"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ARG_POS" dataType="character" rowPlacement="4"
+               labelID="P_BATCH_ARG_POS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_MATCH2_ARG_POS" dataType="character" rowPlacement="5"
+               labelID="P_MATCH2_ARG_POS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_MATCH2_VALUE" dataType="character" rowPlacement="6"
+               labelID="P_MATCH2_VALUE" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

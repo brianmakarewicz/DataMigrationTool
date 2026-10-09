@@ -954,23 +954,6 @@
     END bip_http;
 
     -- --------------------------------------------------------
-    -- Private: extract text value between XML tags in a CLOB.
-    -- --------------------------------------------------------
-    FUNCTION clob_tag_val (p_clob IN CLOB, p_tag IN VARCHAR2) RETURN VARCHAR2 IS
-        l_open  VARCHAR2(200) := '<' || p_tag || '>';
-        l_close VARCHAR2(200) := '</' || p_tag || '>';
-        l_s     INTEGER;
-        l_e     INTEGER;
-    BEGIN
-        l_s := DBMS_LOB.INSTR(p_clob, l_open);
-        IF l_s = 0 THEN RETURN NULL; END IF;
-        l_s := l_s + LENGTH(l_open);
-        l_e := DBMS_LOB.INSTR(p_clob, l_close, l_s);
-        IF l_e = 0 THEN RETURN NULL; END IF;
-        RETURN DBMS_LOB.SUBSTR(p_clob, l_e - l_s, l_s);
-    END clob_tag_val;
-
-    -- --------------------------------------------------------
     -- GET_IMPORT_ESS_ID
     -- After loadAndImportData completes, finds the chained Import ESS
     -- job by querying ess_request_history for a job whose definition
@@ -1005,11 +988,25 @@
     --     transaction source in different business units, loading at the same
     --     time, can never take each other's import id. NULL = no second match.
     --
+    -- Backlog #653 -- the load's OWN import is used first; the search above is
+    -- only the fallback, and every use of the fallback is logged as a WARN:
+    --   1. Captured child: a job of the import definition that the load's own
+    --      job hierarchy (DMT_ESS_JOB_TBL, captured by POLL_ESS_JOB when the
+    --      load ended) lists as a child of the load (Assets PrepareMassAdditions).
+    --   2. Chained import: the report row with MATCH_TYPE = 'OWN' -- a job of
+    --      the import definition that is a child of the load or carries the
+    --      load's ESS execution context id (ECID). loadAndImportData submits its
+    --      import that way for every object (run 347: all 22 recorded imports
+    --      share their load's ECID). It needs no batch or argument match.
+    --   3. Fallback: the batch / argument / nearest-later match (MATCH_TYPE =
+    --      'NEAREST'), accepted only after C_OWN_TRIES attempts found no own
+    --      import, and logged as a WARN naming the job it took.
+    --
     -- Uses the pre-deployed static BIP report (AD#16 — no ephemeral BIP):
-    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V3_RPT.xdo (V3 adds
-    --   P_MATCH2_ARG_POS / P_MATCH2_VALUE, V2 added P_BATCH_ARG_POS; deployed
-    --   alongside V1 and V2, which are never overwritten). With the V3
-    --   parameters empty it returns exactly what V2 returns.
+    --   /Custom/DMT2/common/DMT_ESS_CHILD_JOB_V4_RPT.xdo (V4 adds the OWN
+    --   match and the MATCH_TYPE column; V3 added P_MATCH2_ARG_POS /
+    --   P_MATCH2_VALUE, V2 P_BATCH_ARG_POS; deployed alongside V1-V3, which are
+    --   never overwritten). Its NEAREST rows are exactly what V3 returns.
     -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF, P_BATCH_ID,
     -- P_BATCH_ARG_POS, P_MATCH2_ARG_POS and P_MATCH2_VALUE bound parameters.
     -- find_import_ess_id is the private worker; the public GET_IMPORT_ESS_ID
@@ -1028,9 +1025,10 @@
         p_match2_value   IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V3_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V4_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
+        C_OWN_TRIES   CONSTANT INTEGER       := 4;   -- attempts that wait for the load's own import
 
         l_base_url    VARCHAR2(500);
         l_bip_user    VARCHAR2(500);
@@ -1038,8 +1036,8 @@
         l_url         VARCHAR2(500);
         l_env         CLOB;
         l_resp        CLOB;
-        l_b64         VARCHAR2(32767);
-        l_xml         VARCHAR2(4000);
+        l_rpt_xml     XMLTYPE;
+        l_match_type  VARCHAR2(10);
         l_import_id   VARCHAR2(100);
         l_attempt     INTEGER := 0;
         l_log_proc    VARCHAR2(100);
@@ -1071,6 +1069,23 @@
         -- ERP options may use comma or semicolon as separator between package path and job definition.
         -- e.g. '.../supplierImport,ImportSuppliers' or '.../reqImport;RequisitionImportJob'
         l_job_def  := SUBSTR(l_job_name, GREATEST(INSTR(l_job_name, ','), INSTR(l_job_name, ';')) + 1);
+
+        -- 1. Captured child (backlog #653): the load's own job hierarchy, captured
+        -- by POLL_ESS_JOB when the load ended, already names its import child.
+        SELECT TO_CHAR(MAX(j.REQUEST_ID))
+        INTO   l_import_id
+        FROM   DMT_ESS_JOB_TBL j
+        WHERE  j.PARENT_REQUEST_ID = TO_NUMBER(p_load_ess_id)
+        AND    j.JOB_SHORT_NAME    = l_job_def
+        AND    (p_run_id IS NULL OR j.RUN_ID = p_run_id);
+        IF l_import_id IS NOT NULL THEN
+            DMT_UTIL_PKG.LOG(p_run_id,
+                'GET_IMPORT_ESS_ID: Import ESS job ' || l_import_id || ' taken from the '
+                || 'captured child jobs of load ' || p_load_ess_id || ' (' || l_job_def
+                || '). CEMLI: ' || p_cemli_code,
+                'INFO', C_PKG, l_log_proc);
+            RETURN l_import_id;
+        END IF;
 
         DMT_UTIL_PKG.LOG(p_run_id,
             'GET_IMPORT_ESS_ID start. Load ESS ID: ' || p_load_ess_id ||
@@ -1144,21 +1159,42 @@
 
             DBMS_LOB.FREETEMPORARY(l_env);
 
-            -- Decode reportBytes -> XML -> extract REQUESTID
-            l_b64 := clob_tag_val(l_resp, 'reportBytes');
-            IF l_b64 IS NOT NULL THEN
-                l_xml       := UTL_RAW.CAST_TO_VARCHAR2(
-                                   UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(l_b64)));
-                l_import_id := REGEXP_SUBSTR(l_xml, '<REQUESTID>(\d+)</REQUESTID>', 1, 1, NULL, 1);
+            -- Decode reportBytes -> XML (shared any-size extractor) and read the
+            -- one row with XMLTABLE: REQUESTID and its MATCH_TYPE (OWN / NEAREST).
+            l_rpt_xml    := DMT_UTIL_PKG.BIP_REPORT_XML(l_resp);
+            l_match_type := NULL;
+            IF l_rpt_xml IS NOT NULL THEN
+                SELECT MAX(x.requestid), MAX(x.match_type)
+                INTO   l_import_id, l_match_type
+                FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_rpt_xml
+                           COLUMNS requestid  VARCHAR2(30) PATH 'REQUESTID',
+                                   match_type VARCHAR2(10) PATH 'MATCH_TYPE') x;
             END IF;
 
-            IF l_import_id IS NOT NULL THEN
+            -- 2. Chained import: the load's own import (child or same ECID).
+            IF l_import_id IS NOT NULL AND l_match_type = 'OWN' THEN
                 DMT_UTIL_PKG.LOG(p_run_id,
                     'GET_IMPORT_ESS_ID: Found Import ESS job ' || l_import_id ||
-                    ' on attempt ' || l_attempt || '. CEMLI: ' || p_cemli_code,
+                    ' chained by load ' || p_load_ess_id || ' (its own import) on attempt '
+                    || l_attempt || '. CEMLI: ' || p_cemli_code,
                     'INFO', C_PKG, l_log_proc);
                 RETURN l_import_id;
             END IF;
+
+            -- 3. Fallback, only once the load's own import has had C_OWN_TRIES
+            -- attempts to appear. Logged as a WARN so every use is visible.
+            IF l_import_id IS NOT NULL AND l_attempt >= C_OWN_TRIES THEN
+                DMT_UTIL_PKG.LOG(p_run_id,
+                    'GET_IMPORT_ESS_ID: FALLBACK -- load ' || p_load_ess_id || ' has no import '
+                    || 'of its own (' || l_job_def || ') after ' || l_attempt || ' attempts; '
+                    || 'taking ' || l_import_id || ' by the '
+                    || CASE WHEN p_batch_id IS NOT NULL OR p_match2_value IS NOT NULL
+                            THEN 'batch / argument match' ELSE 'nearest-later search' END
+                    || '. CEMLI: ' || p_cemli_code,
+                    DMT_UTIL_PKG.C_LOG_WARN, C_PKG, l_log_proc);
+                RETURN l_import_id;
+            END IF;
+            l_import_id := NULL;
 
             IF l_attempt >= C_MAX_TRIES THEN
                 RAISE_APPLICATION_ERROR(-20050,
@@ -2419,6 +2455,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_POZ_SUP_TRANSFORM_PKG.TRANSFORM_SUPPLIERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SUPPLIERS_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -2460,6 +2498,8 @@
         COMMIT;
 
         DMT_POZ_SUP_ADDR_TRANSFORM_PKG.TRANSFORM_ADDRESSES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_ADDRESSES_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_ADDR_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
@@ -2498,6 +2538,8 @@
         COMMIT;
 
         DMT_POZ_SUP_SITE_TRANSFORM_PKG.TRANSFORM_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITES_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
@@ -2536,6 +2578,8 @@
         COMMIT;
 
         DMT_POZ_SUP_SITE_ASSN_TRANSFORM_PKG.TRANSFORM_SITE_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_SITE_ASSIGNMENTS_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_SITE_ASSN_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
@@ -2574,6 +2618,8 @@
         COMMIT;
 
         DMT_POZ_SUP_CONT_TRANSFORM_PKG.TRANSFORM_CONTACTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_POZ_SUP_VALIDATOR_PKG.VALIDATE_CONTACTS_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         DMT_POZ_SUP_CONT_FBDI_GEN_PKG.GENERATE_FBDI(p_run_id, l_zip, l_filename);
@@ -2629,6 +2675,8 @@
         DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_PO_TRANSFORM_PKG.TRANSFORM_LINE_LOCS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_PO_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_doc_type_filter => 'Purchase Order', p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- ERP options + credentials for the load submissions.
@@ -2974,6 +3022,8 @@
         DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCOUNTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_CUST_TRANSFORM_PKG.TRANSFORM_ACCT_SITE_USES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_CUST_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- ERP options + credentials for the load submissions.
@@ -3173,6 +3223,8 @@
             -- Phase 2: transform STG -> TFM (lines + distributions).
             DMT_AR_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_AR_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+            DMT_AR_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
 
             -- Phase 2b (backlog #500): post-transform validation. A line with no
             -- business unit or transaction source belongs to no load group (both are
@@ -3396,6 +3448,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_BILLING_EVENT_TRANSFORM_PKG.TRANSFORM_EVENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_BILLING_EVENT_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -3477,6 +3531,8 @@
             DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_PRE_TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             COMMIT;
             DMT_EXPENDITURE_TRANSFORM_PKG.TRANSFORM_EXPENDITURES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+            DMT_EXPENDITURE_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
             COMMIT;
         END IF;
 
@@ -3800,6 +3856,8 @@
         DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_PRJ_TASK_BURDEN(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_REFERENCES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_GRANTS_TRANSFORM_PKG.TRANSFORM_TERMS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_GRANTS_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -3904,6 +3962,8 @@
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_REQ_TRANSFORM_PKG.TRANSFORM_DISTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+            DMT_REQ_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
             COMMIT;
         END IF;
 
@@ -4142,6 +4202,8 @@
             -- Transform bundled categories before the Items FBDI generator picks them up
             -- (DMT_EGP_ITEM_FBDI_GEN_PKG reads DMT_EGP_ITEM_CAT_TFM_TBL for the bundled CSV).
             DMT_EGP_ITEM_CAT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+            DMT_EGP_ITEM_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
             COMMIT;
         END IF;
 
@@ -4371,6 +4433,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_MISC_RECEIPT_TRANSFORM_PKG.TRANSFORM(p_run_id, p_reprocess_errors => (p_run_mode = 'FAILED'), p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_MISC_RECEIPT_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -4598,6 +4662,8 @@
         DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TASKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TEAM_MEMBERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_PROJECT_TRANSFORM_PKG.TRANSFORM_TXN_CONTROLS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_PROJECT_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -4659,6 +4725,8 @@
         -- Phase 2: transform STG -> TFM (headers + lines).
         DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_PO_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         get_erp_options(
@@ -4777,6 +4845,8 @@
 
         -- Phase 2: transform STG -> TFM (headers only).
         DMT_PO_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_doc_type_filter => C_STYLE, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_PO_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         get_erp_options(
@@ -4905,6 +4975,8 @@
         -- Phase 2: transform STG -> TFM (headers + lines).
         DMT_AP_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
         DMT_AP_TRANSFORM_PKG.TRANSFORM_LINES(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_AP_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- ERP options and the central Fusion user for the load submissions
@@ -5983,6 +6055,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_GL_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_GL_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- ERP options for the load submissions (GLBalances uses the default Fusion
@@ -6186,6 +6260,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_GL_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_GL_BUDGET_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- ERP options (interface details id / import job name / UCM account).
@@ -6412,6 +6488,8 @@
 
         -- Phase 2: transform STG -> TFM.
         DMT_PRJ_BUDGET_TRANSFORM_PKG.TRANSFORM(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+        -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+        DMT_PRJ_BUDGET_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
         COMMIT;
 
         -- Phase 3: generate the FBDI zip.
@@ -6479,6 +6557,8 @@
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_HEADERS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_ASSIGNMENTS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
             DMT_FA_ASSET_TRANSFORM_PKG.TRANSFORM_BOOKS(p_run_id, p_scenario_id => v_scenario_id, p_run_mode => p_run_mode);
+            -- Backlog #651: fail rows whose CSV value holds a line break (CR/LF).
+            DMT_FA_ASSET_VALIDATOR_PKG.VALIDATE_LINE_BREAKS(p_run_id => p_run_id);
             COMMIT;
         END IF;
 

@@ -137,5 +137,64 @@
             RAISE;
     END VALIDATE_POST_TRANSFORM;
 
+    -- ============================================================
+    -- VALIDATE_LINE_BREAKS -- STANDARD line-break check (backlog #651; design
+    -- section 5, [POST_VALIDATION]). Runs after the transform and before the
+    -- FBDI generator: every STAGED TFM row of this run holding a carriage return
+    -- or line feed in any CSV value is marked FAILED with a message naming the
+    -- field(s) (DMT_UTIL_PKG.LINE_BREAK_ERROR), so it is never written to a CSV
+    -- and never silently stripped. One UPDATE block per TFM table the generator
+    -- reads, byte-identical except the table name (EDIT-TABLE). Does NOT commit --
+    -- the caller owns the transaction. Checked by scripts/check_line_break_validation.py.
+    -- ============================================================
+    PROCEDURE VALIDATE_LINE_BREAKS (p_run_id IN NUMBER) IS
+        l_failed NUMBER := 0;
+    BEGIN
+        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
+        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
+        UPDATE DMT_EGP_ITEM_TFM_TBL t
+        -- <<END EDIT-TABLE -- everything below is FIXED>>
+        SET    t.TFM_STATUS        = 'FAILED',
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                         p_existing  => t.ERROR_TEXT,
+                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'STAGED'
+        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        -- <<EDIT-TABLE -- one TFM table the generator reads; repeat this whole block
+        --   (EDIT-TABLE through the ROWCOUNT line) once per table>>
+        UPDATE DMT_EGP_ITEM_CAT_TFM_TBL t
+        -- <<END EDIT-TABLE -- everything below is FIXED>>
+        SET    t.TFM_STATUS        = 'FAILED',
+               t.ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(
+                                         p_existing  => t.ERROR_TEXT,
+                                         p_new_error => DMT_UTIL_PKG.LINE_BREAK_ERROR(
+                                                            p_row_json => JSON_OBJECT(t.* RETURNING CLOB))),
+               t.LAST_UPDATED_DATE = SYSDATE
+        WHERE  t.RUN_ID     = p_run_id
+        AND    t.TFM_STATUS = 'STAGED'
+        AND    DMT_UTIL_PKG.LINE_BREAK_ERROR(p_row_json => JSON_OBJECT(t.* RETURNING CLOB)) IS NOT NULL;
+        l_failed := l_failed + SQL%ROWCOUNT;
+
+        IF l_failed > 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => 'VALIDATE_LINE_BREAKS: ' || l_failed ||
+                               ' row(s) failed -- a value holds a line break (CR/LF).',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => 'VALIDATE_LINE_BREAKS');
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, 'VALIDATE_LINE_BREAKS failed.',
+                SQLERRM, C_PKG, 'VALIDATE_LINE_BREAKS');
+            RAISE;
+    END VALIDATE_LINE_BREAKS;
+
 END DMT_EGP_ITEM_VALIDATOR_PKG;
 /

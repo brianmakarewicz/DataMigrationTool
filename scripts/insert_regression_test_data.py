@@ -422,6 +422,23 @@ def main():
         )
     """, label="BAD Supplier: invalid ORGANIZATION_TYPE [BAD-LKP]")
 
+    # BAD (backlog #651): ALIAS holds a line break. A line break splits the FBDI
+    # CSV record, so the validator fails the row before the CSV is written with
+    # "[POST_VALIDATION] Field ALIAS contains a line break ..."; it never reaches
+    # Fusion. No child rows name this supplier.
+    run_sql(cur, """
+        INSERT INTO DMT_POZ_SUPPLIERS_STG_TBL (
+            IMPORT_ACTION, VENDOR_NAME, SEGMENT1, ALIAS,
+            ORGANIZATION_TYPE_LOOKUP_CODE, BUSINESS_RELATIONSHIP,
+            VENDOR_TYPE_LOOKUP_CODE, SOURCE_ID
+        ) VALUES (
+            'CREATE', 'RT Supplier BAD-LineBreak', 'RT-SUP-BADLB', :alias,
+            'CORPORATION', 'SPEND_AUTHORIZED',
+            'SUPPLIER', 'RT-SUP-BADLB'
+        )
+    """, {"alias": "RT line\nbreak"},
+    label="BAD Supplier: line break in ALIAS [BAD-LB]")
+
     # Pre-existing Fusion supplier — exists in Fusion, not migrated by DMT.
     # Marked LOADED so BPA/CPA pre-validation passes.
     run_sql(cur, """

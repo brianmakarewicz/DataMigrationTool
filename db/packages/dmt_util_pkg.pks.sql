@@ -286,6 +286,21 @@ AS
         p_source_msg   IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC;
 
+    -- LINE_BREAK_ERROR (backlog #651) -- the one line-break check every ERP FBDI
+    -- validator uses before its CSVs are written. A value holding a carriage
+    -- return or line feed splits its CSV record and SQL*Loader rejects or
+    -- misaligns the row, so such a row is failed with a clear message instead
+    -- of being written (never silently stripped). Pure value converter
+    -- (section 7 allow-list): no I/O, no side effects, usable inside set-based
+    -- SQL. p_row_json is one TFM row as JSON_OBJECT(t.* RETURNING CLOB), parsed
+    -- with JSON_OBJECT_T. ERROR_TEXT is not a CSV field and is skipped.
+    --   No string value holds CR or LF -> NULL.
+    --   Otherwise -> '[POST_VALIDATION] Field <F> contains a line break ...'
+    --                naming every such field (column order), max 4000 chars.
+    FUNCTION LINE_BREAK_ERROR (
+        p_row_json IN CLOB
+    ) RETURN VARCHAR2;
+
     -- --------------------------------------------------------
     -- FBDI utilities
     -- --------------------------------------------------------

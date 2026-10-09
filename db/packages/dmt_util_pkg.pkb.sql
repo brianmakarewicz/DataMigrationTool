@@ -665,6 +665,43 @@
     END FORMAT_DOCUMENT_ERROR;
 
     -- --------------------------------------------------------
+    -- LINE_BREAK_ERROR (backlog #651). See the spec.
+    -- --------------------------------------------------------
+    FUNCTION LINE_BREAK_ERROR (
+        p_row_json IN CLOB
+    ) RETURN VARCHAR2 IS
+        l_obj    JSON_OBJECT_T;
+        l_keys   JSON_KEY_LIST;
+        l_val    VARCHAR2(32767);
+        l_fields VARCHAR2(4000);
+        l_count  PLS_INTEGER := 0;
+    BEGIN
+        IF p_row_json IS NULL THEN
+            RETURN NULL;
+        END IF;
+        l_obj  := JSON_OBJECT_T.PARSE(p_row_json);
+        l_keys := l_obj.GET_KEYS;
+        FOR i IN 1 .. l_keys.COUNT LOOP
+            IF l_keys(i) <> 'ERROR_TEXT' AND l_obj.GET(l_keys(i)).IS_STRING THEN
+                l_val := l_obj.GET_STRING(l_keys(i));
+                IF INSTR(l_val, CHR(13)) > 0 OR INSTR(l_val, CHR(10)) > 0 THEN
+                    l_count  := l_count + 1;
+                    l_fields := SUBSTR(l_fields || CASE WHEN l_count > 1 THEN ', ' END
+                                       || l_keys(i), 1, 3000);
+                END IF;
+            END IF;
+        END LOOP;
+        IF l_count = 0 THEN
+            RETURN NULL;
+        END IF;
+        RETURN '[POST_VALIDATION] '
+               || CASE WHEN l_count = 1 THEN 'Field ' || l_fields || ' contains a line break'
+                       ELSE 'Fields ' || l_fields || ' contain line breaks' END
+               || ' (carriage return or line feed). FBDI CSV values cannot hold line breaks;'
+               || ' remove them from the source value and re-run. Row not sent to Fusion.';
+    END LINE_BREAK_ERROR;
+
+    -- --------------------------------------------------------
     -- CLOB_TO_BLOB
     -- Null-safe: returns an empty BLOB for NULL or zero-length input.
     -- --------------------------------------------------------
