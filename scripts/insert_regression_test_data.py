@@ -1800,6 +1800,33 @@ def main():
             'Active', 'USD', 'RT-PRJ-RTPRJ-XG1'
         )
     """, {"org": PRJ_ORG}, label="XG Project: valid project, invalid team member child [XG-UP]")
+
+    # Own-row probes (backlog #655): valid projects whose ONLY defect is one
+    # task (RTPRJ-XG2: task finish date after the project finish date) or one
+    # transaction control (RTPRJ-XG3: an expenditure type that does not exist).
+    # They prove the import-report rows LIST_TASK_ERROR / LIST_TXN_CTRL_ERROR
+    # land on the task / control itself, and the rest of the project quotes it.
+    for pname, pnum, pdesc in [
+        ("RT Project XG-2", "RTPRJ-XG2", "Own-row probe: only its task is invalid"),
+        ("RT Project XG-3", "RTPRJ-XG3", "Own-row probe: only its transaction control is invalid"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PJF_PROJECTS_STG_TBL (
+                PROJECT_NAME, PROJECT_NUMBER,
+                SOURCE_TEMPLATE_NUMBER,
+                ORGANIZATION_NAME, DESCRIPTION,
+                PROJECT_START_DATE, PROJECT_FINISH_DATE,
+                PROJECT_STATUS_NAME, PROJECT_CURRENCY_CODE, SOURCE_ID
+            ) VALUES (
+                :pname, :pnum,
+                'PRGUS Sponsored',
+                :org, :pdesc,
+                DATE '2025-01-01', DATE '2025-12-31',
+                'Active', 'USD', :src
+            )
+        """, {"pname": pname, "pnum": pnum, "org": PRJ_ORG,
+              "pdesc": pdesc, "src": f"RT-PRJ-{pnum}"},
+        label=f"XG Project: {pnum} own-row probe [XG-OWN]")
     tag_scenario(cur, "DMT_PJF_PROJECTS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1878,6 +1905,31 @@ def main():
             'Y', 'Y', 'RTPRJ-XG1.1', 'RT-TSK-RTPRJ-XG1.1'
         )
     """, label="XG Task: valid task of RTPRJ-XG1 [XG-UP]")
+
+    # Own-row probes (backlog #655). RTPRJ-XG2's only defect: its task ends
+    # 2026-12-31, after the project finish date 2025-12-31. RTPRJ-XG3's task is valid.
+    for pname, pnum, tname, tnum, tend, lbl in [
+        ("RT Project XG-2", "RTPRJ-XG2", "RT XG2 Late Task", "RTPRJ-XG2.1",
+         "2026-12-31", "BAD Task: finish date after project finish on RTPRJ-XG2 [XG-OWN]"),
+        ("RT Project XG-3", "RTPRJ-XG3", "RT XG3 Design Phase", "RTPRJ-XG3.1",
+         "2025-12-31", "XG Task: valid task of RTPRJ-XG3 [XG-OWN]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PJF_TASKS_STG_TBL (
+                PROJECT_NAME, PROJECT_NUMBER,
+                TASK_NAME, TASK_NUMBER,
+                PLANNING_START_DATE, PLANNING_END_DATE,
+                CHARGEABLE_FLAG, BILLABLE_FLAG,
+                SOURCE_TASK_REFERENCE, SOURCE_ID
+            ) VALUES (
+                :pname, :pnum,
+                :tname, :tnum,
+                DATE '2025-01-01', TO_DATE(:tend, 'YYYY-MM-DD'),
+                'Y', 'Y', :tnum, :src
+            )
+        """, {"pname": pname, "pnum": pnum, "tname": tname, "tnum": tnum,
+              "tend": tend, "src": f"RT-TSK-{tnum}"},
+        label=lbl)
     tag_scenario(cur, "DMT_PJF_TASKS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1931,6 +1983,22 @@ def main():
             'Y', 'RT-TM-RTPRJ-XG1-NOBODY'
         )
     """, label="BAD Team Member: non-existent person on RTPRJ-XG1 [XG-UP]")
+
+    # Own-row probes (backlog #655): valid project managers on RTPRJ-XG2 / XG3.
+    for pname, src in [("RT Project XG-2", "RT-TM-RTPRJ-XG2-ACOOK"),
+                       ("RT Project XG-3", "RT-TM-RTPRJ-XG3-ACOOK")]:
+        run_sql(cur, """
+            INSERT INTO DMT_PJF_TEAM_MEMBERS_STG_TBL (
+                PROJECT_NAME, TEAM_MEMBER_NAME, TEAM_MEMBER_EMAIL,
+                PROJECT_ROLE_NAME, START_DATE_ACTIVE,
+                TRACK_TIME_FLAG, SOURCE_ID
+            ) VALUES (
+                :pname, 'Alan Cook', 'alan.cook_esew-dev28@oraclepdemos.com',
+                'Project Manager', DATE '2025-01-01',
+                'Y', :src
+            )
+        """, {"pname": pname, "src": src},
+        label=f"XG Team Member: Alan Cook on {pname} [XG-OWN]")
     tag_scenario(cur, "DMT_PJF_TEAM_MEMBERS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1982,6 +2050,28 @@ def main():
             DATE '2025-01-01', 'RT-TXC-RTPRJ-XG1'
         )
     """, label="XG Txn Control: valid control of RTPRJ-XG1 [XG-UP]")
+
+    # Own-row probes (backlog #655). RTPRJ-XG2's control is valid; RTPRJ-XG3's
+    # only defect is its control's expenditure type, which does not exist.
+    for pname, pnum, etype, lbl in [
+        ("RT Project XG-2", "RTPRJ-XG2", "Professional Services",
+         "XG Txn Control: valid control of RTPRJ-XG2 [XG-OWN]"),
+        ("RT Project XG-3", "RTPRJ-XG3", "RT Bogus Expenditure Type",
+         "BAD Txn Control: non-existent expenditure type on RTPRJ-XG3 [XG-OWN]"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PJC_TXN_CONTROLS_STG_TBL (
+                TXN_CTRL_REFERENCE, PROJECT_NAME, PROJECT_NUMBER,
+                EXPENDITURE_TYPE, CHARGEABLE_FLAG,
+                START_DATE_ACTIVE, SOURCE_ID
+            ) VALUES (
+                :ref, :pname, :pnum,
+                :etype, 'Y',
+                DATE '2025-01-01', :src
+            )
+        """, {"ref": f"RT-TXC-{pnum}", "pname": pname, "pnum": pnum,
+              "etype": etype, "src": f"RT-TXC-{pnum}"},
+        label=lbl)
     tag_scenario(cur, "DMT_PJC_TXN_CONTROLS_STG_TBL", scenario_id)
 
     # ====================================================================
