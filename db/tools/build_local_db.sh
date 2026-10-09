@@ -10,6 +10,16 @@
 # Override via env: ORA_PWD (SYSTEM), DMT_LOCAL_PWD (DMT_OWNER),
 # DMT_LOCAL_PORT (host port for the listener; use when another container
 # already holds 1521, e.g. rt-oracle-free).
+# SQLCL (path to the sql binary) and LOG_DIR (where the install logs go,
+# default /tmp) can be overridden too.
+#
+# APEX static images (backlog #159, owner-approved 2026-10-09): every build,
+# --fresh included, restores the console's /i/ images and repairs the web tier
+# automatically (db/tools/provision_apex_images.sh): once right after the
+# container step, so a failure later in the DB install can never skip it, and
+# once more at the end as the strict live check. A rebuild therefore never
+# leaves the console login broken. Proven offline with mocked docker/curl/sqlcl:
+# test/unit/test_apex_images_rebuild.sh.
 # ============================================================================
 set -e
 ORA_PWD="${ORA_PWD:-OraLocal#2026}"
@@ -19,7 +29,8 @@ DMT_LOCAL_PORT="${DMT_LOCAL_PORT:-1523}"
 CONTAINER="${CONTAINER:-dmt2-local}"
 DATA_DIR="${DATA_DIR:-}"          # when set, bind-mount container oradata here
 IMG="${IMG:-container-registry.oracle.com/database/free:latest}"
-SQLCL=/c/Users/Monroe/tools/sqlcl/bin/sql
+SQLCL="${SQLCL:-/c/Users/Monroe/tools/sqlcl/bin/sql}"
+LOG_DIR="${LOG_DIR:-/tmp}"
 export JAVA_HOME=/c/Users/Monroe/tools/jdk-21.0.11+10
 export PATH="$JAVA_HOME/bin:$PATH"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,6 +49,14 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}\$"; then
       ${DATA_DIR:+-v "$DATA_DIR":/opt/oracle/oradata} "$IMG"
   fi
 fi
+
+# Backlog #159: restore the APEX /i/ images (and repair the web tier) FIRST.
+# It never touches the DB, so it runs before the long install: a later failure
+# under `set -e` cannot leave the console login broken. A problem here only
+# warns; the strict check runs again at the end of the build.
+echo "Restoring APEX /i/ static images before the DB install (backlog #159) ..."
+sh "$DIR/tools/provision_apex_images.sh" \
+  || echo "WARNING: APEX image restore reported a problem; it is re-checked at the end of the build." >&2
 
 echo "Waiting for database to be ready ..."
 i=0
@@ -97,8 +116,8 @@ echo "Startup reap trigger ENABLED and job_queue_processes=32 confirmed ($REAP_A
 echo "Running db_full/install.sql as DMT_OWNER ..."
 cd "$DIR"
 echo exit | "$SQLCL" dmt_owner/"$DMT_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1 @install.sql \
-  | tee /tmp/dmt2_install.log
-echo "Install log: /tmp/dmt2_install.log"
+  | tee "$LOG_DIR"/dmt2_install.log
+echo "Install log: $LOG_DIR/dmt2_install.log"
 
 echo "Granting DMT_OWNER objects to DMT_LOOKUP (live-ATP equivalent) ..."
 echo "grant select on DMT_CONFIG_TBL to DMT_LOOKUP;
@@ -114,13 +133,13 @@ exit" | "$SQLCL" -S dmt_lookup/"$LKP_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FR
 
 echo "Running db_full/install_dmt_lookup.sql as DMT_LOOKUP ..."
 echo exit | "$SQLCL" dmt_lookup/"$LKP_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1 @install_dmt_lookup.sql \
-  | tee /tmp/dmt2_lookup_install.log
+  | tee "$LOG_DIR"/dmt2_lookup_install.log
 
 echo "Recompiling DMT_OWNER now that DMT_LOOKUP exists ..."
 echo "exec dbms_utility.compile_schema(schema => 'DMT_OWNER', compile_all => false)
 select count(*) as invalid_count from user_objects where status = 'INVALID';
 exit" | "$SQLCL" -S dmt_owner/"$DMT_LOCAL_PWD"@//localhost:"$DMT_LOCAL_PORT"/FREEPDB1
-echo "Logs: /tmp/dmt2_install.log, /tmp/dmt2_lookup_install.log"
+echo "Logs: $LOG_DIR/dmt2_install.log, $LOG_DIR/dmt2_lookup_install.log"
 
 # Backlog #159: re-provision the APEX static image set the dmt2-ords web tier
 # serves at "/i/". Those ~29k 26.1 image files live on the apex/installer/apex
@@ -131,5 +150,5 @@ echo "Logs: /tmp/dmt2_install.log, /tmp/dmt2_lookup_install.log"
 # version-mismatched. Idempotent + version-checked — a no-op once the right
 # images are already in place; only warns (never fails the build) when no image
 # source is configured. Never touches the DB.
-echo "Ensuring APEX /i/ static images are present (backlog #159) ..."
+echo "Final check: APEX /i/ static images present and served (backlog #159) ..."
 sh "$DIR/tools/provision_apex_images.sh"

@@ -17,9 +17,18 @@ Enforces the regression-data rules (owner decision 2026-09-18):
     second seed to the existing scenario (scenario 601 held two seeds after two
     agents minted RegressionTest2610081849 in the same minute). Names carry
     seconds for the same reason.
+  * REGISTER FIRST, THEN INSERT (owner decision 2026-10-09, backlog #652). The
+    DMT_SCENARIO_TBL row is created and committed, and the scenario is recorded in
+    the state file under "pending_scenarios" (status REGISTERED), BEFORE a single
+    record is inserted. A connection that drops after the insert can therefore
+    never leave an unregistered scenario: the name, id, seed hash and the flags it
+    was minted with are already on disk. Finish such a scenario, without
+    re-inserting, with --resume NAME (duplicate check, then the pointer update).
   * After the insert it VERIFIES there are zero duplicate rows in the new
     scenario. Any duplicate is a hard failure and the current-scenario pointer is
-    NOT advanced.
+    NOT advanced (the pending entry is kept with status REJECTED_DUPLICATES; a
+    failed insert leaves status INSERT_FAILED). Only a verified scenario leaves
+    "pending_scenarios" and moves the pointer (or joins "minted_scenarios").
 
 The current scenario + the seed hash live in git (scripts/regression_scenario.json)
 - no database metadata is updated, nothing existing is touched.
@@ -42,6 +51,9 @@ Usage:
   python scripts/deploy_scenario.py --target atp    # deploy to ATP (gold)
   python scripts/deploy_scenario.py --check-only     # just report current scenario / drift
   python scripts/deploy_scenario.py --keep-pointer  # per-object scenario; pointer unchanged
+  python scripts/deploy_scenario.py --resume RegressionTestYYMMDDHHMMSS
+                                                    # finish a registered scenario whose
+                                                    # run stopped after the insert
 """
 import argparse, copy, hashlib, json, os, re, subprocess, sys
 from datetime import datetime
@@ -49,6 +61,7 @@ from pathlib import Path
 import oracledb
 
 REPO   = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
 WS     = Path.home() / "workspace"
 SEED   = REPO / "scripts" / "insert_regression_test_data.py"
 STATE  = REPO / "scripts" / "regression_scenario.json"
@@ -63,9 +76,12 @@ def conn_for(target):
     return f"DMT2_OWNER/{pw}@{cfg['dsn']}", kw
 
 def connect(target):
+    """Bounded, retried connect (scripts/dmt_db_connect.py): a dropped or stalled
+    connection is retried with backoff instead of killing the mint (#652)."""
+    from dmt_db_connect import connect_with_retry
     cs, kw = conn_for(target)
     u, p, dsn = re.match(r'^([^/]+)/(.+)@(?://)?(.+)$', cs).groups()
-    return oracledb.connect(user=u, password=p, dsn=dsn, **kw)
+    return connect_with_retry(call_timeout_ms=600_000, user=u, password=p, dsn=dsn, **kw)
 
 def seed_sha():
     return hashlib.sha256(SEED.read_bytes()).hexdigest()
@@ -110,7 +126,89 @@ def name_clash(state, name):
     """True when the state file already knows this scenario name."""
     return (name == state.get("current_scenario")
             or name in (state.get("expected_outcomes") or {})
-            or name in (state.get("minted_scenarios") or {}))
+            or name in (state.get("minted_scenarios") or {})
+            or name in (state.get("pending_scenarios") or {}))
+
+def save_state(state):
+    """Write the state file atomically (temp file + replace), so a crash mid-write
+    can never leave a truncated registry."""
+    tmp = STATE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    os.replace(tmp, STATE)
+
+def create_scenario_row(con, name):
+    """Create the DMT_SCENARIO_TBL row for a brand-new name through the same
+    procedure the insert script uses (DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO), COMMIT
+    it, and return its id. Called BEFORE any record is inserted. Refuses when the
+    scenario already holds staging rows (another creator won a race for the name)."""
+    import oracledb as _odb
+    cur = con.cursor()
+    sid_v = cur.var(_odb.NUMBER)
+    err_v = cur.var(_odb.NUMBER)
+    cur.execute("""BEGIN
+                     DMT_UTIL_PKG.GET_OR_CREATE_SCENARIO(
+                       p_scenario_name => :n, x_scenario_id => :sid, x_error_code => :err);
+                   END;""", n=name, sid=sid_v, err=err_v)
+    one = lambda v: v[0] if isinstance(v, list) else v
+    err = one(err_v.getvalue())
+    if err is None or int(err) != 0:
+        raise RuntimeError(f"GET_OR_CREATE_SCENARIO failed for {name} (x_error_code={err})")
+    con.commit()
+    sid = int(one(sid_v.getvalue()))
+    rows = stg_row_counts(con, sid)
+    if rows:
+        raise RuntimeError(f"scenario {name} (id {sid}) already holds staging rows "
+                           f"({sum(rows.values())}); another creator used this name")
+    return sid
+
+def stg_row_counts(con, scenario_id):
+    """{STG table: row count} for every staging table holding rows of the scenario."""
+    cur = con.cursor()
+    cur.execute("""SELECT table_name FROM user_tab_columns
+                   WHERE column_name='SCENARIO_ID' AND table_name LIKE '%\\_STG\\_TBL' ESCAPE '\\'
+                   GROUP BY table_name ORDER BY table_name""")
+    counts = {}
+    for (t,) in cur.fetchall():
+        cur.execute("SELECT COUNT(*) FROM " + t + " WHERE scenario_id=:s", [scenario_id])
+        n = cur.fetchone()[0]
+        if n:
+            counts[t] = n
+    return counts
+
+def register_pending(state, new_name, sid, sha, target, created,
+                     keep_pointer=False, expect_from=None):
+    """Step 1 of a mint (pure): record the just-created scenario under
+    "pending_scenarios" with status REGISTERED, BEFORE any record is inserted.
+    The pointer, minted_scenarios and expected_outcomes are untouched until the
+    scenario is verified (finalize_scenario). The flags it was minted with are
+    kept so --resume finishes it exactly as the original run would have."""
+    new_state = copy.deepcopy(state)
+    pend = new_state.setdefault("pending_scenarios", {})
+    pend[new_name] = {"scenario_id": sid, "seed_sha256": sha, "target": target,
+                      "created": created, "keep_pointer": bool(keep_pointer),
+                      "expect_from": expect_from, "status": "REGISTERED"}
+    return new_state
+
+def mark_pending(state, name, status):
+    """Pure: set a pending scenario's status (INSERT_FAILED, REJECTED_DUPLICATES).
+    The entry stays, so the name is never reused (write-once)."""
+    new_state = copy.deepcopy(state)
+    new_state["pending_scenarios"][name]["status"] = status
+    return new_state
+
+def finalize_scenario(state, name):
+    """Step 2 of a mint (pure), only after the insert and the duplicate check
+    passed: remove the pending entry and register the scenario for good, exactly
+    as before (pointer move, or minted_scenarios with --keep-pointer, plus the
+    expected-outcome carry-over). Returns (new_state, copied_from)."""
+    base = copy.deepcopy(state)
+    entry = base["pending_scenarios"].pop(name)
+    if not base["pending_scenarios"]:
+        base.pop("pending_scenarios")
+    return register_scenario(base, name, entry["scenario_id"], entry["seed_sha256"],
+                             entry["target"], entry["created"],
+                             keep_pointer=entry.get("keep_pointer", False),
+                             expect_from=entry.get("expect_from"))
 
 def scenario_exists(con, name):
     cur = con.cursor()
@@ -162,7 +260,21 @@ def main():
     ap.add_argument("--expect-from", metavar="SCENARIO",
                     help="copy expected outcomes from this scenario "
                          "(default: the current scenario)")
+    ap.add_argument("--resume", metavar="SCENARIO",
+                    help="finish a REGISTERED scenario whose run stopped after the insert "
+                         "(duplicate check + pointer update; nothing is re-inserted)")
     a = ap.parse_args()
+    if a.resume:
+        state = load_state()
+        entry = (state.get("pending_scenarios") or {}).get(a.resume)
+        if not entry:
+            sys.exit(f"--resume {a.resume}: not a pending scenario in {STATE.name}.")
+        if entry.get("status") != "REGISTERED":
+            sys.exit(f"--resume {a.resume}: status is {entry.get('status')}, not REGISTERED; "
+                     f"it is never reused (write-once). Mint a new scenario.")
+        print(f"Resuming {a.resume} (id {entry['scenario_id']}, target {entry['target']}); "
+              f"nothing will be inserted.")
+        return verify_and_finalize(state, a.resume, state.get("current_scenario"))
     if a.expect_from and a.expect_from not in (load_state().get("expected_outcomes") or {}):
         sys.exit(f"--expect-from {a.expect_from}: no expected outcomes recorded for it.")
 
@@ -191,7 +303,24 @@ def main():
                  f"(write-once). Wait a second and run again.")
     print(f"\nSeed changed (or --force). Deploying write-once scenario: {new_name}  -> {a.target}")
 
-    # 1) run the committed insert script into the fresh, named scenario
+    # 1) REGISTER FIRST (owner decision 2026-10-09): create + commit the
+    # DMT_SCENARIO_TBL row and record the scenario in the state file as
+    # REGISTERED before a single record is inserted.
+    con = connect(a.target)
+    try:
+        sid = create_scenario_row(con, new_name)
+    except RuntimeError as e:
+        sys.exit(f"Could not register {new_name}: {e}. Nothing inserted.")
+    finally:
+        con.close()
+    state = register_pending(state, new_name, sid, sha, a.target,
+                             datetime.now().strftime("%Y-%m-%d %H:%M"),
+                             keep_pointer=a.keep_pointer, expect_from=a.expect_from)
+    save_state(state)
+    print(f"Registered {new_name} (id {sid}) in DMT_SCENARIO_TBL and in "
+          f"{STATE.name} (pending) BEFORE inserting any record.")
+
+    # 2) run the committed insert script into the registered scenario
     cs, _ = conn_for(a.target)
     env = dict(os.environ, DMT2_CONN=cs, DMT_SCENARIO_NAME=new_name)
     if a.target == "atp":
@@ -199,43 +328,65 @@ def main():
         env["DMT2_WALLET"] = w["wallet_dir"]; env["DMT2_WALLET_PW"] = w["wallet_password"]
     rc = subprocess.run([sys.executable, str(SEED)], env=env).returncode
     if rc != 0:
-        sys.exit(f"Insert script failed (rc={rc}); scenario NOT registered.")
+        save_state(mark_pending(state, new_name, "INSERT_FAILED"))
+        sys.exit(f"Insert script failed (rc={rc}); {new_name} stays registered as "
+                 f"INSERT_FAILED (never reused). Mint a new scenario once fixed.")
 
-    # 2) verify no duplicates in the new scenario
-    con = connect(a.target); cur = con.cursor()
-    cur.execute("SELECT scenario_id FROM dmt_scenario_tbl WHERE scenario_name=:n", [new_name])
+    # 3) verify + finalize (also what --resume does). A connection lost here
+    # leaves the scenario REGISTERED (already on disk); say how to finish it.
+    try:
+        return verify_and_finalize(state, new_name, cur_scn)
+    except (oracledb.Error, OSError) as e:
+        print(f"\nConnection lost after the insert ({str(e)[:200]}). {new_name} "
+              f"(id {sid}) is REGISTERED, not lost. Finish it, without re-inserting, with:\n"
+              f"  python scripts/deploy_scenario.py --resume {new_name}", file=sys.stderr)
+        raise
+
+
+def verify_and_finalize(state, name, cur_scn):
+    """Duplicate-check a registered scenario and register it for good. Shared by
+    the normal mint and --resume, so a scenario whose run stopped after the
+    insert is finished exactly as the original run would have finished it."""
+    entry = state["pending_scenarios"][name]
+    sid = entry["scenario_id"]
+    con = connect(entry["target"]); cur = con.cursor()
+    cur.execute("SELECT scenario_id FROM dmt_scenario_tbl WHERE scenario_name=:n", [name])
     row = cur.fetchone()
-    if not row:
-        sys.exit("Scenario was not created; aborting.")
-    sid = row[0]
+    if not row or int(row[0]) != int(sid):
+        sys.exit(f"{name}: DMT_SCENARIO_TBL id {row[0] if row else '(none)'} does not "
+                 f"match the registered id {sid}; aborting.")
+    rows = stg_row_counts(con, sid)
+    if not rows:
+        sys.exit(f"{name} (id {sid}) holds no staging rows: the insert never completed. "
+                 f"It stays registered (pending); mint a new scenario.")
+    print(f"{name} (id {sid}): {sum(rows.values())} staging rows in {len(rows)} table(s).")
     problems = verify_no_duplicates(con, sid)
+    con.close()
     if problems:
+        save_state(mark_pending(state, name, "REJECTED_DUPLICATES"))
         print("\nDUPLICATE ROWS FOUND - scenario REJECTED, pointer NOT advanced:")
         for t, g, n in problems:
             print(f"  {t}: {g} duplicated key group(s) across {n} rows")
         sys.exit("Duplicate check FAILED.")
-    print(f"\nVerified: 0 duplicate rows across all staging tables in {new_name} (id {sid}).")
+    print(f"\nVerified: 0 duplicate rows across all staging tables in {name} (id {sid}).")
 
-    # 3) record the new scenario in the state file (no DB record is updated):
-    # advance the pointer (default) or leave it alone (--keep-pointer), and give
-    # the new scenario its starting expected outcomes.
-    new_state, copied_from = register_scenario(
-        state, new_name, sid, sha, a.target,
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        keep_pointer=a.keep_pointer, expect_from=a.expect_from)
-    STATE.write_text(json.dumps(new_state, indent=2), encoding="utf-8")
+    # 4) register for good: advance the pointer (default) or leave it alone
+    # (--keep-pointer), and give the scenario its starting expected outcomes.
+    keep_pointer = entry.get("keep_pointer", False)
+    new_state, copied_from = finalize_scenario(state, name)
+    save_state(new_state)
     if copied_from:
-        print(f"Expected outcomes for {new_name} copied from {copied_from} "
-              f"({len(new_state['expected_outcomes'][new_name])} sub-object(s)); "
+        print(f"Expected outcomes for {name} copied from {copied_from} "
+              f"({len(new_state['expected_outcomes'][name])} sub-object(s)); "
               f"edit them for any row this scenario changed.")
     else:
-        print(f"No expected outcomes to copy; {new_name} starts with none.")
-    if a.keep_pointer:
+        print(f"No expected outcomes to copy; {name} starts with none.")
+    if keep_pointer:
         print(f"Pointer NOT moved: current_scenario stays {cur_scn}. "
-              f"Run the object with --scenario {new_name}.")
+              f"Run the object with --scenario {name}.")
     else:
-        print(f"Pointer updated: current_scenario = {new_name}. "
-              f"Run the regression with --scenario {new_name}.")
+        print(f"Pointer updated: current_scenario = {name}. "
+              f"Run the regression with --scenario {name}.")
     return 0
 
 if __name__ == "__main__":

@@ -86,9 +86,18 @@ version-checked, and it never touches the database:
   destination) and verifies `images/apex_version.txt` says 26.1. If no source is
   configured, it prints a warning and exits successfully, so the DB build still
   works on machines and CI runners without the image set.
-- **Live check.** When `dmt2-ords` is running, it requires
-  `http://localhost:8182/i/apex_version.txt` to return HTTP 200 with version 26.1,
-  and fails the step otherwise.
+- **Live check and self-repair.** When `dmt2-ords` is running, it requires
+  `http://localhost:8182/i/apex_version.txt` to return HTTP 200 with version 26.1.
+  If it does not, the script repairs the web tier itself: it sets ORDS
+  `standalone.static.path` to `/opt/oracle/apex/images` when missing, restarts
+  `dmt2-ords` (the restart also re-mounts an images folder that was wiped and
+  recreated) and waits up to `ORDS_WAIT_S` (default 240 s) for HTTP 200. It fails
+  only if `/i/` is still broken after that.
+- **When it runs.** `build_local_db.sh` (with or without `--fresh`) runs it right
+  after the container step, before the DB install, so a later install failure can
+  never leave the console login broken, and once more at the end as the strict
+  check. Proven offline with fake docker/curl/SQLcl:
+  `sh test/unit/test_apex_images_rebuild.sh`.
 
 You can also run it on its own: `sh db/tools/provision_apex_images.sh`. The
 expected version can be changed with `APEX_VERSION`.
