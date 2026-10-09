@@ -2606,7 +2606,10 @@ def main():
         # SQL*Loader rejects it, committing nothing for the book: XG-G1 and XG-G2
         # (valid data) are rolled back with it and must quote XG-BAD's real
         # error. Backlog #650: the split shifts SQL*Loader's record numbers, so
-        # XG-G2 (after the break) proves the header mapping counts line breaks.
+        # XG-G2 (after the break) proves the header mapping counts line breaks
+        # (run 357). Since #651 (PR #730) the validator fails XG-BAD before the
+        # CSV is written, so XG-G1 and XG-G2 now load (run 378) and its book and
+        # assignment quote its [POST_VALIDATION] error.
         # Until 2026-10-09 XG-BAD carried a 14-character prorate convention; the
         # STG/TFM columns now match the interface width (backlog #574), so such a
         # value can no longer be staged. US CORP above is the separate good batch.

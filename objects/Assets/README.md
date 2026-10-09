@@ -193,6 +193,14 @@ reconcile-only rerun of work item 2010 (rolled back) left every TFM row identica
   continuation line, DATE_PLACED_IN_SERVICE); both map to XG-BAD, so XG-G2 (record 4) quotes
   XG-BAD's error instead of taking record 3's as its own. All 27 listed rows met their
   expected outcome, 0 UNACCOUNTED, harness PASS.
+- **After #651 (PR #730, line breaks fail in the validator).** XG-BAD is now failed before the
+  CSV is written, so XG-G1/XG-G2 load and the header mapping above is a safety net only. The
+  book and assignment of a header failed before load now quote it under its own tag
+  (`[POST_VALIDATION] Rejected with document: asset <num>: ...`) instead of being left FAILED
+  with no text. Run 378 (prefix 93421, scenario RegressionTest261009113635): G1/G2 and
+  XG-G1/XG-G2 LOADED on all three grains, BAD1 and XG-BAD FAILED with their real errors. The
+  US FIN SVCS batch (XD rows, 8 rows) ends UNACCOUNTED: its assignment is failed by the new
+  validator and the rest of the asset is still sent (backlog #745, not this change).
 
 ## Known Issues
 - ~~**APPROVAL_TYPE_CODE missing from FBDI generator.**~~ **FIXED 2026-04-03.** APPROVAL_TYPE_CODE is a CTL expression column (`nvl2(:BATCH_NAME, 'ORA_FA_MASS', NULL)`) — it doesn't consume a CSV field. Fix: populate BATCH_NAME (CSV pos 419) with 'DMT' so the expression evaluates to 'ORA_FA_MASS'.
