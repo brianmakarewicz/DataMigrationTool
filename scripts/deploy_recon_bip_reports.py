@@ -152,6 +152,10 @@ REPORTS = [
     # the run prefix or run id. Deployed alongside DMT_REQ_RECON_DM (never
     # overwritten).
     ("Requisitions",             "DMT_REQ_RECON_V2_DM",        "DMT_REQ_RECON_V2_RPT"),
+    # Requisitions V3 (2026-10-09, backlog #621): alongside V1/V2 (never
+    # overwritten). Same rows and columns as V2; tie-safe keyset paging (WITH
+    # TIES) with an OBJECT_TYPE tiebreak, refreshed RECORD_KEY comments.
+    ("Requisitions",             "DMT_REQ_RECON_V3_DM",        "DMT_REQ_RECON_V3_RPT"),
     # BillingEvents V2 (2026-10-07, owner decision): base events by the import
     # job's REQUEST_ID, interface rows by LOAD_REQUEST_ID, never by the run prefix.
     # Alongside BILLING_EVENT_DM (never overwritten).

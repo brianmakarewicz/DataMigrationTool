@@ -19,11 +19,12 @@ import sys
 PKG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        "db", "packages")
 
-# 18 with the 1-arg sweep + 3-arg reconcile; suppliers handled specially below.
+# 17 with the 1-arg sweep + 3-arg reconcile (the Item-category reconciler was
+# dropped, backlog #607); suppliers handled specially below.
 STD = [
     "dmt_po_results_pkg", "dmt_gl_results_pkg", "dmt_blanket_po_results_pkg",
     "dmt_contract_results_pkg", "dmt_ap_results_pkg", "dmt_expenditure_results_pkg",
-    "dmt_req_results_pkg", "dmt_egp_item_results_pkg", "dmt_egp_item_cat_results_pkg",
+    "dmt_req_results_pkg", "dmt_egp_item_results_pkg",
     "dmt_gl_budget_results_pkg", "dmt_grants_results_pkg", "dmt_billing_event_results_pkg",
     "dmt_prj_budget_results_pkg", "dmt_cust_results_pkg", "dmt_ar_results_pkg",
     "dmt_project_results_pkg", "dmt_fa_asset_results_pkg", "dmt_misc_receipt_results_pkg",
