@@ -19,6 +19,9 @@
 //   DMT2_UI_RUN    run id to drill                 (optional; a recent run)
 //   DMT2_UI_CMP_RUN run id with comparison data    (optional; for page 85)
 //   DMT2_UI_ACTIVE_RUN a QUEUED/IN_PROGRESS run id (optional; Cancel form check)
+//   DMT2_UI_EXPECT_ADMIN '1' when DMT2_UI_USER is an administrator (optional;
+//                  the Cancel form is admin-only, backlog #722, so a non-admin
+//                  such as DMT_SMOKE must NOT see it on an active run)
 //   DMT2_UI_CEMLIS comma object codes to drill     (optional)
 //   DMT2_PW_NODE_MODULES  path to a node_modules with 'playwright' installed
 //
@@ -39,6 +42,7 @@ const PASS = process.env.DMT2_UI_PASS;
 const RUN = process.env.DMT2_UI_RUN || '';
 const CMP_RUN = process.env.DMT2_UI_CMP_RUN || RUN;
 const ACTIVE_RUN = process.env.DMT2_UI_ACTIVE_RUN || '';
+const EXPECT_ADMIN = process.env.DMT2_UI_EXPECT_ADMIN === '1';
 const CEMLIS = (process.env.DMT2_UI_CEMLIS
   || 'Suppliers,PurchaseOrders,GLBalances,Customers,Assets')
   .split(',').map(s => s.trim()).filter(Boolean);
@@ -436,15 +440,23 @@ const PAGES = [
     // (a2) the Cancel run form on a run that has not finished (backlog #642).
     //      Only checked when a QUEUED / IN_PROGRESS run id is given, because a
     //      regression run is always finished by the time the click-through
-    //      runs. Presence only: the button is never pressed here.
+    //      runs. The form is admin-only (backlog #722, authorization scheme
+    //      Administration Rights): an administrator must see it, a non-admin
+    //      end user (DMT_SMOKE) must not. The button is never pressed here.
     if (ACTIVE_RUN) {
       const ar = await visit(`run actions: run detail 82 [active run ${ACTIVE_RUN}]`,
         fp(82, 'P82_RUN_ID', ACTIVE_RUN), { mustMatch: new RegExp(`Run #${ACTIVE_RUN}\\b`) });
       if (ar.ok) {
         const acts = await runDetailActions();
-        step(`run actions: Cancel run form renders on an unfinished run [run ${ACTIVE_RUN}]`,
-          acts.cancel && acts.reason && acts.confirm,
-          `cancel-button=${acts.cancel} reason-field=${acts.reason} confirm-box=${acts.confirm}`);
+        if (EXPECT_ADMIN) {
+          step(`run actions: Cancel run form renders for an administrator on an unfinished run [run ${ACTIVE_RUN}]`,
+            acts.cancel && acts.reason && acts.confirm,
+            `cancel-button=${acts.cancel} reason-field=${acts.reason} confirm-box=${acts.confirm}`);
+        } else {
+          step(`run actions: Cancel run form absent for non-admin ${USER} on an unfinished run [run ${ACTIVE_RUN}]`,
+            !acts.cancel && !acts.reason && !acts.confirm,
+            `cancel-button=${acts.cancel} reason-field=${acts.reason} confirm-box=${acts.confirm}`);
+        }
       }
     }
 

@@ -38,7 +38,9 @@ python test/playwright/dmt_console_verify.py
 python test/playwright/dmt_console_verify.py --run-id 229 --cemlis Suppliers,Customers
 
 # also check the Cancel run form on a run that is still QUEUED / IN_PROGRESS
-# (presence only; the button is never pressed)
+# (the button is never pressed). The form is admin-only (backlog #722), so as
+# DMT_SMOKE it must be ABSENT; pass --expect-admin with an administrator
+# --user to assert it renders instead.
 python test/playwright/dmt_console_verify.py --run-id 229 --active-run-id 348
 ```
 

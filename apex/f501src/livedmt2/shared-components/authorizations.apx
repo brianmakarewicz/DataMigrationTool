@@ -2,10 +2,26 @@ authorization administration-rights (
     name: Administration Rights
     type: plSqlFunctionBody
     settings {
-        plsqlFunctionBody: return true;
+        plsqlFunctionBody:
+            ```plsql
+            DECLARE
+                l_cnt PLS_INTEGER;
+            BEGIN
+                -- An administrator is an APEX workspace administrator of the
+                -- workspace this app runs in (DMTADMIN on ATP). End users such
+                -- as DMT_SMOKE are not workspace administrators.
+                SELECT COUNT(*)
+                  INTO l_cnt
+                  FROM APEX_WORKSPACE_APEX_USERS
+                 WHERE WORKSPACE_ID = :WORKSPACE_ID
+                   AND USER_NAME    = UPPER(:APP_USER)
+                   AND IS_ADMIN     = 'Yes'
+                   AND ACCOUNT_LOCKED = 'No';
+                RETURN l_cnt > 0;
+            END;
+            ```
     }
     error {
         errorMessage: Insufficient privileges, user is not an Administrator
     }
 )
-
