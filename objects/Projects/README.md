@@ -85,8 +85,27 @@ transaction control were not created.
 
 Proof run 345 (prefix 93395, same scenario): project, task and transaction control of RTPRJ-XG1
 FAILED with the quote, the member FAILED with its own error, all other rows as before, 0
-UNACCOUNTED, `dmt_regression_run.py` PASS (72 listed rows met). Matching a task's or transaction
-control's own report row is unchanged and has no live example yet (backlog #655).
+UNACCOUNTED, `dmt_regression_run.py` PASS (72 listed rows met).
+
+## A task or transaction control rejected on its own (backlog #655, 2026-10-09)
+
+Proven live with scenario RegressionTest261009073748 (id 661), which adds two probes:
+RTPRJ-XG2, whose only defect is its task (planned finish 2026-12-31, after the project finish
+2025-12-31), and RTPRJ-XG3, whose only defect is its transaction control (expenditure type
+`RT Bogus Expenditure Type`). Import Projects rejects each whole project. The report lists the task
+in `LIST_TASK_ERROR` ("You can't have the planned dates for a task that are outside the planned
+start or finish dates of its summary task or the project.") and the control in
+`LIST_TXN_CTRL_ERROR` ("The expenditure type doesn't exist."); the projects get only a pointer.
+
+Run 349 (prefix 93400) showed the task and control rows were not matched: the generic parser joins
+`TERROR_PROJECT_NAME / TERROR_PROJECT_NUMBER / ERROR_TASK_NUMBER / ERROR_TASK_NAME` (and
+`TC_ERR_PROJECT_NAME / _PROJECT_NUMBER / _TASK_NAME / _TASK_NUMBER / _SOURCE_REFERENCE`) with `/`,
+empty ones included, so the exact predicates missed and both rows got only their project's pointer
+(7 report errors, 5 matched). The task and control branches of `apply_import_report` now match the
+task number / control reference plus the project name or number as `/` tokens. Run 363 (prefix
+93406): 7 of 7 matched; the task and control FAILED with their own `[IMPORT_REPORT]` error, their
+projects and sibling rows FAILED quoting it (`Rejected with document: project 93406RTPRJ-XG2 (task
+RTPRJ-XG2.1): ...`), 0 UNACCOUNTED, `dmt_regression_run.py` PASS (80 listed rows met).
 
 ## Pipeline
 - Module: Projects
