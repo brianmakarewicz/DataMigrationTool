@@ -52,6 +52,7 @@
 -- REVISIONS:
 --   2026-10-07  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
 --   2026-10-07  BM  V6 report: base rows by the Fusion batch id this load sent.
+--   2026-10-09  BM  FAIL_LOCATIONS_OF_FAILED_SITES: owner rule, backlog #468.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_CUST_RESULTS_PKG';
@@ -61,7 +62,8 @@
     -- Working set: "the row TARGET_SEQ of record type TARGET_KIND was held back
     -- with a row that has its own real Fusion error, so it must carry
     -- QUOTED_ERROR". TARGET_KIND is one of PARTY, PSITE, PSU, ACCT, ASITE, ASU
-    -- (locations are never part of a customer document).
+    -- (locations are never part of a customer document); LOC is used only by
+    -- FAIL_LOCATIONS_OF_FAILED_SITES (owner rule, backlog #468).
     TYPE T_DOC_PAIR IS RECORD (
         TARGET_KIND  VARCHAR2(10),
         TARGET_SEQ   NUMBER,           -- TFM_SEQUENCE_ID in the target's own table
@@ -943,6 +945,111 @@
     END PROPAGATE_DOCUMENT_ERRORS;
 
     -- --------------------------------------------------------
+    -- FAIL_LOCATIONS_OF_FAILED_SITES (private) -- backlog #468.
+    -- Owner rule (2026-10-09): a location whose party site FAILED is itself
+    -- FAILED, carrying the document marker that quotes the site's real Fusion
+    -- error. Fusion still creates the location in HZ_LOCATIONS (the import
+    -- never holds a location), but a location with no surviving party site is
+    -- unreachable from the customer it was sent for, so it is reported as
+    -- failed with its document instead of LOADED. FUSION_LOCATION_ID is kept:
+    -- it is the real id of the row Fusion created.
+    --
+    -- Source: every party site of this run and work item that is FAILED with a
+    --   [FUSION_ERROR] text. The quote is
+    --     * the site's OWN error  -> FORMAT_DOCUMENT_ERROR('party site', key, msg);
+    --     * a site that only carries a quote (it was held by its party or a
+    --       party site use) -> that quote unchanged, so the location names the
+    --       row whose real error it is and a quote is never re-quoted.
+    --   Only the first appended error of the site is used (APPEND_ERROR joins
+    --   errors with ' | ').
+    -- Target: the location the site points at (LOCATION_ORIG_SYSTEM_REFERENCE,
+    --   same run and work item), that Fusion received (FBDI_CSV_ID set, not
+    --   STAGED) and that does not already carry the exact quote. LOADED is
+    --   overwritten to FAILED by this owner rule only; the quote is appended
+    --   (never overwrite). A location with no failed party site is untouched.
+    -- Idempotent (exact-quote guard). Runs after PROPAGATE_DOCUMENT_ERRORS so
+    -- held sites already carry their quote. Static SQL, NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE FAIL_LOCATIONS_OF_FAILED_SITES (
+        p_run_id        IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'FAIL_LOCATIONS_OF_FAILED_SITES';
+        C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_pairs  T_DOC_PAIR_TBL;
+        l_loc    NUMBER := 0;
+        l_step   VARCHAR2(200);
+    BEGIN
+        l_step := 'collecting locations of failed party sites for run ' || p_run_id;
+        WITH site_err AS (
+            SELECT s.RECON_KEY rkey, s.LOCATION_ORIG_SYSTEM_REFERENCE loc_ref,
+                   DBMS_LOB.SUBSTR(s.ERROR_TEXT, 3800, DBMS_LOB.INSTR(s.ERROR_TEXT, C_TAG)) seg
+            FROM   DMT_HZ_PARTY_SITES_TFM_TBL s
+            WHERE  s.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR s.WORK_QUEUE_ID IS NULL
+                    OR s.WORK_QUEUE_ID = p_work_queue_id)
+            AND    s.TFM_STATUS = 'FAILED'
+            AND    s.LOCATION_ORIG_SYSTEM_REFERENCE IS NOT NULL
+            AND    DBMS_LOB.INSTR(s.ERROR_TEXT, C_TAG) > 0
+        ),
+        site_first AS (
+            SELECT rkey, loc_ref,
+                   CASE WHEN INSTR(seg, ' | ') > 0 THEN SUBSTR(seg, 1, INSTR(seg, ' | ') - 1)
+                        ELSE seg
+                   END first_err
+            FROM   site_err
+        ),
+        site_quote AS (
+            SELECT loc_ref,
+                   CASE WHEN INSTR(first_err, l_marker) > 0 THEN first_err
+                        ELSE DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('party site', rkey, first_err)
+                   END quote
+            FROM   site_first
+        )
+        SELECT DISTINCT 'LOC', l.TFM_SEQUENCE_ID, q.quote
+        BULK COLLECT INTO l_pairs
+        FROM   site_quote q
+        JOIN   DMT_HZ_LOCATIONS_TFM_TBL l
+          ON   l.LOCATION_ORIG_SYSTEM_REFERENCE = q.loc_ref
+        WHERE  l.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID IS NULL
+                OR l.WORK_QUEUE_ID = p_work_queue_id)
+        AND    l.TFM_STATUS <> 'STAGED'
+        AND    q.quote IS NOT NULL;
+
+        l_step := 'appending the party site error to its locations';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_HZ_LOCATIONS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    t.TFM_SEQUENCE_ID = l_pairs(i).TARGET_SEQ
+            AND    t.TFM_STATUS <> 'STAGED'
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_loc := SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Location quote pairs: ' || l_pairs.COUNT
+                           || ' | locations given their failed party site''s error: ' || l_loc || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RAISE;
+    END FAIL_LOCATIONS_OF_FAILED_SITES;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH - Contract v1 recon for Customers.
     -- Public 4-arg signature unchanged (pipeline def calls
     -- DMT_CUST_RESULTS_PKG.RECONCILE_BATCH). Delegates to the shared fetch +
@@ -980,6 +1087,11 @@
         -- after the per-row apply and BEFORE the shared unaccounted sweep
         -- (DMT_QUEUE_WORKER_PKG.RECONCILE_ONE).
         PROPAGATE_DOCUMENT_ERRORS(p_run_id, p_work_queue_id);
+
+        -- Owner rule (backlog #468): a location whose party site FAILED is
+        -- FAILED too, quoting the site's real error. Runs after the propagation
+        -- so held party sites already carry their quote.
+        FAIL_LOCATIONS_OF_FAILED_SITES(p_run_id, p_work_queue_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object

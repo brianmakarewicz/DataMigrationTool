@@ -4,7 +4,9 @@
 Owner decision 2026-10-08: "change the gate - so that there are no NEW failures".
 Proves: run 300's review items still listed classify as KNOWN with zero NEW; the
 ones since cleared (BillingEvents REST verify by PR #673, backlog #462; SalaryBases
-and Absences zero records by PR #704, both now have rows) are NEW again; an
+and Absences zero records by PR #704, both now have rows; Customers Locations REST
+verify by backlog #468, a failed-site location is FAILED and never verified) are
+NEW again; an
 unlisted failure is NEW (blocks) while a listed one is KNOWN (does not); volatile
 text (run prefix, HTTP detail, counts) does not affect matching; a listed item
 whose sub-object regressed against the baseline run is NEW; an entry is reported
@@ -25,9 +27,14 @@ ZERO = ["TaxCards", "W2Balances", "BenParticipant", "BenDependent",
         "BenBeneficiary", "PerfEvaluations", "WorkSchedules"]
 # Cleared by PR #704 (combined baseline gives both objects rows): no longer listed.
 CLEARED_ZERO = ["SalaryBases", "Absences"]
-REST = [("Customers", "Locations")]
-# Cleared by PR #673 (BillingEvents runs as ppm_impl, backlog #462): no longer listed.
-CLEARED_REST = [("BillingEvents", "Billing Events")]
+REST = []
+# Cleared by PR #673 (BillingEvents runs as ppm_impl, backlog #462) and by backlog
+# #468 (Customers Locations: a location whose party site failed is FAILED, so it is
+# never verified): no longer listed.
+CLEARED_REST = [("BillingEvents", "Billing Events"), ("Customers", "Locations")]
+# A listed REST entry used only by this test (the committed list has none today).
+REST_ENTRY = {"kind": "REVIEW", "category": "REST_VERIFY", "object": "Customers",
+              "sub": "Locations", "backlog": "test", "reason": "test"}
 
 # A listed FAIL entry used only by this test (the committed list has none today).
 FAIL_ENTRIES = [
@@ -45,7 +52,8 @@ def main():
                  for o, s in REST])
     entries = reg.load_known_issues()
     k, n, hit = reg.classify_issues(run300, 'REVIEW', '93354', (), entries)
-    checks.append(("run 300's 8 still-listed review items are all KNOWN, 0 NEW, every entry used",
+    checks.append(("run 300's %d still-listed review items are all KNOWN, 0 NEW, every entry used"
+                   % (len(ZERO) + len(REST)),
                    (len(k), len(n), len(hit)) == (len(ZERO) + len(REST), 0, len(entries))))
 
     k, n, _ = reg.classify_issues(
@@ -57,12 +65,12 @@ def main():
     k, n, _ = reg.classify_issues(
         [f"REST verify {o}/{s}: ERROR (ORA-20003 Status: 403)" for o, s in CLEARED_REST],
         'REVIEW', '93354', (), entries)
-    checks.append(("the cleared BillingEvents REST verify item is NEW again (blocks)",
-                   (len(k), len(n)) == (0, 1)))
+    checks.append(("the cleared BillingEvents / Customers Locations REST verify items are NEW again (block)",
+                   (len(k), len(n)) == (0, len(CLEARED_REST))))
 
     k, n, _ = reg.classify_issues(
         ["REST verify Customers/Locations: ERROR (ORA-20003 Status: 403 | URL x?q=99999RT)"],
-        'REVIEW', '99999', (), entries)
+        'REVIEW', '99999', (), entries + [REST_ENTRY])
     checks.append(("different status/HTTP detail still matches", (len(k), len(n)) == (1, 0)))
 
     k, n, _ = reg.classify_issues(
@@ -103,7 +111,7 @@ def main():
                    reg.cleared_known_issues(entries, set(), subset) == []))
     mixed = {'objects': {'TaxCards': {}, 'Customers': {}, 'GLBudgets': {}},
              'record_rollup': {'GL Budget Lines': {}}}
-    cl = reg.cleared_known_issues(entries + FAIL_ENTRIES, set(), mixed)
+    cl = reg.cleared_known_issues(entries + FAIL_ENTRIES + [REST_ENTRY], set(), mixed)
     checks.append(("unmatched entries of objects/sub-objects in the run are cleared, others not",
                    sorted((e.get('object') or e.get('sub')) for e in cl)
                    == ['Customers', 'GL Budget Lines', 'TaxCards']))

@@ -311,6 +311,32 @@ status and no ERROR_TEXT byte (`PROPAGATE_DOCUMENT_ERRORS`: 20 pairs, 0 rows upd
 sanctioned `RERUN_RUN` re-opened nothing. Click-through `dmt_console_verify.py --run-id 257
 --cemlis Customers`: PASS.
 
+## Locations of failed party sites (2026-10-09, backlog #468)
+
+**Owner rule 2026-10-09.** A location whose party site FAILED is itself FAILED, carrying the
+document marker that quotes the site's real Fusion error. Fusion never holds a location (it
+creates it in `HZ_LOCATIONS` whatever happens to the site), so before this change a location
+whose only party site failed was LOADED but unreachable: Fusion has no standalone REST resource
+for HZ locations, the hubOrganizations child filter finds a location only through a party site,
+and the regression REST spot-check reported such a location (e.g. `RT-LOC-XP`) as NOT_FOUND.
+
+`DMT_CUST_RESULTS_PKG.FAIL_LOCATIONS_OF_FAILED_SITES` runs after `PROPAGATE_DOCUMENT_ERRORS`.
+For every party site of the work item that is FAILED with `[FUSION_ERROR]` text it appends one
+quote to the location the site points at (`LOCATION_ORIG_SYSTEM_REFERENCE`) and sets it FAILED:
+the site's own error becomes `[FUSION_ERROR] Rejected with document: party site <key>: <msg>`;
+a site that only carries a quote (held by its party or a party site use) passes that quote on
+unchanged, so a quote is never re-quoted and always names the row whose real error it is. The
+rule applies even when the location is LOADED (a LOADED location is overwritten to FAILED by
+this rule only), keeps `FUSION_LOCATION_ID` (the real id of the row Fusion created), appends
+each quote once (idempotent) and touches no location without a failed site. If one location is
+shared by a LOADED site and a FAILED site it is still FAILED, as the rule reads.
+
+"Verify in Fusion" is offered only for LOADED rows: the page 57 button renders only when
+`TFM_STATUS = 'LOADED'`, and `scripts/dmt_regression_run.py` step 6 picks the newest LOADED row
+per sub-object. A failed-site location is therefore never read back, and the
+Customers/Locations REST_VERIFY entry was removed from `scripts/regression_known_issues.json`.
+In the baseline scenario the G1, XU and XP locations are now expected FAILED_WITH_DOCUMENT.
+
 ## Fusion batch id and recon V6 (2026-10-07, backlog #238)
 
 **Owner decision 2026-10-07.** The batch id DMT sends the customer bulk import is the run prefix

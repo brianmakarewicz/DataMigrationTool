@@ -5178,13 +5178,13 @@
       "Locations": {
         "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
         "rows": {
-          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G1": "FAILED_WITH_DOCUMENT",
           "RT-LOC-RT-LOC-G2": "LOADED",
           "RT-LOC-RT-LOC-G3": "LOADED",
           "RT-LOC-BAD1": "FAILED",
           "RT-LOC-RT-LOC-XG": "LOADED",
-          "RT-LOC-RT-LOC-XU": "LOADED",
-          "RT-LOC-RT-LOC-XP": "LOADED"
+          "RT-LOC-RT-LOC-XU": "FAILED_WITH_DOCUMENT",
+          "RT-LOC-RT-LOC-XP": "FAILED_WITH_DOCUMENT"
         }
       },
       "Party Sites": {
@@ -5627,13 +5627,13 @@
       "Locations": {
         "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
         "rows": {
-          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G1": "FAILED_WITH_DOCUMENT",
           "RT-LOC-RT-LOC-G2": "LOADED",
           "RT-LOC-RT-LOC-G3": "LOADED",
           "RT-LOC-BAD1": "FAILED",
           "RT-LOC-RT-LOC-XG": "LOADED",
-          "RT-LOC-RT-LOC-XU": "LOADED",
-          "RT-LOC-RT-LOC-XP": "LOADED"
+          "RT-LOC-RT-LOC-XU": "FAILED_WITH_DOCUMENT",
+          "RT-LOC-RT-LOC-XP": "FAILED_WITH_DOCUMENT"
         }
       },
       "Party Sites": {
@@ -6161,13 +6161,13 @@
       "Locations": {
         "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
         "rows": {
-          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G1": "FAILED_WITH_DOCUMENT",
           "RT-LOC-RT-LOC-G2": "LOADED",
           "RT-LOC-RT-LOC-G3": "LOADED",
           "RT-LOC-BAD1": "FAILED",
           "RT-LOC-RT-LOC-XG": "LOADED",
-          "RT-LOC-RT-LOC-XU": "LOADED",
-          "RT-LOC-RT-LOC-XP": "LOADED"
+          "RT-LOC-RT-LOC-XU": "FAILED_WITH_DOCUMENT",
+          "RT-LOC-RT-LOC-XP": "FAILED_WITH_DOCUMENT"
         }
       },
       "Party Sites": {
