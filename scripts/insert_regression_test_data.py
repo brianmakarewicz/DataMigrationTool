@@ -1469,6 +1469,44 @@ def main():
         """, {"bu": bu, "dt": NB_DATE, "amt": amount, "descr": desc,
               "attr2": attr2, "src": src},
         label=f"{label} AR Invoice (no business unit): {src}")
+
+    # 19e. AR LINE WITH MORE THAN 5 DISTRIBUTIONS (backlog #224, owner direction
+    #      2026-10-09). The reconciliation report used to be paged by a fixed
+    #      number of report rows, with an allowance of 5 report rows per row DMT
+    #      sent; a line with more distributions than that could be cut off and end
+    #      UNACCOUNTED. Recon report V5 pages by whole invoices instead. One DMT
+    #      invoice (ATTRIBUTE1 86753501), one GOOD line of 800.00 with EIGHT REV
+    #      distributions (below). The eight amounts are all different (30..170,
+    #      summing to 800, each percent = amount / 8) so the per-line ordinal in the
+    #      distribution recon key pairs each base distribution with its own TFM row.
+    #      Expected: the line and all eight distributions LOADED, each with its own
+    #      Fusion id. Bill-to 122133 / site 1430587 as RT-AR-KG-G1; TRX_DATE/GL_DATE
+    #      2026-03-21 keep it apart from every other AR invoice.
+    MD_DATE = "2026-03-21"
+    run_sql(cur, """
+        INSERT INTO DMT_RA_LINES_STG_TBL (
+            BU_NAME, BATCH_SOURCE_NAME, CUST_TRX_TYPE_NAME,
+            TERM_NAME, TRX_DATE, GL_DATE,
+            TRX_NUMBER, BILL_CUSTOMER_ACCOUNT_NUMBER, BILL_CUSTOMER_SITE_NUMBER,
+            LINE_TYPE, DESCRIPTION,
+            CURRENCY_CODE, CONVERSION_TYPE, CONVERSION_RATE,
+            AMOUNT, QUANTITY, UNIT_SELLING_PRICE,
+            INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1,
+            INTERFACE_LINE_ATTRIBUTE2, DEFAULT_TAXATION_COUNTRY,
+            MEMO_LINE_NAME, SOURCE_ID
+        ) VALUES (
+            :bu, 'External Source', 'Invoice',
+            '30 Net', TO_DATE(:dt, 'YYYY-MM-DD'), TO_DATE(:dt, 'YYYY-MM-DD'),
+            NULL, '122133', '1430587',
+            'LINE', 'MD line 1: one line with eight REV distributions',
+            'USD', 'User', 1,
+            800.00, 1, 800.00,
+            'EXTERNAL_SOURCE', '86753501',
+            '1', 'US',
+            'Venue Fee', 'RT-AR-MD-A1'
+        )
+    """, {"bu": AR_BU, "dt": MD_DATE},
+        label="GOOD AR Invoice (eight distributions): RT-AR-MD-A1")
     tag_scenario(cur, "DMT_RA_LINES_STG_TBL", scenario_id)
 
     for src, amount, attr1, attr2 in [
@@ -1491,6 +1529,25 @@ def main():
             )
         """, {"bu": AR_BU, "amt": amount, "attr1": attr1, "attr2": attr2, "src": src},
         label=f"AR Distribution (cross-grain): {src}")
+
+    # 19e (distributions). The eight REV distributions of RT-AR-MD-A1 (see 19e
+    # above): distinct amounts summing to 800.00, percents summing to 100.
+    for n, amount in enumerate([30.00, 50.00, 70.00, 90.00, 110.00, 130.00, 150.00, 170.00],
+                               start=1):
+        run_sql(cur, """
+            INSERT INTO DMT_RA_DISTS_STG_TBL (
+                BU_NAME, ACCOUNT_CLASS, AMOUNT, PERCENT,
+                INTERFACE_LINE_CONTEXT, INTERFACE_LINE_ATTRIBUTE1, INTERFACE_LINE_ATTRIBUTE2,
+                SEGMENT1, SEGMENT2, SEGMENT3, SEGMENT4, SEGMENT5, SEGMENT6, SEGMENT7,
+                SOURCE_ID
+            ) VALUES (
+                :bu, 'REV', :amt, :pct,
+                'EXTERNAL_SOURCE', '86753501', '1',
+                '1001', '0000', '00000', '44105', '0000', '0000', '00000000',
+                :src
+            )
+        """, {"bu": AR_BU, "amt": amount, "pct": amount / 8, "src": f"RT-AR-MD-A1-REV{n}"},
+            label=f"GOOD AR Distribution (eight on one line): RT-AR-MD-A1-REV{n}")
     tag_scenario(cur, "DMT_RA_DISTS_STG_TBL", scenario_id)
 
     # ====================================================================

@@ -5,6 +5,27 @@
 -- DMT_RECON_CONTRACT_PKG body — the one shared Contract v1 fetch.
 -- See the package spec for the contract and the FETCH/APPLY split (Option A).
 -- This package contains NO dynamic SQL and names NO TFM table.
+--
+-- HEADER PAGING (owner direction 2026-10-09, backlog #224). A report may
+-- return an optional tenth column PAGE_KEY: the key of the header (document)
+-- each row belongs to. When the rows of a page carry PAGE_KEY, the page is a
+-- set of whole documents, never a slice of one:
+--   * P_CHUNK_SIZE counts HEADERS, not rows: the report returns the next
+--     P_CHUNK_SIZE header keys after P_AFTER_KEY plus EVERY line and
+--     distribution row of those headers, however many there are.
+--   * P_AFTER_KEY is the last PAGE_KEY received (header keyset), not the
+--     last RECORD_KEY.
+--   * A page is short (the last page) when it holds fewer than P_CHUNK_SIZE
+--     distinct headers.
+-- A report that does not emit PAGE_KEY (every report except ARInvoices V5
+-- today) yields NULL for it and keeps the original row keyset unchanged, so
+-- this is opt-in per report and needs no change in any other caller.
+-- Rows of a header-paged page are returned ordered by PAGE_KEY (BINARY), then
+-- RECORD_KEY, so the page's last row carries its greatest header key.
+--
+-- REVISIONS:
+--   2026-10-09  BM  Optional PAGE_KEY header paging (backlog #224); body only,
+--                   the spec and the record type are unchanged.
 -- ============================================================
 
     -- --------------------------------------------------------
@@ -34,6 +55,10 @@
         l_page          PLS_INTEGER := 0;
         l_page_rows     PLS_INTEGER;
         l_last_key      VARCHAR2(1000);
+        -- Header paging (backlog #224): distinct PAGE_KEYs on this page and the
+        -- last one seen. Both stay 0 / NULL for a report without PAGE_KEY.
+        l_page_headers  PLS_INTEGER;
+        l_last_page_key VARCHAR2(1000);
         l_max_pages     PLS_INTEGER;
         l_n             PLS_INTEGER := 0;
         l_batch_param   VARCHAR2(100);
@@ -159,8 +184,10 @@
             END IF;
 
             -- Parse this page's seven contract columns into the collection.
-            l_page_rows := 0;
-            l_last_key  := NULL;
+            l_page_rows     := 0;
+            l_last_key      := NULL;
+            l_page_headers  := 0;
+            l_last_page_key := NULL;
             -- Backlog #65: also parse the report's DMT_REFERENCE (Slot C DFF, tier 2)
             -- and SOURCE_REF (business key, tier 3) columns. A DM that does not emit
             -- these nodes yields NULL for them (XMLTABLE PATH returns NULL for an
@@ -175,7 +202,8 @@
                        x.error_message,
                        x.load_request_id,
                        x.dmt_reference,
-                       x.source_ref
+                       x.source_ref,
+                       x.page_key
                 FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
                     COLUMNS
                         object_type     VARCHAR2(100)  PATH 'OBJECT_TYPE',
@@ -186,9 +214,14 @@
                         error_message   VARCHAR2(4000) PATH 'ERROR_MESSAGE',
                         load_request_id VARCHAR2(100)  PATH 'LOAD_REQUEST_ID',
                         dmt_reference   VARCHAR2(1000) PATH 'DMT_REFERENCE',
-                        source_ref      VARCHAR2(1000) PATH 'SOURCE_REF'
+                        source_ref      VARCHAR2(1000) PATH 'SOURCE_REF',
+                        -- Optional header key (backlog #224); NULL when absent.
+                        page_key        VARCHAR2(1000) PATH 'PAGE_KEY'
                 ) x
-                ORDER BY x.record_key
+                -- Header-paged rows group by their header first, in the BINARY
+                -- order the report pages by; for a report without PAGE_KEY every
+                -- value is NULL and the order is RECORD_KEY, exactly as before.
+                ORDER BY NLSSORT(x.page_key, 'NLS_SORT=BINARY') NULLS FIRST, x.record_key
             ) LOOP
                 l_n := l_n + 1;
                 x_rows(l_n).object_type     := r.object_type;
@@ -202,17 +235,33 @@
                 x_rows(l_n).business_key     := r.source_ref;    -- tier 3
                 l_page_rows := l_page_rows + 1;
                 l_last_key  := r.record_key;
+                -- Rows arrive grouped by PAGE_KEY, so a change of value is a new header.
+                IF r.page_key IS NOT NULL
+                   AND (l_last_page_key IS NULL OR r.page_key <> l_last_page_key) THEN
+                    l_page_headers  := l_page_headers + 1;
+                    l_last_page_key := r.page_key;
+                END IF;
             END LOOP;
 
             DMT_UTIL_PKG.LOG(
                 p_run_id    => p_run_id,
                 p_message   => C_PROC || ' page ' || l_page || ': rows ' || l_page_rows ||
-                               ' | lastKey ' || NVL(l_last_key, '(none)'),
+                               CASE WHEN l_page_headers > 0
+                                    THEN ' | headers ' || l_page_headers ||
+                                         ' | lastPageKey ' || l_last_page_key
+                                    ELSE ' | lastKey ' || NVL(l_last_key, '(none)') END,
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
 
-            -- Short page => last page (keyset is exact, no overlap).
-            EXIT WHEN l_page_rows < l_chunk_size;
+            -- Short page => last page (keyset is exact, no overlap). A header-paged
+            -- page is short when it holds fewer headers than the chunk size; the
+            -- number of line and distribution rows under those headers never
+            -- decides it (backlog #224).
+            IF l_page_headers > 0 THEN
+                EXIT WHEN l_page_headers < l_chunk_size;
+            ELSE
+                EXIT WHEN l_page_rows < l_chunk_size;
+            END IF;
 
             -- Safety cap: a report that keeps returning full pages beyond the
             -- expected row count is misbehaving; stop and surface it.
@@ -228,7 +277,10 @@
                 EXIT;
             END IF;
 
-            l_after_key := l_last_key;
+            -- Next page starts after the last header received (header paging) or
+            -- after the last row key (row keyset, every other report).
+            l_after_key := CASE WHEN l_page_headers > 0 THEN l_last_page_key
+                                ELSE l_last_key END;
         END LOOP;
 
         DMT_UTIL_PKG.LOG(

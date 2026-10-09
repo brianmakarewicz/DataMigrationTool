@@ -67,6 +67,10 @@ REPORTS = [
     # only by the load's Fusion job ids (base lines by the AutoInvoice import
     # REQUEST_ID, interface rows by LOAD_REQUEST_ID), never by the run prefix.
     ("ARInvoices",              "DMT_AR_RECON_V4_DM", "DMT_AR_RECON_V4_RPT"),
+    # ARInvoices V5 (2026-10-09, owner direction): alongside V1-V4; pages by
+    # header (next N invoices + all their lines and distributions, PAGE_KEY,
+    # backlog #224); loaded line FUSION_ID = trx id ~ line id (backlog #85).
+    ("ARInvoices",              "DMT_AR_RECON_V5_DM", "DMT_AR_RECON_V5_RPT"),
     ("GLBalances",              "DMT_GL_BAL_RECON_DM", "DMT_GL_BAL_RECON_RPT"),
     # GLBalances V3 (backlog #173): alongside V1; real Journal Import error
     # (STATUS[: STATUS_DESCRIPTION]) only, rows selected by job id.
