@@ -85,7 +85,8 @@ above run over the whole extended set, plus:
      [LOAD_ERROR] tag row (the async poll-timeout path no longer emits the tag).
 
 NOT CHECKED (declared, per the "Checker fidelity" standard in section 7):
-  * NOT CHECKED: tags written through a variable built elsewhere (only literals are
+  * NOT CHECKED: tags written through a variable built elsewhere (only literals, and a
+    name assigned the bare '[FUSION_ERROR]' literal (rule 5 extension), are
     seen); the EXPIRED rule follows one level of variable indirection only by
     covering the whole branch body and the rest of its block.
   * NOT CHECKED: whether the error text a reconciler copies is the RIGHT row's error
@@ -350,6 +351,55 @@ def check_fusion_error_form(path, text):
     return out
 
 
+# Rule 5 extension (backlog #212/#213, 2026-10-08) -- two composition blind spots:
+#  (a) the tag held in a constant / variable (NAME VARCHAR2(n) := '[FUSION_ERROR]')
+#      followed by NAME || '<our text>' composes text after the tag exactly as a
+#      literal would. Only the whole-document or related-record prefix may follow.
+#  (b) our own text IN FRONT of the tag: a literal with text before '[FUSION_ERROR]'
+#      ('Lot not created [FUSION_ERROR] ...'), or a non-empty literal concatenated
+#      straight into the tag ('Upload failed: ' || '[FUSION_ERROR]' / || NAME).
+FE_ALIAS_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_$#]*)\s+(?:CONSTANT\s+)?VARCHAR2\s*\(\s*\d+\s*\)"
+                         r"\s*:=\s*'\[FUSION_ERROR\] ?'", re.I)
+
+
+def _fe_sanctioned_follow(lit):
+    return lit.lstrip().startswith(FE_DOCUMENT.strip()) or bool(FE_RELATED_RE.match(lit))
+
+
+def check_fusion_error_composition(path, text):
+    base = os.path.basename(path)
+    out, seen = [], set()
+
+    def add(pos, item):
+        item = re.sub(r"\s+", " ", item).strip()[:80]
+        key = "SWEEP-FUSION-ERROR-FORM|%s|%s" % (base, item)
+        if key in seen:
+            return
+        seen.add(key)
+        line = text.count("\n", 0, pos) + 1
+        out.append((key, "line %d: [FUSION_ERROR] must be followed only by the real Fusion "
+                         "error (or a sanctioned prefix); found %s" % (line, item)))
+
+    aliases = {m.group(1) for m in FE_ALIAS_RE.finditer(text)}
+    # (a) ALIAS || '<literal>'
+    for name in aliases:
+        for m in re.finditer(r"\b%s\s*\|\|\s*'((?:[^']|'')*)'" % re.escape(name), text, re.I):
+            if _is_read_context(text, m.start()) or _fe_sanctioned_follow(m.group(1)):
+                continue
+            add(m.start(), "composed %s || '%s'" % (name, m.group(1)))
+    # (b1) text before the tag inside one plain literal
+    for m in re.finditer(r"(?<!')'([^'\n]*?)\[FUSION_ERROR\]", text):
+        if m.group(1).strip() and not _is_read_context(text, m.start()):
+            add(m.start(), "text before tag '%s[FUSION_ERROR]'" % m.group(1))
+    # (b2) '<literal>' || '[FUSION_ERROR]...'  or  '<literal>' || ALIAS
+    alias_alt = "|".join(re.escape(a) for a in aliases)
+    tail = r"'\[FUSION_ERROR\]" + (r"|\b(?:%s)\b" % alias_alt if alias_alt else "")
+    for m in re.finditer(r"(?<!')'([^'\n]*\S[^'\n]*)'\s*\|\|\s*(?:%s)" % tail, text, re.I):
+        if not _is_read_context(text, m.start()):
+            add(m.start(), "text before tag '%s' || [FUSION_ERROR]" % m.group(1))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Rule 6: SWEEP-EXPIRED -- our poll timeout is never a failure
 # --------------------------------------------------------------------------
@@ -518,12 +568,14 @@ def main():
             f.append(("SWEEP-HONEST|%s|%s" % (base, p[:80]), p))
         f += check_tags(path, text)
         f += check_fusion_error_form(path, text)
+        f += check_fusion_error_composition(path, text)
         f += check_expired(path, text)
         label = "config" if is_config_reconciler(path) else "      "
         print("  %-4s %s %s" % ("OK" if not f else "VIOL", label, base))
         found += f
 
-    print("\nNOT CHECKED: tags or messages built in a variable elsewhere (literals only)")
+    print("\nNOT CHECKED: tags or messages built in a variable elsewhere (literals, and names assigned the bare "
+          "'[FUSION_ERROR]' literal, only)")
     print("NOT CHECKED: whether a copied Fusion error belongs to the RIGHT row (runtime)")
     print("NOT CHECKED: the BIP report SQL itself -- see scripts/check_bip_recon_reports.py")
     rc = known.report(CHECKER, found)

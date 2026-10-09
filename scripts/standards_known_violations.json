@@ -94,41 +94,6 @@
     },
     {
       "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_poz_sup_addr_results_pkg.pkb.sql|[RECONCILE_ERROR]",
-      "backlog": 213,
-      "found": "2026-10-07",
-      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_poz_sup_cont_results_pkg.pkb.sql|[RECONCILE_ERROR]",
-      "backlog": 213,
-      "found": "2026-10-07",
-      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_poz_sup_results_pkg.pkb.sql|[RECONCILE_ERROR]",
-      "backlog": 213,
-      "found": "2026-10-07",
-      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_poz_sup_site_assn_results_pkg.pkb.sql|[RECONCILE_ERROR]",
-      "backlog": 213,
-      "found": "2026-10-07",
-      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
-      "key": "SWEEP-TAG|dmt_poz_sup_site_results_pkg.pkb.sql|[RECONCILE_ERROR]",
-      "backlog": 213,
-      "found": "2026-10-07",
-      "detail": "line 254: writes the unsanctioned ERROR_TEXT tag [RECONCILE_ERROR] (allowed here: [FUSION_ERROR], [IMPORT_REPORT])"
-    },
-    {
-      "checker": "check_sweep_unaccounted",
       "key": "SWEEP-FUSION-ERROR-FORM|dmt_zx_results_pkg.pkb.sql|composed '[FUSION_ERROR] HTTP '",
       "backlog": 161,
       "found": "2026-10-07",
