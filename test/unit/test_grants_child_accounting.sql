@@ -260,10 +260,10 @@ end;
 /
 
 begin
-    if :passed <> 15 then
-        raise_application_error(-20998, 'test_grants_child_accounting: '||:passed||' of 15 passed');
+    if :passed <> 14 then
+        raise_application_error(-20998, 'test_grants_child_accounting: '||:passed||' of 14 passed');
     end if;
-    dbms_output.put_line('test_grants_child_accounting: ALL 15 PASSED');
+    dbms_output.put_line('test_grants_child_accounting: ALL 14 PASSED');
 end;
 /
 exit

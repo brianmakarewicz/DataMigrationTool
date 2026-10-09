@@ -109,9 +109,33 @@ schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
   `[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER> (<grain> <key>): <message>`
   (no `(<grain> <key>)` part when the award header itself was blamed). FORALL UPDATE,
   APPEND_ERROR, idempotent, never touches LOADED rows. The old header-to-children FAILED
-  cascade is retired; children of a LOADED award are still LOADED with it.
+  cascade is retired. Awards whose header is LOADED are never quoted onto (backlog #568).
 - Regression: `RTAWD-XG1` (Good-1's shape, personnel PI `PERSON_NUMBER 99999999`, no email)
   in scenario RegressionTest2610081853.
+
+## Each child is accounted on its own evidence (backlog #568 / #670, 2026-10-09)
+- **No LOADED by inheritance.** `cascade_children` (every child of a LOADED award set LOADED) is
+  retired. `APPLY_CHILD_REPORT_SUCCESSES` sets a child LOADED only when the Award Batch Import
+  Report of the run's own import job (job-scoped: the report is a child request of the import
+  ESS id) lists that child row as imported, in the success groups under the award's `G_3` row
+  (G_35 personnel, G_36 funding, G_40 funding allocation, G_32 budget period, G_27 org credit,
+  G_26 project, G_23 funding source, G_16 project funding source), AND the award header is
+  already LOADED from `GMS_AWARD_HEADERS_B`. One success line matches one TFM row (lowest
+  TFM_SEQUENCE_ID still waiting), so two identical rows need two lines. A child with no line of
+  its own stays GENERATED and ends UNACCOUNTED in the shared sweep.
+- **Child rejected under a LOADED award.** It keeps its own `[FUSION_ERROR]`; the award stays
+  LOADED and no sibling is quoted (`PROPAGATE_DOCUMENT_ERRORS` skips awards whose header is
+  LOADED). Fusion never produced this on the pod: probes 77141 / 77142 (2026-10-09, standalone,
+  as PPM_IMPL) sent eleven child defects (invalid keyword, term, project, personnel role and
+  person; duplicate budget period, project, funding source, personnel, org credit, funding
+  allocation) and every one rejected the whole award (`G_4` "The award isn't imported because
+  errors exist in the ... data."). So no live scenario can show it; it is proven by the unit
+  test `test/unit/test_grants_child_accounting.sql` on a synthetic report.
+- **Load failure.** `fin_mark_generated_failed` now fails all 15 Grants TFM tables with the
+  load's `[LOAD_ERROR]`, not only the award headers (backlog #670).
+- Terms, keywords, certifications, CFDAs, references and task burden schedules have no success
+  group in Fusion's report, so a child of those types is never LOADED (backlog #671: give them,
+  and every child, a base-table proof with its own Fusion id).
 
 ## Award children in the record views (backlog #567, 2026-10-09)
 Every award child TFM table now has its own lane in `DMT_RECORD_DETAIL_V`,
@@ -135,10 +159,11 @@ child lane with a LOADED row.
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - ~~Per-award rejection errors were unreadable after import (interface purged) — object left UNACCOUNTED.~~ **RESOLVED (run-234 fix):** reconciler now reads the Award Batch Import Report child (see above).
 - **Live section-7 standard violations in Grants code (pre-existing; logged per the "README Known Issues" rule, 2026-10-07):**
-  - Award children (funding, projects, personnel, budget periods, ...) are set LOADED from the parent award's
-    base-table verdict without their own `FUSION_*_ID` (the "LOADED carries its Fusion id" rule). The child
-    base tables do exist (`GMS_AWARD_PROJECTS`, `GMS_AWARD_BUDGET_PERIODS`, ... per the 2026-10-07 findings),
-    so a child-tier recon is possible; not built yet.
+  - Award children are set LOADED on their own success line in the job's Award Batch Import Report
+    (backlog #568), but still without their own `FUSION_*_ID` (the "LOADED carries its Fusion id" rule),
+    and six child types can never be LOADED (no success group). The child base tables do exist
+    (`GMS_AWARD_PERSONNEL`, `GMS_AWARD_PROJECTS`, `GMS_AWARD_BUDGET_PERIODS`, `GMS_AWARD_KEYWORDS`, ...),
+    but carry no job id, so a child-tier base recon is not built yet (backlog #671).
   - `bip/Grants/` holds more than one data model (V1 + V2 recon, `GRANTS_DM`, `GRANTS_CMP_DM`); the contract's
     "one data model per folder" conflicts with the never-overwrite BIP versioning rule (V2 deployed alongside V1).
   - `DMT_GRANTS_RESULTS_PKG.find_report_ess_id` / `apply_award_import_report` are functions with nested
