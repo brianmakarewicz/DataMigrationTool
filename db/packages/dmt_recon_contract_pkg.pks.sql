@@ -28,8 +28,11 @@
 --   * Zero report rows -> returns an EMPTY collection (never a silent success;
 --     the caller applies its own no-rows policy -- zero rows is never LOADED).
 --   * A SOAP fault / transport failure raises immediately (never a silent retry).
---   * Keyset pagination is bounded by a page-count cap derived from p_row_cap so
---     a misbehaving report cannot loop forever.
+--   * Pages end on header (document) boundaries (owner decision 2026-10-09,
+--     design section 5 "Reconciliation fetches page on header boundaries"): a
+--     report that returns PAGE_KEY is paged by header; one without it is
+--     single-grain and paged by RECORD_KEY. There is no page-count cap; a report
+--     whose cursor does not advance fails the fetch loudly (see ACCEPT_PAGE).
 --
 -- The APPLY-side rules (which each object's reconciler implements statically):
 --   * BASE / SUCCESS / FUSION_ID NOT NULL  -> LOADED, stamp FUSION_ID.
@@ -113,9 +116,11 @@
     --                   the work item's projects by the reference DMT stamps,
     --                   '<run_id>:<work_queue_id>:<legacy reference>'. Every other
     --                   caller leaves it NULL and its report never sees P_WQ_ID.
-    --   p_row_cap       expected upper bound on rows (usually the run's generated-
-    --                   row count) used only to derive the keyset page-count cap.
-    --                   NULL/0 falls back to a floor of 2 pages of slack.
+    --   p_row_cap       RETIRED 2026-10-09 (backlog #680) and ignored: the
+    --                   page-count cap it sized is gone (design section 5,
+    --                   "Reconciliation fetches page on header boundaries"). Kept
+    --                   in the signature only until every caller stops passing it
+    --                   (backlog #730).
     --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
     --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
     --                   detail is in DMT_LOG_TBL and x_rows is empty.
@@ -136,6 +141,42 @@
         x_error_code    OUT NUMBER,
         p_work_queue_id IN  NUMBER   DEFAULT NULL,
         p_fusion_batch_id IN NUMBER  DEFAULT NULL
+    );
+
+    -- --------------------------------------------------------
+    -- ACCEPT_PAGE - parse ONE report page and decide where the next page starts.
+    -- The parse half of FETCH_ROWS, separate from the BIP transport so the paging
+    -- rules are unit-testable offline (design section 7, transport and parse are
+    -- separable; test/unit/test_recon_fetch_paging.sql). Touches no table except
+    -- the activity log.
+    --
+    --   p_page_xml    the page as BIP returned it (/DATA_DS/G_1 rows).
+    --   p_chunk_size  the P_CHUNK_SIZE the page was requested with.
+    --   p_after_key   the P_AFTER_KEY the page was requested with (NULL on page 1).
+    --   x_rows        IN OUT: the page's rows are appended after the existing ones.
+    --   x_next_key    OUT: the cursor for the next page. The last PAGE_KEY when the
+    --                 page carries PAGE_KEY (header paging), else the last
+    --                 RECORD_KEY (a single-grain report). BINARY order.
+    --   x_last_page   OUT 'Y' when this is the last page: fewer headers than
+    --                 p_chunk_size (header paging) or fewer rows (single grain).
+    --                 The number of rows under the headers never decides it.
+    --   x_error_code  OUT C_SUCCESS, or C_ERROR when the page did not advance: its
+    --                 first key is not after p_after_key, or it is full and has no
+    --                 key to continue from. The error (ORA-20681 with both keys) is
+    --                 logged here; the caller must discard every row it collected.
+    --   p_run_id, p_cemli_code, p_page_no  for the log entries only.
+    -- --------------------------------------------------------
+    PROCEDURE ACCEPT_PAGE (
+        p_page_xml    IN            XMLTYPE,
+        p_chunk_size  IN            NUMBER,
+        p_after_key   IN            VARCHAR2,
+        x_rows        IN OUT NOCOPY T_RECON_TBL,
+        x_next_key    OUT           VARCHAR2,
+        x_last_page   OUT           VARCHAR2,
+        x_error_code  OUT           NUMBER,
+        p_run_id      IN            NUMBER   DEFAULT NULL,
+        p_cemli_code  IN            VARCHAR2 DEFAULT NULL,
+        p_page_no     IN            NUMBER   DEFAULT NULL
     );
 
 END DMT_RECON_CONTRACT_PKG;

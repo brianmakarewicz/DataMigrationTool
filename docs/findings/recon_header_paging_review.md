@@ -1,5 +1,9 @@
 # Reconciliation fetch paging review: header boundaries (2026-10-09)
 
+## Status (2026-10-09, after the fix)
+
+Fixed for every failing ERP object. `DMT_RECON_CONTRACT_PKG` has no page cap; its new `ACCEPT_PAGE` pages by `PAGE_KEY` (or by `RECORD_KEY` for a single-grain report) and raises ORA-20681 when a page does not advance, so `FETCH_ROWS` fails loudly instead of returning a partial set (#680). APInvoices, Assets, BlanketPOs, Customers, Expenditures, GLBalances, GLBudgets, Items, MiscReceipts, ProjectBudgets, Projects, PurchaseOrders and Requisitions have new header-paged report versions with a `PAGE_KEY` column (#681 to #694). The five supplier objects moved to the shared fetch as single-grain reports in PR #723 (#695 to #699). PlanningBudgets stays dormant and out of scope (#732). ARInvoices was fixed separately in PR #721. Open follow-ups: #730 (drop `p_row_cap` from callers), #731 (retire `DMT_RECON_ENGINE_PKG`), #733 (reports without `PAGE_KEY`).
+
 ## The rule being checked
 
 Owner decision, 2026-10-09: a reconciliation fetch pages dynamically on header (document)

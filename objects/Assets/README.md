@@ -241,3 +241,14 @@ reconcile-only rerun of work item 2010 (rolled back) left every TFM row identica
   - **Option B:** Download "Asset Transaction Approval Basic Template" spreadsheet via Manage Workflow Rules, add auto-approve rule for BATCH_NAME='DMT', upload.
   - **Option C:** Use BPM REST API (`PUT /bpm/api/4.0/tasks/{id}` with `{"action":{"id":"APPROVE"}}`) to programmatically approve pending tasks after PostMassAdditions.
   - Next step: Apply Option A on demo instance with fin_impl user, re-enable BATCH_NAME='DMT' in FBDI generator, retest.
+
+## Reconciliation report pages by header (2026-10-09, backlog #682)
+
+The registered report is now `bip/Assets/DMT_FA_ASSET_RECON_V3_DM.xdm`, deployed alongside `DMT_FA_ASSET_RECON_V2_DM` (never overwritten).
+It pages on header boundaries (owner decision 2026-10-09, design section 5, "Reconciliation
+fetches page on header boundaries"): a page is the next BIP_CHUNK_SIZE headers, keyed by the asset number,
+plus every base and interface row that belongs to them, and each row carries that header key in
+the tenth column `PAGE_KEY`. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers, sends the last
+header key back as `P_AFTER_KEY`, has no page cap, and fails the fetch with an error if a page
+does not advance. Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text are the
+same as in `DMT_FA_ASSET_RECON_V2_DM`.

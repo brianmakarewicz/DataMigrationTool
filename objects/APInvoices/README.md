@@ -111,3 +111,14 @@ with TWO CSV tabs; DMT models both with one STG + one TFM table each.
 
 ## History
 - E2E LOADED confirmed working with OU-based grouping.
+
+## Reconciliation report pages by header (2026-10-09, backlog #681)
+
+The registered report is now `bip/APInvoices/DMT_AP_RECON_V3_DM.xdm`, deployed alongside `DMT_AP_RECON_V2_DM` (never overwritten).
+It pages on header boundaries (owner decision 2026-10-09, design section 5, "Reconciliation
+fetches page on header boundaries"): a page is the next BIP_CHUNK_SIZE headers, keyed by the prefixed invoice number,
+plus every base and interface row that belongs to them, and each row carries that header key in
+the tenth column `PAGE_KEY`. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers, sends the last
+header key back as `P_AFTER_KEY`, has no page cap, and fails the fetch with an error if a page
+does not advance. Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text are the
+same as in `DMT_AP_RECON_V2_DM`.
