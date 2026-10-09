@@ -18,6 +18,7 @@
 //   DMT2_UI_PASS   password for that user          (never hardcoded)
 //   DMT2_UI_RUN    run id to drill                 (optional; a recent run)
 //   DMT2_UI_CMP_RUN run id with comparison data    (optional; for page 85)
+//   DMT2_UI_ACTIVE_RUN a QUEUED/IN_PROGRESS run id (optional; Cancel form check)
 //   DMT2_UI_CEMLIS comma object codes to drill     (optional)
 //   DMT2_PW_NODE_MODULES  path to a node_modules with 'playwright' installed
 //
@@ -37,6 +38,7 @@ const USER = process.env.DMT2_UI_USER;
 const PASS = process.env.DMT2_UI_PASS;
 const RUN = process.env.DMT2_UI_RUN || '';
 const CMP_RUN = process.env.DMT2_UI_CMP_RUN || RUN;
+const ACTIVE_RUN = process.env.DMT2_UI_ACTIVE_RUN || '';
 const CEMLIS = (process.env.DMT2_UI_CEMLIS
   || 'Suppliers,PurchaseOrders,GLBalances,Customers,Assets')
   .split(',').map(s => s.trim()).filter(Boolean);
@@ -229,6 +231,24 @@ const PAGES = [
     return { ok: passed, body, html };
   }
 
+  // Which run-action controls the current page 82 shows. The Cancel button
+  // carries the DOM id P82_CANCEL_RUN_BTN; its form has a reason field and a
+  // confirmation checkbox (no JavaScript confirm dialog).
+  async function runDetailActions() {
+    return page.evaluate(() => {
+      const visible = (el) => !!el && el.offsetParent !== null;
+      const btn = (re) => Array.from(document.querySelectorAll('button'))
+        .some(b => re.test(b.textContent || '') && visible(b));
+      return {
+        rerun: btn(/Re-run reconcile/i),
+        back: btn(/Run History/i),
+        cancel: visible(document.getElementById('P82_CANCEL_RUN_BTN')),
+        reason: !!document.getElementById('P82_CANCEL_REASON'),
+        confirm: !!document.querySelector('[id^="P82_CANCEL_CONFIRM"]'),
+      };
+    }).catch(() => ({ rerun: false, back: false, cancel: false, reason: false, confirm: false }));
+  }
+
   try {
     // ---- 1. login as the end-user smoke account --------------------------
     // One login attempt. Returns { loggedIn, stillLogin, apexReady, saw572 }.
@@ -381,6 +401,14 @@ const PAGES = [
         step('verify link: reconcile read-back controls render on run detail 82',
           haveReadBack,
           `comparison-read-back=${!!links.cmpHref} activity-log-read-back=${!!links.actHref}`);
+        // Run actions (backlog #158, #642): the "Re-run reconcile" button must
+        // render (it used to sit in a slot APEX 26.1 rejects, so it never
+        // showed), and the Cancel run form must NOT render for a finished run.
+        const acts = await runDetailActions();
+        step(`run actions: Re-run reconcile button renders on run detail 82 [run ${RUN}]`,
+          acts.rerun, `rerun=${acts.rerun} back=${acts.back}`);
+        step(`run actions: no Cancel button on a finished run [run ${RUN}]`,
+          !acts.cancel, `cancel-button=${acts.cancel} reason-field=${acts.reason}`);
         // Follow the run-comparison read-back (the per-run reconciliation view)
         // and assert it actually resolves for this run.
         if (links.cmpHref) {
@@ -402,6 +430,21 @@ const PAGES = [
             step('verify link: reconcile action completes', !ERROR_RE.test(body), body.slice(0, 120));
           }
         }
+      }
+    }
+
+    // (a2) the Cancel run form on a run that has not finished (backlog #642).
+    //      Only checked when a QUEUED / IN_PROGRESS run id is given, because a
+    //      regression run is always finished by the time the click-through
+    //      runs. Presence only: the button is never pressed here.
+    if (ACTIVE_RUN) {
+      const ar = await visit(`run actions: run detail 82 [active run ${ACTIVE_RUN}]`,
+        fp(82, 'P82_RUN_ID', ACTIVE_RUN), { mustMatch: new RegExp(`Run #${ACTIVE_RUN}\\b`) });
+      if (ar.ok) {
+        const acts = await runDetailActions();
+        step(`run actions: Cancel run form renders on an unfinished run [run ${ACTIVE_RUN}]`,
+          acts.cancel && acts.reason && acts.confirm,
+          `cancel-button=${acts.cancel} reason-field=${acts.reason} confirm-box=${acts.confirm}`);
       }
     }
 
