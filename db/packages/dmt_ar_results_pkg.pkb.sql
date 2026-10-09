@@ -18,7 +18,8 @@ AS
 --
 --   Tier           OBJECT_TYPE literal          TFM table               FUSION_ID column
 --   ----------     --------------------------   ---------------------   ------------------------------
---   lines          'ARInvoices'                 DMT_RA_LINES_TFM_TBL     FUSION_CUSTOMER_TRX_ID
+--   lines          'ARInvoices'                 DMT_RA_LINES_TFM_TBL     FUSION_CUSTOMER_TRX_ID (header)
+--                                                                         + FUSION_CUSTOMER_TRX_LINE_ID (line)
 --   distributions  'ARInvoices.Distribution'    DMT_RA_DISTS_TFM_TBL     FUSION_CUST_TRX_LINE_GL_DIST_ID
 --
 -- Per tier the rule is the shared Contract v1 apply rule:
@@ -76,6 +77,9 @@ AS
 --                   skips the fetch when it has no load id (split parent row).
 --   2026-10-08  BM  Backlog #503: the Contract v1 apply UPDATEs are scoped to the
 --                   child work item (WORK_QUEUE_ID) when one is given.
+--   2026-10-09  BM  Backlog #224: recon V5 pages by header (DMT invoice); no
+--                   page cap, no fixed rows-per-row allowance. Backlog
+--                   #85: a LOADED line also stores its own CUSTOMER_TRX_LINE_ID.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_AR_RESULTS_PKG';
@@ -86,13 +90,14 @@ AS
     -- Guard against it so a marker never produces a FAILED with fake text.
     C_IMPORT_MARKER CONSTANT VARCHAR2(30) := '#IMPORT_REPORT#';
 
-    -- Page-cap headroom for the shared keyset fetch. The report returns more rows
-    -- than DMT sent: every LOADED line also brings the BASE distributions
-    -- AutoAccounting created (DMT usually sends none). The shared fetch stops at
-    -- CEIL(p_row_cap / chunk) + 2 pages, so passing the bare TFM count would cut a
-    -- large run short. 5 report rows per TFM row covers a line plus its generated
-    -- distributions with margin. A sizing factor, not a business value.
-    C_REPORT_ROWS_PER_TFM_ROW CONSTANT PLS_INTEGER := 5;
+    -- Header paging (backlog #224, owner direction 2026-10-09). Report V5 pages on
+    -- HEADER boundaries: each page is the next BIP_CHUNK_SIZE DMT invoices (header
+    -- key = INTERFACE_LINE_ATTRIBUTE1, the report's PAGE_KEY) plus EVERY line and
+    -- distribution of those invoices, however many AutoAccounting created. The
+    -- former fixed allowance of 5 report rows per sent row is gone, and so is any
+    -- page-count cap: the shared fetch ends on a short header page and fails loudly
+    -- if the header cursor stops advancing, so no count of lines or distributions
+    -- can cut a document short.
 
     -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
     -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
@@ -160,7 +165,8 @@ AS
         p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ARINVOICES';
-        l_gen_count NUMBER := 0;
+        l_trx_id    NUMBER;          -- backlog #85: header CUSTOMER_TRX_ID of a base line
+        l_line_id   NUMBER;          -- backlog #85: the line's own CUSTOMER_TRX_LINE_ID
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_line_loaded NUMBER := 0;  l_line_failed NUMBER := 0;
@@ -169,13 +175,6 @@ AS
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
-        -- Generated-row count across both tiers drives the shared fetch's keyset
-        -- page-count cap. Done statically here (not in the shared pkg).
-        SELECT (SELECT COUNT(*) FROM DMT_RA_LINES_TFM_TBL WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_RA_DISTS_TFM_TBL WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   dual;
-
         -- Report V4 (owner decision 2026-10-07) finds rows only by this load's
         -- Fusion job ids: base lines by the AutoInvoice import job's REQUEST_ID,
         -- interface rows and errors by the load request id. Both ids belong to
@@ -186,7 +185,8 @@ AS
             p_run_id        => p_run_id,
             p_load_ess_id   => TO_NUMBER(p_request_id),
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count * C_REPORT_ROWS_PER_TFM_ROW,
+            -- No p_row_cap (backlog #224): report V5 pages by header, which the
+            -- shared fetch runs without a page-count cap.
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 
@@ -218,6 +218,16 @@ AS
                     IF l_rows(i).SOURCE_TYPE = 'BASE'
                        AND l_rows(i).FUSION_STATUS = 'SUCCESS'
                        AND l_rows(i).FUSION_ID IS NOT NULL THEN
+                        -- Backlog #85 (row-grain Fusion id): report V5 returns the line's
+                        -- FUSION_ID as CUSTOMER_TRX_ID~CUSTOMER_TRX_LINE_ID. The header id
+                        -- stays in FUSION_CUSTOMER_TRX_ID (the Verify-in-Fusion key, the
+                        -- receivablesInvoices resource is header level); the line's own id
+                        -- goes to FUSION_CUSTOMER_TRX_LINE_ID. A value with no '~' (an
+                        -- older report version) is the header id alone.
+                        l_trx_id  := TO_NUMBER(REGEXP_SUBSTR(l_rows(i).FUSION_ID, '^[^~]+'));
+                        l_line_id := CASE WHEN INSTR(l_rows(i).FUSION_ID, '~') > 0
+                                          THEN TO_NUMBER(REGEXP_SUBSTR(l_rows(i).FUSION_ID, '[^~]+$'))
+                                     END;
                         -- Backlog #65 three-tier match (owner order on PR #481). Tier 1 is
                         -- the stamped recon key (RECON_KEY = RECORD_KEY, exactly as before).
                         -- Tier 2 (the Slot C DFF stamp: TFM_SEQUENCE_ID = the trailing numeric
@@ -239,10 +249,11 @@ AS
                         -- since V3, and still correct for rows stamped earlier (RECON_KEY =
                         -- ATTRIBUTE1), so a re-reconcile of an older run keeps working.
                         UPDATE DMT_RA_LINES_TFM_TBL
-                        SET    TFM_STATUS             = 'LOADED',
-                               FUSION_CUSTOMER_TRX_ID = l_rows(i).FUSION_ID,
-                               RESULTS_UPDATED_DATE   = SYSDATE,
-                               LAST_UPDATED_DATE      = SYSDATE
+                        SET    TFM_STATUS                  = 'LOADED',
+                               FUSION_CUSTOMER_TRX_ID      = l_trx_id,
+                               FUSION_CUSTOMER_TRX_LINE_ID = l_line_id,
+                               RESULTS_UPDATED_DATE        = SYSDATE,
+                               LAST_UPDATED_DATE           = SYSDATE
                         WHERE  RUN_ID    = p_run_id
                         AND    INTERFACE_LINE_ATTRIBUTE1 || '/' || INTERFACE_LINE_ATTRIBUTE2
                                    = l_rows(i).RECORD_KEY
@@ -256,10 +267,11 @@ AS
                                 REGEXP_SUBSTR(l_rows(i).DFF_KEY, '[0-9]+$') DEFAULT NULL ON CONVERSION ERROR);
                             IF l_dff_seq IS NOT NULL THEN
                                 UPDATE DMT_RA_LINES_TFM_TBL
-                                SET    TFM_STATUS             = 'LOADED',
-                                       FUSION_CUSTOMER_TRX_ID = l_rows(i).FUSION_ID,
-                                       RESULTS_UPDATED_DATE   = SYSDATE,
-                                       LAST_UPDATED_DATE      = SYSDATE
+                                SET    TFM_STATUS                  = 'LOADED',
+                                       FUSION_CUSTOMER_TRX_ID      = l_trx_id,
+                                       FUSION_CUSTOMER_TRX_LINE_ID = l_line_id,
+                                       RESULTS_UPDATED_DATE        = SYSDATE,
+                                       LAST_UPDATED_DATE           = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
                                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED')
@@ -273,7 +285,7 @@ AS
                         IF l_tier = 'TIER2' THEN
                             DMT_UTIL_PKG.LOG(p_run_id,
                                 C_PROC || ': matched a LOADED AR line via TIER2 '
-                                || 'fallback (tier 1 stamped key did not resolve). CUSTOMER_TRX_ID '
+                                || 'fallback (tier 1 stamped key did not resolve). CUSTOMER_TRX_ID~LINE_ID '
                                 || l_rows(i).FUSION_ID || '.', 'INFO', C_PKG, C_PROC);
                         END IF;
                     ELSIF l_rows(i).FUSION_STATUS = 'ERROR'

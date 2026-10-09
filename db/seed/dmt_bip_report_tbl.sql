@@ -1605,6 +1605,12 @@ commit;
 
 -- ---------------------------------------------------------------------------
 -- ARInvoices — Contract v1 registration (design section 5), MULTI-TIER.
+-- V5 (2026-10-09, owner direction): DMT_AR_RECON_V5_DM pages on HEADER
+-- boundaries -- each page is the next BIP_CHUNK_SIZE DMT invoices plus every
+-- line and distribution row of them (optional PAGE_KEY column, backlog #224) --
+-- and returns a loaded line's FUSION_ID as CUSTOMER_TRX_ID~CUSTOMER_TRX_LINE_ID
+-- so the line's own id is stored (backlog #85). FUSION_ID_COLUMN is the line's
+-- row-grain id FUSION_CUSTOMER_TRX_LINE_ID. V1-V4 stay deployed.
 -- V4 (2026-10-07, owner decision): DMT_AR_RECON_V4_DM finds rows only by the
 -- load's Fusion job ids -- base lines by REQUEST_ID = the AutoInvoiceImportEss
 -- request id, base distributions through their loaded line, interface rows and
@@ -1639,16 +1645,17 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V4_RPT.xdo'       report_catalog_path,
-           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V4 (2026-10-07): '
-           || 'rows found only by the work item''s Fusion job ids (base lines by the '
-           || 'AutoInvoice import REQUEST_ID, interface rows and errors by LOAD_REQUEST_ID), '
-           || 'never by the run prefix; called with each load''s own ids. V3 made the line '
-           || 'RECORD_KEY ATTRIBUTE1/ATTRIBUTE2. Deployed alongside V1-V3, never overwriting them.' notes,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V5_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V5_RPT.xdo'       report_catalog_path,
+           'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V5 (2026-10-09): '
+           || 'pages by header: each page is the next BIP_CHUNK_SIZE DMT invoices plus every '
+           || 'line and distribution of them (PAGE_KEY = invoice key, backlog #224); a loaded '
+           || 'line returns CUSTOMER_TRX_ID~CUSTOMER_TRX_LINE_ID (backlog #85). V4 found rows '
+           || 'only by the work item''s Fusion job ids, never by the run prefix. Deployed '
+           || 'alongside V1-V4, never overwriting them.' notes,
            1                                                        contract_version,
            'DMT_RA_LINES_TFM_TBL'                                  tfm_table,
-           'FUSION_CUSTOMER_TRX_ID'                                fusion_id_column,
+           'FUSION_CUSTOMER_TRX_LINE_ID'                           fusion_id_column,
            'multi-tier: lines=INTERFACE_LINE_ATTRIBUTE1||''/''||INTERFACE_LINE_ATTRIBUTE2 (run-prefixed invoice key / line id, unique per line, report V3); dists=INTERFACE_LINE_ATTRIBUTE1||'':''||ACCOUNT_CLASS||'':''||ROW_NUMBER() OVER (PARTITION BY parent_line_key,account_class ORDER BY amount,acctd_amount,percent,dist_id) (parent line key + per-distribution ordinal discriminator, transitive)' recon_key_sql
     from dual
 ) s
