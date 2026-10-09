@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-test_line_break_validation.py -- unit test for backlog #651 (values with line
+db_line_break_validation.py -- database test (needs the local Docker DB, so it is not named test_*.py and the offline CI job does not run it) for backlog #651 (values with line
 breaks never reach an FBDI CSV). SELECT-only: it writes nothing, so it can run
 against the shared local database at any time.
 
@@ -15,7 +15,7 @@ against the shared local database at any time.
      check cannot change that scenario's outcome. (The Assets per-object
      scenarios carry intentional line-break rows, RT-ASSET-XD-BAD.)
 
-Usage:  python test/unit/test_line_break_validation.py
+Usage:  python test/unit/db_line_break_validation.py
 Env:    DMT2_DSN / DMT2_USER / DMT2_PWD (default: the local Docker instance)
 Exit 0 = all pass, 1 = a failure.
 """
