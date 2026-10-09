@@ -18,6 +18,17 @@
     -- (no item rows) still yields a token and spawns a child work item.
     -- Tokens are BATCH_ID rendered with TO_CHAR; the engine treats each as
     -- opaque. Called through DMT_QUEUE_WORKER_PKG.invoke_registered (KEYS).
+    --
+    -- Ordering (backlog #610, owner decision 2026-10-09): a category row is linked
+    -- by id to its same-run item row (DMT_EGP_ITEM_CAT_TFM_TBL.ITEM_TFM_SEQUENCE_ID).
+    -- When that item sits in a DIFFERENT batch, the category's batch must not import
+    -- before the item's batch has loaded, so its token carries an "AFTER" array of
+    -- those item batch ids, e.g. {"BATCH_ID":"934608102","AFTER":["934608101"]}.
+    -- The queue worker turns AFTER into a work-queue dependency on the sibling child
+    -- of each listed batch and stores the token WITHOUT AFTER in PARTITION_KEY.
+    -- A batch whose categories all ride with their items (the usual case: items and
+    -- categories share a batch, one zip, one Item Import) has no AFTER key, so its
+    -- token is unchanged.
     -- --------------------------------------------------------
     FUNCTION GET_PARTITION_KEYS (
         p_run_id IN NUMBER
@@ -26,8 +37,28 @@
     BEGIN
         -- One JSON object per distinct batch, keyed by the partition column name
         -- (JSON_OBJECT escapes the value correctly). Composite keys would add more
-        -- keys to the same object without changing the callers.
-        SELECT JSON_OBJECT('BATCH_ID' VALUE TO_CHAR(BATCH_ID))
+        -- keys to the same object without changing the callers. AFTER is omitted
+        -- (ABSENT ON NULL) when the batch has no cross-batch item dependency.
+        SELECT JSON_OBJECT(
+                   'BATCH_ID' VALUE TO_CHAR(b.BATCH_ID),
+                   'AFTER'    VALUE (
+                       SELECT JSON_ARRAYAGG(d.ITEM_BATCH_ID ORDER BY d.ITEM_BATCH_ID
+                                            RETURNING VARCHAR2(3000))
+                       FROM (
+                           SELECT DISTINCT TO_CHAR(it.BATCH_ID) AS ITEM_BATCH_ID
+                           FROM   DMT_EGP_ITEM_CAT_TFM_TBL c
+                           JOIN   DMT_EGP_ITEM_TFM_TBL it
+                                  ON it.TFM_SEQUENCE_ID = c.ITEM_TFM_SEQUENCE_ID
+                           WHERE  c.RUN_ID      = p_run_id
+                           AND    c.TFM_STATUS  = 'STAGED'
+                           AND    c.BATCH_ID    = b.BATCH_ID
+                           AND    it.RUN_ID     = p_run_id
+                           AND    it.TFM_STATUS = 'STAGED'
+                           AND    it.BATCH_ID  <> b.BATCH_ID
+                       ) d
+                   ) FORMAT JSON
+                   ABSENT ON NULL
+                   RETURNING VARCHAR2(4000))
         BULK COLLECT INTO l_keys
         FROM (
             SELECT BATCH_ID
@@ -41,7 +72,8 @@
             WHERE  RUN_ID = p_run_id
             AND    TFM_STATUS = 'STAGED'
             AND    BATCH_ID IS NOT NULL
-        );
+        ) b
+        ORDER BY b.BATCH_ID;
         RETURN l_keys;
     END GET_PARTITION_KEYS;
 

@@ -3,6 +3,20 @@
   CREATE OR REPLACE EDITIONABLE PACKAGE BODY "DMT_EGP_ITEM_CAT_TRANSFORM_PKG" AS
 -- ============================================================
 -- DMT_EGP_ITEM_CAT_TRANSFORM_PKG Body
+--
+-- ITEM_NUMBER (backlog #610, owner decision 2026-10-09): each category row is
+-- linked BY ID to the item row of the SAME run -- the DMT_EGP_ITEM_TFM_TBL row
+-- transformed (earlier in this same RUN_ITEMS pass) from the item STG row with
+-- the same source ITEM_NUMBER and ORGANIZATION_CODE. The category stores that
+-- row's TFM_SEQUENCE_ID in ITEM_TFM_SEQUENCE_ID and copies its run-prefixed
+-- ITEM_NUMBER, so the FBDI carries THIS run's item number. When the item is not
+-- part of the run (a category-only load for an item that already exists in
+-- Fusion) ITEM_TFM_SEQUENCE_ID stays NULL and the source item number is used
+-- unchanged. The previous DMT_XREF_PKG.ITEM_NUMBER lookup returned the newest
+-- already-LOADED item, i.e. the PREVIOUS run's item, and is no longer used here.
+--
+-- REVISIONS:
+--   2026-10-09  BM  Link each category to its same-run item by TFM id (#610).
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_EGP_ITEM_CAT_TRANSFORM_PKG';
@@ -55,6 +69,8 @@
                     OLD_CATEGORY_NAME,
                     SOURCE_SYSTEM_CODE,
                     SOURCE_SYSTEM_REFERENCE,
+                    -- Parent-child join key: the same-run item row (#610)
+                    ITEM_TFM_SEQUENCE_ID,
                     -- Pipeline columns
                     TFM_STATUS,
                     LAST_UPDATED_DATE
@@ -72,7 +88,14 @@
                     TO_NUMBER(l_prefix || TO_CHAR(NVL(s.BATCH_ID, NVL(DMT_LOADER_PKG.g_gen_queue_id, p_run_id)), 'TM9')),
                     s.BATCH_NUMBER,
                     s.ORGANIZATION_CODE,
-                    DMT_XREF_PKG.ITEM_NUMBER(s.ITEM_NUMBER),
+                    -- #610: THIS run's item number when the item is part of the run
+                    -- (linked by id below); the source item number unchanged when it
+                    -- is not (category-only load of an item already in Fusion).
+                    -- Never an earlier run's item.
+                    CASE WHEN pi.TFM_SEQUENCE_ID IS NOT NULL
+                         THEN pi.ITEM_NUMBER
+                         ELSE s.ITEM_NUMBER
+                    END,
                     s.CATEGORY_SET_NAME,
                     s.CATEGORY_CODE,
                     s.CATEGORY_NAME,
@@ -80,10 +103,31 @@
                     s.OLD_CATEGORY_NAME,
                     s.SOURCE_SYSTEM_CODE,
                     s.SOURCE_SYSTEM_REFERENCE,
+                    pi.TFM_SEQUENCE_ID,
 
                     'STAGED',
                     SYSDATE
         FROM DMT_EGP_ITEM_CAT_STG_TBL s
+        -- #610: the item row of THIS run that the category belongs to -- the item
+        -- TFM row (any status) transformed from the item STG row with the same
+        -- source item number and organization. RUN_ITEMS transforms items before
+        -- categories, so the row already exists. One row per (item, org): the
+        -- lowest TFM id if the scenario staged the same item+org twice.
+        LEFT JOIN (
+            SELECT it.TFM_SEQUENCE_ID,
+                   it.ITEM_NUMBER,
+                   it.ORGANIZATION_CODE,
+                   ist.ITEM_NUMBER AS SOURCE_ITEM_NUMBER,
+                   ROW_NUMBER() OVER (PARTITION BY ist.ITEM_NUMBER, it.ORGANIZATION_CODE
+                                      ORDER BY it.TFM_SEQUENCE_ID) AS RN
+            FROM   DMT_EGP_ITEM_TFM_TBL it
+            JOIN   DMT_EGP_ITEM_STG_TBL ist
+                   ON ist.STG_SEQUENCE_ID = it.STG_SEQUENCE_ID
+            WHERE  it.RUN_ID = p_run_id
+        ) pi
+               ON  pi.SOURCE_ITEM_NUMBER = s.ITEM_NUMBER
+               AND pi.ORGANIZATION_CODE  = s.ORGANIZATION_CODE
+               AND pi.RN = 1
         WHERE (
             DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_EGP_ITEM_CAT_STG_TBL', s.STG_SEQUENCE_ID) = 'Y'
             /* #44/#310: NEW->STG NEW; FAILED->latest earlier attempt failed (DMT_UTIL_PKG.FAILED_RETRY_SELECTED); ALL->whole scenario */
