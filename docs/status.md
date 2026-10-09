@@ -1,5 +1,19 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-09 — session close (work in flight)
+
+**Where the instances stand.** ATP is on main at commit f49ec88, which is verified: ATP regression run 181 passed and the ATP click-through passed 61 of 61 pages. The last full local regression was run 347, which also passed.
+
+**Merged to main but not yet tested or promoted.** Since that promotion, ten PRs have merged to main without a regression run or a promotion behind them. PR #714 adds the header-paging rule and its review. PR #715 marks Customers locations FAILED when their party site failed. PR #716 adds the console Cancel run action, an Activity Log index and the page 82 buttons. PR #718 gives ProjectBudgets a single label, makes Verify in Fusion hide fields Fusion does not return, drops the unused Requisitions credentials, and records GL Balances GROUP_ID as an approved exception. PR #719 makes prefix sync never move backwards. PR #720 limits Cancel run to admins. PR #721 pages the AR Invoices report by header and stores the line ids. PR #722 adds the deploy guard, registers scenarios before their records load, and restores APEX images on a rebuild. PR #723 puts the Suppliers reports on the nine-column contract. PR #724, which merged as the session closed, makes dmt_deploy.py wait while scheduler jobs are running. The next promotion must run the full four-step cycle, and per the owner's rule it must update status and the backlog both before and after the local regression and again before and after the ATP regression.
+
+**In flight when the session closed.** This work may be incomplete, so next session should start by checking the open branches and PRs. Draft PR #717 covers a Grants child rejected under a loaded award, MiscReceipts lot and serial rows after a job-level load failure, and the cross-grain checklist. Header-based paging was being added to all the remaining reconciliation reports. On the engine side, values containing line breaks were being made to fail validation, and successful loads were being changed to use their own captured import job. Items category rows were being linked to the item created in the same run. Item Categories was getting its real Fusion error text; Assets was getting the asset named in its error text, STG and TFM widths matched to Fusion, and line breaks handled in header-file mapping; and MiscReceipts was getting a lot or serial only failure test and a single way of linking children to the parent. A CI workflow for the Python unit tests was on its own branch, and some small items such as the Projects task-level failure test were also under way. The backlog marks every item these streams own as IN PROGRESS.
+
+**Owner decisions on 2026-10-09.** Cancel run is for admins only. The dead-job recovery redesign was declined. GL Balances GROUP_ID is accepted as an approved selector. Items categories link by id to the item from the same run. Reconciliation report pages break on header boundaries. A scenario is registered before its records load. The deploy tools enforce the rule that nothing deploys while jobs are running. Python unit tests run in CI. The unused column on the REST lookup table is left alone, and scenario 601 is left untouched. Grants report row selection stays parked. After ERP, the order is config objects and then HCM.
+
+**Known risk.** The local database connection occasionally drops partway through a deploy. Every rerun so far has been clean.
+
+**Backlog.** 33 items are now IN PROGRESS (session closed 2026-10-09). The counts table was rebuilt from the item list: 440 items, of which 308 are resolved, 33 in progress and 40 still open. The deferred column now also counts the declined, closed and won't-do items.
+
 ## 2026-10-09 — after regression: ERP follow-up batch promoted
 
 **Bottom line.** Main at commit f49ec88, which carries the code from PRs #708 through #711, passed the full gate on local and on ATP and is now promoted to ATP.
