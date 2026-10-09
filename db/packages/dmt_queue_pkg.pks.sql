@@ -85,8 +85,10 @@ AS
     -- finish on its own (owner-approved 2026-10-08, backlog #635).
     --
     --   1. Refuses a run that is already terminal (COMPLETED /
-    --      COMPLETED_ERRORS / FAILED / NO_ROWS_PROCESSED); a run that is
-    --      already CANCELLED is a no-op success. p_reason is required.
+    --      COMPLETED_ERRORS / FAILED / NO_ROWS_PROCESSED). p_reason is
+    --      required. Calling it again on a CANCELLED run keeps the first
+    --      cancel's status and message but repeats steps 3-4 (safe retry
+    --      when a job could not be stopped the first time).
     --   2. Marks every not-yet-terminal work item of the run CANCELLED
     --      (ERROR_MESSAGE = the reason, COMPLETED_AT stamped) and the run
     --      row RUN_STATUS = 'CANCELLED' with COMPLETED_DATE and an

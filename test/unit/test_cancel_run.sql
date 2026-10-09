@@ -10,15 +10,18 @@
 --     every not-yet-terminal work item CANCELLED, keeps a DONE item DONE,
 --     sets the run CANCELLED with who / when / why, writes a WARN entry
 --     to the activity log, and never touches a TFM row.
---   * A second CANCEL_RUN on the same run is a harmless no-op.
+--   * A second CANCEL_RUN on the same run succeeds and keeps the first
+--     cancel's status (it only repeats the job stop, a safe retry).
 --   * The one-active-run-per-object submission check blocks while the run
 --     is active and ignores it once it is CANCELLED.
 --   * RECOVER_ORPHAN_PREFLIGHT releases a PREFLIGHTING claim whose
 --     DMT_PF_ job is gone the first time, and fails the run (items FAILED,
 --     PREFLIGHT_STATUS FAILED, clear message) the second time.
 --
--- No heartbeat ticks are run and nothing reaches Fusion: the test builds
--- its own run rows directly with work statuses the heartbeat does not act
+-- The heartbeat job DMT_QUEUE_POLLER is disabled for the few seconds the
+-- test runs (and re-enabled at the end, also on failure) so a tick can never
+-- race the assertions. No heartbeat ticks are run and nothing reaches Fusion:
+-- the test builds its own run rows directly with work statuses the heartbeat does not act
 -- on (PROCESSING, PENDING behind an unmet dependency, DONE), and its one
 -- scheduler job only sleeps. Rows are scoped by the MOCK_CANCEL_* scenario
 -- names and removed at start and end.
@@ -37,7 +40,15 @@ set define off
 @@setup_mock_objects.sql
 
 variable passed number
-begin :passed := 0; end;
+variable poller_on number
+begin
+    :passed := 0;
+    select count(*) into :poller_on from user_scheduler_jobs
+     where job_name = 'DMT_QUEUE_POLLER' and enabled = 'TRUE';
+    if :poller_on > 0 then
+        dbms_scheduler.disable(name => 'DMT_QUEUE_POLLER', force => TRUE);
+    end if;
+end;
 /
 
 -- ------------------------------------------------------------
@@ -230,12 +241,12 @@ begin
        and procedure_name = 'CANCEL_RUN' and log_type = 'WARN';
     assert(l_cnt = 1, 15, 'one WARN activity-log entry records the cancel');
 
-    -- Idempotent: cancelling again is a no-op success.
+    -- Repeat cancel: succeeds and keeps the first cancel's status.
     dmt_queue_pkg.cancel_run(p_run_id => l_run_a, p_reason => 'again',
                              p_cancelled_by => 'UNIT_TEST', x_error_code => l_code);
     select run_status into l_status from dmt_pipeline_run_tbl where run_id = l_run_a;
     assert(l_code = dmt_util_pkg.c_success and l_status = 'CANCELLED', 16,
-           'second CANCEL_RUN is a no-op success');
+           'second CANCEL_RUN succeeds and the run stays CANCELLED');
 
     -- The per-object guard ignores a CANCELLED run: a new MockObject run
     -- is accepted now (then cancelled straight away -- it is a fixture).
@@ -301,6 +312,12 @@ begin
            'recovery ignores a run that is not an orphaned preflight');
 
     :passed := l_passed;
+exception
+    when others then
+        if :poller_on > 0 then
+            dbms_scheduler.enable(name => 'DMT_QUEUE_POLLER');
+        end if;
+        raise;
 end;
 /
 
@@ -335,6 +352,9 @@ end;
 /
 
 begin
+    if :poller_on > 0 then
+        dbms_scheduler.enable(name => 'DMT_QUEUE_POLLER');
+    end if;
     dbms_output.put_line('TEST_CANCEL_RUN: '||:passed||' passed, 0 failed');
 end;
 /

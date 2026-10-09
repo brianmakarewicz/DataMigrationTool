@@ -739,6 +739,23 @@ AS
     -- Dispatch is registry-driven (DMT_PIPELINE_DEF_TBL.EXEC_PROC) —
     -- the former hardcoded ~39-branch CASE over CEMLI codes is retired.
     -- ============================================================
+    -- (Function placed here, ahead of EXECUTE_ONE, because the three child-job
+    -- entry points below call it; EXECUTE_ONE's own header follows it.)
+    -- item_cancelled -- TRUE when the work item or its run is CANCELLED
+    -- (DMT_QUEUE_PKG.CANCEL_RUN, backlog #635). A child job the heartbeat
+    -- spawned just before the cancel committed must do nothing: EXECUTE_ONE,
+    -- POLL_ONE and RECONCILE_ONE return at once when this is TRUE.
+    FUNCTION item_cancelled (p_queue_id IN NUMBER) RETURN BOOLEAN IS
+        l_n NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO l_n
+        FROM   DMT_WORK_QUEUE_TBL q
+        JOIN   DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
+        WHERE  q.QUEUE_ID = p_queue_id
+          AND  (q.WORK_STATUS = 'CANCELLED' OR r.RUN_STATUS = 'CANCELLED');
+        RETURN l_n > 0;
+    END item_cancelled;
+
     PROCEDURE EXECUTE_ONE (p_queue_id IN NUMBER) IS
         l_rec       DMT_WORK_QUEUE_TBL%ROWTYPE;
         l_run_rec   DMT_PIPELINE_RUN_TBL%ROWTYPE;
@@ -751,6 +768,9 @@ AS
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
         l_reconciled_inline BOOLEAN := FALSE;  -- loader reconciled inline (double-reconcile fix)
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
 
@@ -1095,6 +1115,9 @@ AS
         l_recon_cemli VARCHAR2(1);
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
         -- Attribution (backlog #30): stamp run + work-item id for this child job.
@@ -1724,6 +1747,9 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_cemli VARCHAR2(1);
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
         -- Attribution (backlog #30): stamp run + work-item id for this child job.

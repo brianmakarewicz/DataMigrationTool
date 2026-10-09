@@ -155,14 +155,19 @@ AS
     BEGIN
         x_error_code := DMT_UTIL_PKG.C_SUCCESS;
 
+        -- Job first, status second: a preflight that commits OK and drops its
+        -- job between the two reads is then seen as resolved, never orphaned.
         l_step := 'checking whether run ' || p_run_id || ' is an orphaned preflight';
+        IF child_job_exists(l_job) THEN
+            RETURN;  -- its job is still alive
+        END IF;
         SELECT COUNT(*) INTO l_cnt
         FROM   DMT_PIPELINE_RUN_TBL
         WHERE  RUN_ID = p_run_id
           AND  RUN_STATUS = 'QUEUED'
           AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
-        IF l_cnt = 0 OR child_job_exists(l_job) THEN
-            RETURN;  -- not claimed, already resolved, or its job is still alive
+        IF l_cnt = 0 THEN
+            RETURN;  -- not claimed, or already resolved
         END IF;
 
         l_step := 'counting earlier preflight re-spawns for run ' || p_run_id;
@@ -180,7 +185,11 @@ AS
             WHERE  RUN_ID = p_run_id
               AND  RUN_STATUS = 'QUEUED'
               AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+            l_cnt := SQL%ROWCOUNT;
             COMMIT;
+            IF l_cnt = 0 THEN
+                RETURN;  -- resolved in the meantime; nothing released, no WARN
+            END IF;
             DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
                              p_message   => 'Preflight job ' || l_job || ' is gone but the run '
                                             || 'was still marked PREFLIGHTING: the job ended without '
@@ -192,6 +201,17 @@ AS
                              p_procedure => C_PROC);
         ELSE
             l_step := 'failing run ' || p_run_id || ' after a second orphaned preflight';
+            -- Claim the failure atomically: only a run still PREFLIGHTING is
+            -- failed (a preflight that just passed keeps its OK).
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = 'FAILED'
+            WHERE  RUN_ID = p_run_id
+              AND  RUN_STATUS = 'QUEUED'
+              AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+            IF SQL%ROWCOUNT = 0 THEN
+                ROLLBACK;
+                RETURN;
+            END IF;
             DMT_QUEUE_WORKER_PKG.FAIL_RUN_PREFLIGHT(
                 p_run_id  => p_run_id,
                 p_message => 'Preflight job ' || l_job || ' ended twice without recording a '
@@ -289,7 +309,8 @@ AS
             IF dependencies_met(rec.RUN_ID, rec.DEPENDS_ON, rec.POLICY) THEN
                 UPDATE DMT_WORK_QUEUE_TBL
                 SET WORK_STATUS = 'READY'
-                WHERE QUEUE_ID = rec.QUEUE_ID;
+                WHERE QUEUE_ID = rec.QUEUE_ID
+                  AND WORK_STATUS = 'PENDING';  -- never revive an item CANCEL_RUN just closed
             END IF;
         END LOOP;
         COMMIT;
@@ -398,7 +419,12 @@ AS
             -- Claim the row so next tick doesn't re-pick it
             UPDATE DMT_WORK_QUEUE_TBL
             SET WORK_STATUS = 'PROCESSING', STARTED_AT = SYSTIMESTAMP
-            WHERE QUEUE_ID = rec.QUEUE_ID;
+            WHERE QUEUE_ID = rec.QUEUE_ID
+              AND WORK_STATUS = 'READY';  -- CANCEL_RUN may have closed it since the query
+            IF SQL%ROWCOUNT = 0 THEN
+                COMMIT;
+                CONTINUE;
+            END IF;
             COMMIT;
 
             -- Spawn child job
@@ -581,7 +607,8 @@ AS
                 IF run_rec.RUN_STATUS = 'QUEUED' AND l_started > 0 THEN
                     UPDATE DMT_PIPELINE_RUN_TBL
                     SET RUN_STATUS = 'IN_PROGRESS', STARTED_DATE = SYSTIMESTAMP
-                    WHERE RUN_ID = run_rec.RUN_ID;
+                    WHERE RUN_ID = run_rec.RUN_ID
+                      AND RUN_STATUS = 'QUEUED';  -- never overwrite a CANCELLED run
                 END IF;
                 CONTINUE;
             END IF;
@@ -658,7 +685,10 @@ AS
             SET RUN_STATUS = l_new_status,
                 STARTED_DATE = NVL(STARTED_DATE, SYSTIMESTAMP),
                 COMPLETED_DATE = SYSTIMESTAMP
-            WHERE RUN_ID = run_rec.RUN_ID;
+            WHERE RUN_ID = run_rec.RUN_ID
+              -- CANCEL_RUN may have committed since this run was read; its
+              -- CANCELLED status is never overwritten (backlog #635).
+              AND RUN_STATUS IN ('QUEUED', 'IN_PROGRESS');
         END LOOP;
         COMMIT;
     END rollup_run_statuses;
@@ -1018,18 +1048,7 @@ AS
         WHERE  RUN_ID = p_run_id
         FOR UPDATE;
 
-        IF l_status = 'CANCELLED' THEN
-            ROLLBACK;
-            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
-                             p_message   => 'CANCEL_RUN: run ' || p_run_id
-                                            || ' is already CANCELLED; nothing to do.',
-                             p_log_type  => DMT_UTIL_PKG.C_LOG_INFO,
-                             p_package   => C_PKG,
-                             p_procedure => C_PROC);
-            RETURN;
-        END IF;
-
-        IF l_status NOT IN ('QUEUED', 'IN_PROGRESS') THEN
+        IF l_status NOT IN ('QUEUED', 'IN_PROGRESS', 'CANCELLED') THEN
             ROLLBACK;
             x_error_code := DMT_UTIL_PKG.C_ERROR;
             DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
@@ -1051,6 +1070,9 @@ AS
         -- one transaction, BEFORE touching the scheduler (DBMS_SCHEDULER calls
         -- commit implicitly). From this commit on the heartbeat dispatches
         -- nothing for the run.
+        -- A run that is already CANCELLED skips pass 1 (its status, date and
+        -- message stay as first recorded) but repeats the job stop and pass 2,
+        -- so a cancel whose job stop failed can simply be called again.
         l_step := 'cancelling the open work items of run ' || p_run_id;
         UPDATE DMT_WORK_QUEUE_TBL
         SET    WORK_STATUS   = 'CANCELLED',
@@ -1060,14 +1082,16 @@ AS
           AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED')
         RETURNING QUEUE_ID BULK COLLECT INTO l_ids;
 
-        l_step := 'marking run ' || p_run_id || ' CANCELLED';
-        UPDATE DMT_PIPELINE_RUN_TBL
-        SET    RUN_STATUS     = 'CANCELLED',
-               COMPLETED_DATE = SYSTIMESTAMP,
-               ERROR_MESSAGE  = SUBSTR(l_msg || CASE WHEN ERROR_MESSAGE IS NOT NULL
-                                                     THEN ' | earlier error: ' || ERROR_MESSAGE
-                                                END, 1, 4000)
-        WHERE  RUN_ID = p_run_id;
+        IF l_status <> 'CANCELLED' THEN
+            l_step := 'marking run ' || p_run_id || ' CANCELLED';
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    RUN_STATUS     = 'CANCELLED',
+                   COMPLETED_DATE = SYSTIMESTAMP,
+                   ERROR_MESSAGE  = SUBSTR(l_msg || CASE WHEN ERROR_MESSAGE IS NOT NULL
+                                                         THEN ' | earlier error: ' || ERROR_MESSAGE
+                                                    END, 1, 4000)
+            WHERE  RUN_ID = p_run_id;
+        END IF;
         COMMIT;
 
         -- Stop and drop every scheduler job that belongs to the run: its
@@ -1129,7 +1153,10 @@ AS
         END IF;
 
         DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
-                         p_message   => 'Run ' || p_run_id || ' CANCELLED by ' || l_by || ': '
+                         p_message   => CASE WHEN l_status = 'CANCELLED'
+                                             THEN 'Repeat cancel of already-CANCELLED run '
+                                             ELSE 'Run ' END
+                                        || p_run_id || ' CANCELLED by ' || l_by || ': '
                                         || SUBSTR(TRIM(p_reason), 1, 1000)
                                         || '. Work items cancelled: ' || l_ids.COUNT
                                         || CASE WHEN l_late > 0
