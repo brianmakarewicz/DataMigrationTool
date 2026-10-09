@@ -91,6 +91,25 @@ exception when others then
 end;
 /
 
+-- ---------------------------------------------------------------------------
+-- 2026-10-09 backlog #150 follow-up: the page-54 Activity Log list with NO run
+-- selected (all runs) orders the whole table by LOG_DATE DESC, LOG_ID DESC.
+-- Without this index it read every row and sorted them (TABLE ACCESS FULL +
+-- SORT ORDER BY). Its query carries an INDEX_DESC(l DMT_LOG_N5) hint (and
+-- NO_UNNEST on its per-row object lookup, which otherwise became a hash join
+-- that brought the sort back), so it now
+-- walks this index newest-first and the first page comes back without a sort.
+-- LOG_ID is NOT NULL, so every row is in the index. Guarded like the others;
+-- db/migrations/2026-10-09_log_tbl_all_runs_list_index.sql converges an
+-- already-installed database.
+-- ---------------------------------------------------------------------------
+begin
+  execute immediate 'CREATE INDEX "DMT_LOG_N5" ON "DMT_LOG_TBL" ("LOG_DATE","LOG_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+
 COMMENT ON COLUMN "DMT_LOG_TBL"."LOG_ID" IS 'PK - from DMT_LOG_ID_SEQ';
 COMMENT ON COLUMN "DMT_LOG_TBL"."RUN_ID" IS 'Run attribution (section 5) - nullable: NULL means no run context exists. Indexed, no FK by design.';
 COMMENT ON COLUMN "DMT_LOG_TBL"."QUEUE_ID" IS 'Work-item attribution (section 5) - the work item that wrote the entry. Nullable, indexed, no FK by design.';

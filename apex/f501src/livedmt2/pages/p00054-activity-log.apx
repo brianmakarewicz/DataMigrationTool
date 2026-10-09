@@ -485,9 +485,10 @@ page 54 (
             type: sqlQuery
             sqlQuery:
                 ```sql
-                SELECT l.LOG_ID,
+                SELECT /*+ INDEX_DESC(l DMT_LOG_N5) */
+                       l.LOG_ID,
                        l.RUN_ID,
-                       (SELECT MAX(q.CEMLI_CODE)
+                       (SELECT /*+ NO_UNNEST */ MAX(q.CEMLI_CODE)
                           FROM DMT_WORK_QUEUE_TBL q
                          WHERE q.QUEUE_ID = l.QUEUE_ID) AS CEMLI_CODE,
                        l.QUEUE_ID,

@@ -56,6 +56,9 @@ def main():
     ap.add_argument("--password", help="password for --user (default: resolved from connections.json)")
     ap.add_argument("--run-id", help="run id to drill (object/record detail, activity log)")
     ap.add_argument("--cmp-run-id", help="run id with comparison data for page 85 (default: --run-id)")
+    ap.add_argument("--active-run-id", help="a QUEUED or IN_PROGRESS run id: checks that "
+                    "run detail (page 82) shows the Cancel run form. Presence only; "
+                    "the button is never pressed.")
     ap.add_argument("--cemlis", help="comma object codes to drill "
                     "(default Suppliers,PurchaseOrders,GLBalances,Customers,Assets)")
     ap.add_argument("--json-out", help="also write the full result (verdict + every step) "
@@ -86,6 +89,8 @@ def main():
         env["DMT2_UI_RUN"] = str(args.run_id)
     if args.cmp_run_id:
         env["DMT2_UI_CMP_RUN"] = str(args.cmp_run_id)
+    if args.active_run_id:
+        env["DMT2_UI_ACTIVE_RUN"] = str(args.active_run_id)
     if args.cemlis:
         env["DMT2_UI_CEMLIS"] = args.cemlis
     if args.click_verify:

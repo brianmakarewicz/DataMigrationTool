@@ -38,6 +38,45 @@ page 82 (
         }
     )
 
+    region run-actions (
+        name: Run Actions
+        type: staticContent
+        layout {
+            sequence: 11
+            slot: body
+        }
+        appearance {
+            template: @/buttons-container
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: run_actions_82
+        }
+    )
+
+    region cancel-run (
+        name: Cancel This Run
+        type: staticContent
+        source {
+            htmlCode: <p>Cancelling stops this run for good. Every work item that has not finished is marked CANCELLED, the run's scheduler jobs are stopped, and the reason you enter is saved on the run and in its activity log. Rows already generated are left as they are, and a Fusion job that was already submitted keeps running in Fusion. To try again later, submit a new run. Enter the reason, tick the confirmation box, then press Cancel run.</p>
+        }
+        layout {
+            sequence: 12
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: cancel_run_82
+        }
+        serverSideCondition {
+            type: rowsReturned
+            sqlQuery: SELECT 1 FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = :P82_RUN_ID AND RUN_STATUS IN ('QUEUED','IN_PROGRESS')
+        }
+    )
+
     region activity-log-link (
         name: Activity Log Link
         type: plSqlDynamicContent
@@ -87,13 +126,57 @@ page 82 (
         }
     )
 
+    pageItem P82_CANCEL_REASON (
+        type: textarea
+        label {
+            label: Reason for cancelling
+            alignment: left
+        }
+        layout {
+            sequence: 10
+            region: @cancel-run
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 60
+            height: 3
+        }
+        sessionState {
+            storage: request
+        }
+    )
+
+    pageItem P82_CANCEL_CONFIRM (
+        type: checkbox
+        label {
+            label: Yes, cancel this run. I understand it cannot be undone.
+            alignment: left
+        }
+        layout {
+            sequence: 20
+            region: @cancel-run
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        sessionState {
+            storage: request
+        }
+    )
+
     button back (
         buttonName: BACK
         label: Run History
         layout {
             sequence: 5
-            region: @run-info
-            slot: PREVIOUS
+            region: @run-actions
+            slot: previous
         }
         appearance {
             buttonTemplate: @/text
@@ -114,8 +197,8 @@ page 82 (
         label: Re-run reconcile
         layout {
             sequence: 10
-            region: @run-info
-            slot: PREVIOUS
+            region: @run-actions
+            slot: next
         }
         appearance {
             buttonTemplate: @/text
@@ -126,6 +209,67 @@ page 82 (
         behavior {
             action: submitPage
             warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button cancel-run (
+        buttonName: CANCEL_RUN
+        label: Cancel run
+        layout {
+            sequence: 10
+            region: @cancel-run
+            slot: create
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: t-Button--danger
+            icon: fa-stop-circle
+        }
+        behavior {
+            action: submitPage
+            warnOnUnsavedChanges: doNotCheck
+        }
+        advanced {
+            htmlDomId: P82_CANCEL_RUN_BTN
+        }
+    )
+
+    validation cancel-reason-required (
+        name: Cancel reason is required
+        validation {
+            type: itemIsNotNull
+            item: P82_CANCEL_REASON
+        }
+        error {
+            errorMessage: Enter the reason for cancelling this run.
+            displayLocation: inlineWithFieldAndInNotification
+            associatedItem: @P82_CANCEL_REASON
+        }
+        execution {
+            sequence: 10
+        }
+        serverSideCondition {
+            whenButtonPressed: @cancel-run
+        }
+    )
+
+    validation cancel-confirmed (
+        name: Cancel must be confirmed
+        validation {
+            type: item=Value
+            item: P82_CANCEL_CONFIRM
+            value: Y
+        }
+        error {
+            errorMessage: Tick the confirmation box to cancel this run.
+            displayLocation: inlineWithFieldAndInNotification
+            associatedItem: @P82_CANCEL_CONFIRM
+        }
+        execution {
+            sequence: 20
+        }
+        serverSideCondition {
+            whenButtonPressed: @cancel-run
         }
     )
 
@@ -147,6 +291,64 @@ page 82 (
         }
         serverSideCondition {
             whenButtonPressed: @rerun-reconcile
+        }
+    )
+
+    process cancel-run-process (
+        name: Cancel this run
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_code NUMBER;
+                    l_msg  VARCHAR2(4000);
+                BEGIN
+                    DMT_QUEUE_PKG.CANCEL_RUN(
+                        p_run_id       => :P82_RUN_ID,
+                        p_reason       => :P82_CANCEL_REASON,
+                        p_cancelled_by => :APP_USER,
+                        x_error_code   => l_code);
+                    IF l_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+                        -- CANCEL_RUN logs why it refused; show that message.
+                        SELECT MAX(DBMS_LOB.SUBSTR(MESSAGE, 3800, 1)) KEEP (DENSE_RANK LAST ORDER BY LOG_ID)
+                          INTO l_msg
+                          FROM DMT_LOG_TBL
+                         WHERE RUN_ID = :P82_RUN_ID
+                           AND PROCEDURE_NAME = 'CANCEL_RUN';
+                        RAISE_APPLICATION_ERROR(-20001,
+                            NVL(l_msg, 'Run ' || :P82_RUN_ID || ' could not be cancelled. See its activity log.'));
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+        successMessage {
+            successMessage: Run &P82_RUN_ID. was cancelled.
+        }
+        serverSideCondition {
+            whenButtonPressed: @cancel-run
+        }
+    )
+
+    branch (
+        name: Back to this run after cancel
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 82
+                items: {
+                    P82_RUN_ID: &P82_RUN_ID.
+                }
+                clearCache: 82
+            }
+        }
+        serverSideCondition {
+            whenButtonPressed: @cancel-run
         }
     )
 

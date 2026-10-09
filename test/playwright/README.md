@@ -36,7 +36,14 @@ python test/playwright/dmt_console_verify.py
 
 # drill specific objects
 python test/playwright/dmt_console_verify.py --run-id 229 --cemlis Suppliers,Customers
+
+# also check the Cancel run form on a run that is still QUEUED / IN_PROGRESS
+# (presence only; the button is never pressed)
+python test/playwright/dmt_console_verify.py --run-id 229 --active-run-id 348
 ```
+
+On the finished `--run-id` run, run detail (page 82) must show the
+"Re-run reconcile" button and must not show the Cancel run form.
 
 No credentials on the command line: `DMT_SMOKE`'s password is read from
 `connections.json` (`local_docker.containers.dmt2-local.console.app_users`).
