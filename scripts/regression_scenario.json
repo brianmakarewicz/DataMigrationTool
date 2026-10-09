@@ -6427,6 +6427,538 @@
           "RT-FAASGN-RT-ASSET-XG-G2": "FAILED_WITH_DOCUMENT"
         }
       }
+    },
+    "RegressionTest261009074409": {
+      "AR Lines": {
+        "stg_table": "DMT_RA_LINES_STG_TBL",
+        "rows": {
+          "RT-AR-KG-G1": "LOADED",
+          "RT-AR-KG-G2": "LOADED",
+          "RT-AR-KG-BAD1": "FAILED",
+          "RT-AR-XG-A1": "FAILED_WITH_DOCUMENT",
+          "RT-AR-XG-A2-BAD": "FAILED",
+          "RT-AR-XG-B1": "LOADED",
+          "RT-AR-RI-G1": "LOADED",
+          "RT-AR-RI-BAD1": "FAILED",
+          "RT-AR-NB-A1": "FAILED_WITH_DOCUMENT",
+          "RT-AR-NB-A2-BAD": "FAILED",
+          "RT-AR-MD-A1": "LOADED"
+        }
+      },
+      "AR Distributions": {
+        "stg_table": "DMT_RA_DISTS_STG_TBL",
+        "rows": {
+          "RT-AR-XG-A1-REV": "FAILED_WITH_DOCUMENT",
+          "RT-AR-XG-A2-BAD-REV": "FAILED_WITH_DOCUMENT",
+          "RT-AR-NB-A1-REV": "FAILED_WITH_DOCUMENT",
+          "RT-AR-NB-A2-BAD-REV": "FAILED_WITH_DOCUMENT",
+          "RT-AR-MD-A1-REV1": "LOADED",
+          "RT-AR-MD-A1-REV2": "LOADED",
+          "RT-AR-MD-A1-REV3": "LOADED",
+          "RT-AR-MD-A1-REV4": "LOADED",
+          "RT-AR-MD-A1-REV5": "LOADED",
+          "RT-AR-MD-A1-REV6": "LOADED",
+          "RT-AR-MD-A1-REV7": "LOADED",
+          "RT-AR-MD-A1-REV8": "LOADED"
+        }
+      },
+      "Req Headers": {
+        "stg_table": "DMT_POR_REQ_HEADERS_STG_TBL",
+        "rows": {
+          "RT-RT-REQ-G1": "LOADED",
+          "RT-RT-REQ-BADHDR": "FAILED",
+          "RT-RT-REQ-G2": "LOADED",
+          "RT-RT-REQ-BADLINE": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQ-BADDIST": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQ-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Req Lines": {
+        "stg_table": "DMT_POR_REQ_LINES_STG_TBL",
+        "rows": {
+          "RT-RT-REQL-G1": "LOADED",
+          "RT-RT-REQL-BADHDR": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-G2": "LOADED",
+          "RT-RT-REQL-BADLINE": "FAILED",
+          "RT-RT-REQL-BADDIST": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQL-XG1-2-BAD": "FAILED"
+        }
+      },
+      "Req Distributions": {
+        "stg_table": "DMT_POR_REQ_DISTS_STG_TBL",
+        "rows": {
+          "RT-RT-REQD-G1": "LOADED",
+          "RT-RT-REQD-BADHDR": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-G2": "LOADED",
+          "RT-RT-REQD-BADLINE": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-BADDIST": "FAILED",
+          "RT-RT-REQD-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-REQD-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "PO Headers": {
+        "stg_table": "DMT_PO_HEADERS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-PO-G1": "LOADED",
+          "RT-RT-PO-G2": "LOADED",
+          "RT-PO-BAD1": "FAILED",
+          "RT-RT-PO-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "PO Lines": {
+        "stg_table": "DMT_PO_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POL-G1": "LOADED",
+          "RT-RT-POL-G2": "LOADED",
+          "RT-RT-POL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POL-XG1-2-BAD": "FAILED"
+        }
+      },
+      "PO Line Locations": {
+        "stg_table": "DMT_PO_LINE_LOCS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POLL-G1": "LOADED",
+          "RT-RT-POLL-G2": "LOADED",
+          "RT-RT-POLL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POLL-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POLL-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "PO Distributions": {
+        "stg_table": "DMT_PO_DISTS_INT_STG_TBL",
+        "rows": {
+          "RT-RT-POD-G1": "LOADED",
+          "RT-RT-POD-G2": "LOADED",
+          "RT-RT-POD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POD-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-RT-POD-XG1-2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Blanket PO Headers": {
+        "stg_table": "DMT_PO_HEADERS_INT_STG_TBL",
+        "rows": {
+          "RT-BPA-G1": "LOADED",
+          "RT-BPA-BAD1": "FAILED",
+          "RT-BPA-XG2": "LOADED"
+        }
+      },
+      "Blanket PO Lines": {
+        "stg_table": "DMT_PO_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-BPAL-G1": "LOADED",
+          "RT-BPAL-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-BPAL-XG2-1": "LOADED",
+          "RT-BPAL-XG2-2-BAD": "FAILED"
+        }
+      },
+      "Award Headers": {
+        "stg_table": "DMT_GMS_AWD_HEADERS_STG_TBL",
+        "rows": {
+          "RT-GNT-RTAWD-G1": "LOADED",
+          "RT-GNT-RTAWD-G2": "LOADED",
+          "RT-GNT-RTAWD-BAD1": "FAILED",
+          "RT-GNT-RTGNT-BAD2": "FAILED",
+          "RT-GNT-RTGNT-BAD3": "FAILED",
+          "RT-GNT-BAD1": "FAILED",
+          "RT-GNT-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Award Funding": {
+        "stg_table": "DMT_GMS_AWD_FUNDING_STG_TBL",
+        "rows": {
+          "RT-GNT-FUND-RTAWD-G1": "LOADED",
+          "RT-GNT-FUND-RTAWD-G2": "LOADED",
+          "RT-GNT-FUND-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-FUND-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Award Projects": {
+        "stg_table": "DMT_GMS_AWD_PROJECTS_STG_TBL",
+        "rows": {
+          "RT-GNT-PROJ-RTAWD-G1": "LOADED",
+          "RT-GNT-PROJ-RTAWD-G2": "LOADED",
+          "RT-GNT-PROJ-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-PROJ-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Award Personnel": {
+        "stg_table": "DMT_GMS_AWD_PERSONNEL_STG_TBL",
+        "rows": {
+          "RT-GNT-PERS2-RTAWD-G1": "LOADED",
+          "RT-GNT-PERS2-RTAWD-G2": "LOADED",
+          "RT-GNT-PERS2-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-PERS2-RTAWD-XG1": "FAILED",
+          "RT-GNT-PERS-RTGNT-BAD2": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-PERS-RTGNT-BAD3": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Award Funding Sources": {
+        "stg_table": "DMT_GMS_AWD_FUND_SRC_STG_TBL",
+        "rows": {
+          "RT-GNT-FSRC-RTAWD-G1": "LOADED",
+          "RT-GNT-FSRC-RTAWD-G2": "LOADED",
+          "RT-GNT-FSRC-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-FSRC-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Project Funding Sources": {
+        "stg_table": "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",
+        "rows": {
+          "RT-GNT-PFSRC-RTAWD-G1": "LOADED",
+          "RT-GNT-PFSRC-RTAWD-G2": "LOADED",
+          "RT-GNT-PFSRC-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-PFSRC-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Funding Allocations": {
+        "stg_table": "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
+        "rows": {
+          "RT-GNT-FALLOC-RTAWD-G1": "LOADED",
+          "RT-GNT-FALLOC-RTAWD-G2": "LOADED",
+          "RT-GNT-FALLOC-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-FALLOC-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Org Credits": {
+        "stg_table": "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
+        "rows": {
+          "RT-GNT-ORGCR-RTAWD-G1": "LOADED",
+          "RT-GNT-ORGCR-RTAWD-G2": "LOADED",
+          "RT-GNT-ORGCR-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-ORGCR-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Budget Periods": {
+        "stg_table": "DMT_GMS_AWD_BDGT_PRDS_STG_TBL",
+        "rows": {
+          "RT-GNT-BP-RTAWD-G1": "LOADED",
+          "RT-GNT-BP-RTAWD-G2": "LOADED",
+          "RT-GNT-BP-RTAWD-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-GNT-BP-RTAWD-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Project Budget Lines": {
+        "stg_table": "DMT_PRJ_BUDGET_STG_TBL",
+        "rows": {
+          "RT-PJB-GOOD1": "LOADED",
+          "RT-PJB-BAD1": "FAILED",
+          "RT-PJB-XG-A": "FAILED_WITH_DOCUMENT",
+          "RT-PJB-XG-B": "FAILED"
+        }
+      },
+      "Project Expenditures": {
+        "stg_table": "DMT_PJC_EXPENDITURES_STG_TBL",
+        "rows": {
+          "RT-EXP-PCS10080-2025-04-17": "LOADED",
+          "RT-EXP-PCS10080-2025-04-18": "LOADED",
+          "RT-EXP-BAD1": "FAILED",
+          "RT-EXP-E2DATE": "FAILED",
+          "RT-EXP-E3RATE": "FAILED",
+          "RT-EXP-E4DOC": "FAILED",
+          "RT-EXP-E5ORG": "FAILED",
+          "RT-EXP-E6AWARD": "FAILED"
+        }
+      },
+      "AP Invoice Headers": {
+        "stg_table": "DMT_AP_INVOICES_INT_STG_TBL",
+        "rows": {
+          "RT-RT-APINV-G1": "LOADED",
+          "RT-RT-APINV-G2": "LOADED",
+          "RT-APINV-BAD1": "FAILED",
+          "RT-APINV-XG1": "FAILED_WITH_DOCUMENT",
+          "RT-1099-G1": "LOADED"
+        }
+      },
+      "AP Invoice Lines": {
+        "stg_table": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+        "rows": {
+          "RT-APLN-800001-1": "LOADED",
+          "RT-APLN-800002-1": "LOADED",
+          "RT-APLN-800099-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-1": "FAILED_WITH_DOCUMENT",
+          "RT-APLN-XG1-2-BAD": "FAILED",
+          "RT-1099LN-G1": "LOADED"
+        }
+      },
+      "Parties": {
+        "stg_table": "DMT_HZ_PARTIES_STG_TBL",
+        "rows": {
+          "RT-PTY-RT-CUST-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-G2": "LOADED",
+          "RT-PTY-RT-CUST-G3": "LOADED",
+          "RT-PTY-BAD1": "FAILED",
+          "RT-PTY-RT-CUST-XG": "LOADED",
+          "RT-PTY-RT-CUST-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PTY-RT-CUST-XP": "FAILED"
+        }
+      },
+      "Locations": {
+        "stg_table": "DMT_HZ_LOCATIONS_STG_TBL",
+        "rows": {
+          "RT-LOC-RT-LOC-G1": "LOADED",
+          "RT-LOC-RT-LOC-G2": "LOADED",
+          "RT-LOC-RT-LOC-G3": "LOADED",
+          "RT-LOC-BAD1": "FAILED",
+          "RT-LOC-RT-LOC-XG": "LOADED",
+          "RT-LOC-RT-LOC-XU": "LOADED",
+          "RT-LOC-RT-LOC-XP": "LOADED"
+        }
+      },
+      "Party Sites": {
+        "stg_table": "DMT_HZ_PARTY_SITES_STG_TBL",
+        "rows": {
+          "RT-PSITE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-G2": "LOADED",
+          "RT-PSITE-RT-PSITE-G3": "LOADED",
+          "RT-PSITE-BAD1": "FAILED",
+          "RT-PSITE-RT-PSITE-XG": "LOADED",
+          "RT-PSITE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSITE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Party Site Uses": {
+        "stg_table": "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-PSUSE-RT-PSITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-RT-PSITE-G2": "LOADED",
+          "RT-PSUSE-RT-PSITE-G3": "LOADED",
+          "RT-PSUSE-BAD1": "FAILED",
+          "RT-PSUSE-RT-PSITE-XG": "LOADED",
+          "RT-PSUSE-RT-PSITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-PSUSE-XU-BAD": "FAILED",
+          "RT-PSUSE-RT-PSITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Accounts": {
+        "stg_table": "DMT_HZ_ACCOUNTS_STG_TBL",
+        "rows": {
+          "RT-ACCT-RT-ACCT-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-G2": "LOADED",
+          "RT-ACCT-RT-ACCT-G3": "LOADED",
+          "RT-ACCT-BAD1": "FAILED",
+          "RT-ACCT-RT-ACCT-XG": "LOADED",
+          "RT-ACCT-RT-ACCT-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ACCT-RT-ACCT-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Sites": {
+        "stg_table": "DMT_HZ_ACCT_SITES_STG_TBL",
+        "rows": {
+          "RT-ASITE-RT-ASITE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-G2": "LOADED",
+          "RT-ASITE-RT-ASITE-G3": "LOADED",
+          "RT-ASITE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XG": "FAILED",
+          "RT-ASITE-RT-ASITE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-ASITE-RT-ASITE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Account Site Uses": {
+        "stg_table": "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+        "rows": {
+          "RT-SUSE-RT-SITEUSE-G1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-G2": "LOADED",
+          "RT-SUSE-RT-SITEUSE-G3": "LOADED",
+          "RT-SUSE-BAD1": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XG": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XU": "FAILED_WITH_DOCUMENT",
+          "RT-SUSE-RT-SITEUSE-XP": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "GL Journals": {
+        "stg_table": "DMT_GL_INTERFACE_STG_TBL",
+        "rows": {
+          "RT-GL-RT-JNL-G1-78630": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G1-77600": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G2-60540": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-G2-62510": "FAILED_WITH_DOCUMENT",
+          "RT-GL-RT-JNL-BAD1-99999": "FAILED",
+          "RT-GL-RT-JNL-BAD1-78630": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Workers": {
+        "stg_table": "DMT_WORKER_STG_TBL",
+        "rows": {
+          "RT-RT-WKR-G1": "LOADED",
+          "RT-RT-WKR-B1": "FAILED",
+          "RT-RT-WKR-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Person Names": {
+        "stg_table": "DMT_PERSON_NAME_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-NME": "LOADED",
+          "RT-WKR-XG1-NME": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Person Emails": {
+        "stg_table": "DMT_PERSON_EMAIL_STG_TBL",
+        "rows": {
+          "RT-WKR-XG1-EML-BAD": "FAILED"
+        }
+      },
+      "Work Relationships": {
+        "stg_table": "DMT_WORK_REL_STG_TBL",
+        "rows": {
+          "RT-WKR-G1-WR": "LOADED",
+          "RT-WKR-XG1-WR": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Assignments": {
+        "stg_table": "DMT_ASSIGNMENT_STG_TBL",
+        "rows": {
+          "RT-ET-RT-WKR-G1": "LOADED",
+          "RT-ET-RT-WKR-G1B": "LOADED",
+          "RT-ET-RT-WKR-BASG": "FAILED",
+          "RT-ET-RT-WKR-XG1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Salaries": {
+        "stg_table": "DMT_SALARY_STG_TBL",
+        "rows": {
+          "RT-SAL-RT-WKR-G1": "LOADED",
+          "RT-SAL-RT-WKR-BSAL": "FAILED"
+        }
+      },
+      "Talent Profiles": {
+        "stg_table": "DMT_TALENT_PROF_STG_TBL",
+        "rows": {
+          "RT-RT-WKR-G1_PROF": "LOADED",
+          "RT-RT-WKR-BPROF_PROF": "FAILED"
+        }
+      },
+      "Profile Items": {
+        "stg_table": "DMT_TALENT_PROF_ITEM_STG_TBL",
+        "rows": {
+          "RT-WKR-G1_PROF-IT": "LOADED",
+          "RT-WKR-G1_PROF-BIT": "FAILED"
+        }
+      },
+      "Item Categories": {
+        "stg_table": "DMT_EGP_ITEM_CAT_STG_TBL",
+        "rows": {
+          "RT-ITEMCAT-DMT-RT-LOT-001": "LOADED",
+          "RT-ITEMCAT-DMT-RT-PLAIN-001": "LOADED",
+          "RT-ITEMCAT-DMT-RT-SERIAL-001": "LOADED",
+          "RT-ITEMCAT-NONEXISTENT-DMT-ITEM": "FAILED"
+        }
+      },
+      "Salary Bases": {
+        "stg_table": "DMT_SAL_BASIS_STG_TBL",
+        "rows": {
+          "RT-SB-G1": "LOADED",
+          "RT-SB-G2": "LOADED",
+          "RT-SB-BAD1": "FAILED"
+        }
+      },
+      "Absences": {
+        "stg_table": "DMT_ABSENCE_STG_TBL",
+        "rows": {
+          "RT-ABS-G1": "LOADED",
+          "RT-ABS-G2": "LOADED",
+          "RT-ABS-BAD1": "FAILED"
+        }
+      },
+      "Inventory Transactions": {
+        "stg_table": "DMT_INV_TRX_STG_TBL",
+        "rows": {
+          "RT-MR-XG-SER-BAD": "FAILED",
+          "RT-MR-XG-LOT-BAD": "FAILED"
+        }
+      },
+      "Transaction Lots": {
+        "stg_table": "DMT_INV_TRX_LOTS_STG_TBL",
+        "key_col": "LOT_NUMBER",
+        "rows": {
+          "DMT-REG-LOT-XG": "FAILED_WITH_DOCUMENT",
+          "DMT-REG-LOT-001": "LOADED"
+        }
+      },
+      "Transaction Serials": {
+        "stg_table": "DMT_INV_TRX_SERIALS_STG_TBL",
+        "key_col": "FM_SERIAL_NUMBER",
+        "rows": {
+          "DMT-SER-XG-001": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "GL Budget Balances": {
+        "stg_table": "DMT_GL_BUDGET_INT_STG_TBL",
+        "rows": {
+          "RT-BUD-XG-78630": "FAILED_WITH_DOCUMENT",
+          "RT-BUD-XG-77001-BAD": "FAILED",
+          "RT-BUD-60540": "LOADED",
+          "RT-BUD-77600": "LOADED",
+          "RT-BUD-BAD1": "FAILED"
+        }
+      },
+      "Projects": {
+        "stg_table": "DMT_PJF_PROJECTS_STG_TBL",
+        "rows": {
+          "RT-PRJ-RTPRJ001": "LOADED",
+          "RT-PRJ-RTPRJ002": "LOADED",
+          "RT-PRJ-BAD1": "FAILED"
+        }
+      },
+      "Project Tasks": {
+        "stg_table": "DMT_PJF_TASKS_STG_TBL",
+        "rows": {
+          "RT-TSK-RTPRJ001.1": "LOADED",
+          "RT-TSK-RTPRJ002.1": "LOADED",
+          "RT-TSK-RTPRJ-BAD1.1": "FAILED_WITH_DOCUMENT",
+          "RT-TSK-BAD1": "FAILED"
+        }
+      },
+      "Team Members": {
+        "stg_table": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+        "rows": {
+          "RT-TM-RTPRJ-BAD1-ACOOK": "FAILED_WITH_DOCUMENT",
+          "RT-TM-RT Project-Alan Cook": "LOADED",
+          "RT-TM-RT Project-Mandy Stew": "LOADED"
+        }
+      },
+      "Txn Controls": {
+        "stg_table": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+        "rows": {
+          "RT-TXC-RTPRJ001": "LOADED",
+          "RT-TXC-RTPRJ002": "LOADED",
+          "RT-TXC-RTPRJ-BAD1": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Asset Headers": {
+        "stg_table": "DMT_FA_ASSET_HDR_STG_TBL",
+        "rows": {
+          "RT-FA-RT-ASSET-G1": "LOADED",
+          "RT-FA-RT-ASSET-G2": "LOADED",
+          "RT-FA-RT-ASSET-BAD1": "FAILED",
+          "RT-FA-RT-ASSET-XG-G1": "FAILED_WITH_DOCUMENT",
+          "RT-FA-RT-ASSET-XG-BAD": "FAILED",
+          "RT-FA-RT-ASSET-XG-G2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Asset Books": {
+        "stg_table": "DMT_FA_ASSET_BOOK_STG_TBL",
+        "rows": {
+          "RT-FABK-RT-ASSET-G1": "LOADED",
+          "RT-FABK-RT-ASSET-G2": "LOADED",
+          "RT-FABK-RT-ASSET-BAD1": "FAILED",
+          "RT-FABK-RT-ASSET-XG-G1": "FAILED_WITH_DOCUMENT",
+          "RT-FABK-RT-ASSET-XG-BAD": "FAILED",
+          "RT-FABK-RT-ASSET-XG-G2": "FAILED_WITH_DOCUMENT"
+        }
+      },
+      "Asset Assignments": {
+        "stg_table": "DMT_FA_ASSET_ASSIGN_STG_TBL",
+        "rows": {
+          "RT-FAASGN-RT-ASSET-G1": "LOADED",
+          "RT-FAASGN-RT-ASSET-G2": "LOADED",
+          "RT-FAASGN-RT-ASSET-BAD1": "FAILED",
+          "RT-FAASGN-RT-ASSET-XG-G1": "FAILED_WITH_DOCUMENT",
+          "RT-FAASGN-RT-ASSET-XG-BAD": "FAILED",
+          "RT-FAASGN-RT-ASSET-XG-G2": "FAILED_WITH_DOCUMENT"
+        }
+      }
     }
   },
   "minted_scenarios": {
@@ -6441,6 +6973,12 @@
       "seed_sha256": "a426f30fe644d01ec4012766feab0459485203b096cb767f03f8b74fb47af8dc",
       "target": "local",
       "created": "2026-10-09 01:30"
+    },
+    "RegressionTest261009074409": {
+      "scenario_id": 662,
+      "seed_sha256": "d1af63531d8e5a63786bdb2a2a16f1d0a4e4c8099732a822a1e66e2c67f9d9c9",
+      "target": "local",
+      "created": "2026-10-09 07:45"
     }
   }
 }
