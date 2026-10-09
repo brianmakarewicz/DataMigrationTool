@@ -1,5 +1,57 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-09 — after regression: ERP follow-up batch promoted
+
+**Bottom line.** Main at commit f49ec88, which carries the code from PRs #708 through #711, passed the full gate on local and on ATP and is now promoted to ATP.
+
+**Local.** Regression run 347 passed with no new failures. The 8 failures it reported are all known pre-existing issues. The local click-through passed 61 of 61 pages. The first deploy attempt before the click-through lost its database connection partway through the migration, so it was rerun, and the rerun was clean.
+
+**ATP.** The deploy was clean: the gate passed and there were 0 invalid objects. ATP regression run 181 used prefix 93398, which is exactly the highest prefix used plus one. It passed with no new failures and the same 8 known issues. The ATP click-through passed 61 of 61 pages.
+
+**Backlog.** The 14 items that were IN TEST for this batch are now RESOLVED, verified by local run 347 and ATP run 181. The summary counts table was rebuilt to match the item list (412 items, none left IN TEST).
+
+**Where ERP stands.** The ERP backlog is now down to logged follow-ups only. Next, in the owner's order, come the config objects and then HCM. The ERP items that are still open (not deferred, parked or future, and not config or HCM) are listed below.
+
+ERP objects:
+- AR Invoices: invoice lines do not store their own line-level Fusion id.
+- AR Invoices: the shared report fetch takes at most 5 report rows per sent row, so a line with many AutoAccounting distributions can end up unaccounted.
+- Purchase Orders: three rows from run 238 carry mixed unaccounted and Fusion-error text; this is informational only and needs no code change.
+- Item Categories: the real Fusion rejection text is not copied onto the rejected rows.
+- Items: a run's category rows get attached to the previous run's item instead of the item created in the same run.
+- Grants: the reconciliation report finds awards by contract-number prefix, because the award tables have no populated job id column.
+- Grants: a child row rejected under an award that loaded would be wrongly marked LOADED.
+- Grants: child failures from the report are matched to rows by business keys rather than by an id the tool stamped.
+- Grants: the bad regression rows in older scenarios carry misleading names.
+- GL Balances: the reconciliation report finds journals by group id equal to the run id, because no job id column exists.
+- GL Budgets: the reconciliation report finds budget cells by a time window around the import job, because the table has no job column.
+- Assets: the cascade text for rows inside an asset does not name the asset.
+- Assets: the validator does not check values against the interface column widths.
+- Assets: mapping a header-file rejection back to its row does not allow for line breaks inside values.
+- Misc Receipts: there is no regression scenario yet for a failure that exists only at the lot or serial level.
+- Misc Receipts: lot rows and the document roll-up link children to the parent in two different ways.
+- Misc Receipts: when the load itself fails, only the transaction rows are marked FAILED and the lot and serial rows stay GENERATED.
+- Projects: matching a task's or transaction control's own row in the Import Projects report has no live example yet.
+- Project Budgets: the object is named differently in the catalog table and in the views.
+- Requisitions: Verify in Fusion shows some blank cells on lines and distributions because Fusion's REST resource does not return those fields.
+- Requisitions: an unused hand-set username and password pair should be deleted from the ATP config table.
+- Customers: Verify in Fusion cannot reach a location whose party site failed.
+- Suppliers and Item Categories: their reconciliation reports are not yet on the standard nine-column layout.
+
+Shared engine, console and test tooling:
+- The Activity Log whole-run list on page 54 does a full table scan once the log grows large.
+- The reconcile button on page 82 of the f501src copy uses a button position APEX 26.1 rejects.
+- A fresh local database build wipes the local APEX images mount, which breaks browser login until it is set up again.
+- The REST lookup table's AUTH_TYPE column has nothing reading it any more and can be dropped.
+- A reconcile-only rerun of an object that splits into several child jobs has no live proof with unaccounted rows in more than one child.
+- Scenario 601 is an abandoned write-once scenario holding two seeds.
+- The heartbeat does not notice a data, poll or reconcile job that died, so its work item stays PROCESSING for ever.
+- The deploy tooling does not refuse to deploy while tool jobs are still running.
+- The console has no Cancel button; cancelling a run is only possible from SQL.
+- There is no check before load for line breaks inside values written to the FBDI files.
+- The scenario tool can leave a fully inserted scenario unregistered if the database connection drops right after the insert.
+- A successful load still finds its import job by searching for the nearest later job instead of using the load's own captured child job.
+- The Python unit tests are not run by any CI workflow.
+
 ## 2026-10-09 — before regression: ERP follow-up batch
 
 **Bottom line.** The ERP follow-up batch from PRs #708 through #711 is merged to main and goes into a full local regression next. The run tests main at commit 41ef86e against the combined baseline RegressionTest261008213401.
