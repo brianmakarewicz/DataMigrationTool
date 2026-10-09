@@ -1978,13 +1978,32 @@ AS
                     || 'Check the ESS job log for load diagnostics.',
                     'WARN', C_PKG, 'EXECUTE_ONE');
                 -- Capture the import job id (if any) first so the reconciler
-                -- can read the import error table.
+                -- can read the import error table. Backlog #573: the load
+                -- failed, so the only import that can belong to THIS work item
+                -- is one the load itself ran -- a child of the load in the job
+                -- hierarchy POLL_ESS_JOB captured when the load ended, whose job
+                -- definition is the object's import job. The nearest-later
+                -- search (GET_IMPORT_ESS_ID) is not used here: with no own
+                -- import it returned another load's import (run 323, work item
+                -- 2010 recorded US CORP's PrepareMassAdditions 10081984). No
+                -- child found = no import id recorded.
                 IF l_rec.IMPORT_ESS_JOB_ID IS NULL THEN
-                    BEGIN
-                        l_import_id := DMT_LOADER_PKG.GET_IMPORT_ESS_ID(
-                            l_rec.RUN_ID, l_rec.CEMLI_CODE, l_rec.LOAD_ESS_JOB_ID);
-                    EXCEPTION WHEN OTHERS THEN l_import_id := NULL;
-                    END;
+                    SELECT MAX(j.REQUEST_ID)
+                    INTO   l_import_id
+                    FROM   DMT_ESS_JOB_TBL j
+                    WHERE  j.RUN_ID = l_rec.RUN_ID
+                    AND    j.PARENT_REQUEST_ID = TO_NUMBER(l_rec.LOAD_ESS_JOB_ID)
+                    AND    EXISTS (
+                               SELECT 1 FROM DMT_ERP_INTERFACE_OPTIONS_TBL o
+                               WHERE  o.CEMLI_CODE = l_rec.CEMLI_CODE
+                               AND    j.JOB_SHORT_NAME = SUBSTR(o.IMPORT_JOB_NAME,
+                                          GREATEST(INSTR(o.IMPORT_JOB_NAME, ','),
+                                                   INSTR(o.IMPORT_JOB_NAME, ';')) + 1));
+                    DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                        'Load ESS job ' || l_ess_id || ' failed; import id for work item '
+                        || p_queue_id || ' taken from the load''s own child jobs only: '
+                        || NVL(l_import_id, 'none (the load ran no import)') || '.',
+                        'INFO', C_PKG, 'POLL_ONE');
                 ELSE
                     l_import_id := l_rec.IMPORT_ESS_JOB_ID;
                 END IF;

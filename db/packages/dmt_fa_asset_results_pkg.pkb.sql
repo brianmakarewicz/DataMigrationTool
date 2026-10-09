@@ -40,6 +40,10 @@
 --                   quote the rejected asset's real error ('Rejected with
 --                   document: book batch <book> asset <num>: <error>') instead
 --                   of the generic batch-rejected text.
+--   2026-10-09  BM  Backlog #571: a SQL*Loader rejection in the distributions
+--                   file now fails that distribution row with its real error
+--                   (record mapped to the row, line breaks counted) and is
+--                   quoted onto its own header and the rest of the book batch.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
@@ -405,9 +409,14 @@
     -- nor STAGED and does not carry its own real error (it is unaccounted, or
     -- FAILED only with quotes, so a second rejected asset in the batch is quoted
     -- too). Idempotent: a header already carrying a quote is skipped. LOADED rows
-    -- are never touched. If no asset of the batch carries a real error (for
-    -- example the rejection was in the distributions file), nothing is quoted and
-    -- the assets stay unaccounted for the shared sweep. Static SQL; NO COMMIT.
+    -- are never touched. A distribution (assignment) row with its own real error
+    -- -- a FaMassaddDistributions rejection, backlog #571 -- is a source too:
+    -- its error is quoted onto every asset header of the batch, its OWN header
+    -- included (design section 5: "When a distribution errors, its real Fusion
+    -- error is added to its line and to the header"), named
+    -- 'book batch <book> asset <num> distribution: <msg>'. An assignment row
+    -- that only carries its parent header's error is not a source. Static SQL;
+    -- NO COMMIT.
     -- --------------------------------------------------------
     PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
         p_run_id IN NUMBER,
@@ -415,29 +424,53 @@
     ) IS
         C_PROC   CONSTANT VARCHAR2(30) := 'PROPAGATE_DOCUMENT_ERRORS';
         C_TAG    CONSTANT VARCHAR2(20) := '[FUSION_ERROR]';
+        -- The linked-record form the cascades write onto a child of a FAILED header.
+        C_PARENT_ERR CONSTANT VARCHAR2(80) := '[FUSION_ERROR]The parent record has the following Fusion error: ';
         l_marker VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
         l_pairs  T_DOC_PAIR_TBL;
         l_quoted NUMBER := 0;
         l_step   VARCHAR2(200);
     BEGIN
-        l_step := 'collecting rejected assets of book ' || NVL(p_book, '(all)');
-        SELECT h.ASSET_NUMBER,
-               -- Names the book batch and the asset that was actually rejected.
-               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
-                   'book batch',
-                   NVL(p_book, '(all books)') || ' asset ' || h.ASSET_NUMBER,
-                   DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG)))
+        l_step := 'collecting rejected assets and distributions of book ' || NVL(p_book, '(all)');
+        SELECT SOURCE_ASSET, QUOTED_ERROR
         BULK COLLECT INTO l_pairs
-        FROM   DMT_FA_ASSET_HDR_TFM_TBL h
-        WHERE  h.RUN_ID = p_run_id
-        AND    h.TFM_STATUS = 'FAILED'
-        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
-        AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
-        AND    (p_book IS NULL OR EXISTS (
-                   SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
-                   WHERE  b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
-                   AND    b.BOOK_TYPE_CODE = p_book))
-        ORDER BY h.TFM_SEQUENCE_ID;
+        FROM (
+            SELECT h.ASSET_NUMBER AS SOURCE_ASSET,
+                   -- Names the book batch and the asset that was actually rejected.
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                       'book batch',
+                       NVL(p_book, '(all books)') || ' asset ' || h.ASSET_NUMBER,
+                       DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG))) AS QUOTED_ERROR,
+                   1 AS SRC_ORDER, h.TFM_SEQUENCE_ID AS SRC_SEQ
+            FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+            WHERE  h.RUN_ID = p_run_id
+            AND    h.TFM_STATUS = 'FAILED'
+            AND    DBMS_LOB.INSTR(h.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(h.ERROR_TEXT, l_marker) = 0
+            AND    (p_book IS NULL OR EXISTS (
+                       SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                       WHERE  b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
+                       AND    b.BOOK_TYPE_CODE = p_book))
+            UNION ALL
+            -- Backlog #571: a distribution rejected with its own real error.
+            -- SOURCE_ASSET is NULL so its own header is a target as well.
+            SELECT NULL,
+                   DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                       'book batch',
+                       NVL(p_book, '(all books)') || ' asset ' || d.ASSET_NUMBER || ' distribution',
+                       DBMS_LOB.SUBSTR(d.ERROR_TEXT, 3800, DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG))),
+                   2, d.TFM_SEQUENCE_ID
+            FROM   DMT_FA_ASSET_ASSIGN_TFM_TBL d
+            WHERE  d.RUN_ID = p_run_id
+            AND    d.TFM_STATUS = 'FAILED'
+            AND    DBMS_LOB.INSTR(d.ERROR_TEXT, C_TAG) > 0
+            AND    DBMS_LOB.INSTR(d.ERROR_TEXT, l_marker) = 0
+            AND    DBMS_LOB.INSTR(d.ERROR_TEXT, C_PARENT_ERR) = 0
+            AND    (p_book IS NULL OR EXISTS (
+                       SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                       WHERE  b.RUN_ID = d.RUN_ID AND b.ASSET_NUMBER = d.ASSET_NUMBER
+                       AND    b.BOOK_TYPE_CODE = p_book)))
+        ORDER BY SRC_ORDER, SRC_SEQ;
 
         l_step := 'appending quoted asset errors to the other assets of the book batch';
         FORALL i IN 1 .. l_pairs.COUNT
@@ -447,7 +480,7 @@
                    t.RESULTS_UPDATED_DATE = SYSDATE,
                    t.LAST_UPDATED_DATE    = SYSDATE
             WHERE  t.RUN_ID = p_run_id
-            AND    t.ASSET_NUMBER <> l_pairs(i).SOURCE_ASSET
+            AND    (l_pairs(i).SOURCE_ASSET IS NULL OR t.ASSET_NUMBER <> l_pairs(i).SOURCE_ASSET)
             AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
             AND    (t.TFM_STATUS <> 'FAILED'
                     OR NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker), 0) > 0)
@@ -532,6 +565,8 @@
         l_chunk      VARCHAR2(4000);
         l_err        VARCHAR2(2000);
         l_asset      VARCHAR2(100);
+        l_reason     VARCHAR2(2000);
+        l_dist_seq   NUMBER;
         l_marked     NUMBER := 0;
         l_left       NUMBER := 0;
     BEGIN
@@ -626,11 +661,12 @@
         -- FA_MASS_ADDITIONS child's record order matches the header/book CSV
         -- (ROW_NUMBER OVER (ORDER BY b.TFM_SEQUENCE_ID)), so we parse each child
         -- log ALONE (never concatenated -- that would let a distributions/rates
-        -- Record N misattribute to the wrong asset) and attribute ONLY rejections
-        -- on table FA_MASS_ADDITIONS. A distributions/rates rejection has no
-        -- header CSV position, so it is never mapped to a wrong header row; with
-        -- no source asset, pass (b) below quotes nothing and the batch stays
-        -- unaccounted for the shared sweep (backlog #571).
+        -- Record N misattribute to the wrong asset). A FA_MASS_ADDITIONS
+        -- rejection maps to the header at that header/book CSV position; a
+        -- FA_MASSADD_DISTRIBUTIONS rejection maps to the assignment row at that
+        -- position of this work item's distributions CSV (backlog #571), which
+        -- then becomes the source pass (b) quotes. The rates file is not
+        -- generated, so it has no rejections to map.
         IF l_failed_bip = 0 THEN
             FOR c IN (
                 SELECT REQUEST_ID FROM DMT_ESS_JOB_TBL
@@ -643,9 +679,11 @@
                     l_one := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(p_request_id => c.REQUEST_ID, p_cemli_code => C_CEMLI);
                 EXCEPTION WHEN OTHERS THEN l_one := NULL;  -- a missing child log is not fatal
                 END;
-                -- Skip children that did not load FA_MASS_ADDITIONS: their record
-                -- numbers do not map to the header/book CSV.
-                IF l_one IS NULL OR INSTR(UPPER(l_one), 'FA_MASS_ADDITIONS') = 0 THEN
+                -- Skip children that loaded neither FA_MASS_ADDITIONS nor
+                -- FA_MASSADD_DISTRIBUTIONS (the rates file is not generated).
+                IF l_one IS NULL
+                   OR (INSTR(UPPER(l_one), 'FA_MASS_ADDITIONS') = 0
+                       AND INSTR(UPPER(l_one), 'FA_MASSADD_DISTRIBUTIONS') = 0) THEN
                     CONTINUE;
                 END IF;
 
@@ -658,16 +696,77 @@
                     l_next  := REGEXP_INSTR(l_one, 'Record [0-9]+:', l_start + 1);
                     IF l_next = 0 THEN l_next := DBMS_LOB.GETLENGTH(l_one) + 1; END IF;
                     l_chunk := DBMS_LOB.SUBSTR(l_one, LEAST(l_next - l_start, 3999), l_start);
-                    -- Only FA_MASS_ADDITIONS rejections map to a header row.
+                    -- real error = the "Error on table..." line + the first ORA- line;
+                    -- a SQL*Loader-level rejection (for example "second enclosure
+                    -- string not present") has no ORA- line, so the reason is the
+                    -- line that follows "Error on table...".
+                    l_reason := REGEXP_SUBSTR(l_chunk, 'ORA-[0-9]+[^'||CHR(10)||']*');
+                    IF l_reason IS NULL THEN
+                        l_reason := REGEXP_SUBSTR(l_chunk,
+                                        'Error on table[^'||CHR(10)||']*'||CHR(10)
+                                        ||'[[:space:]]*([^'||CHR(10)||']+)', 1, 1, NULL, 1);
+                    END IF;
+                    l_err := TRIM(REGEXP_REPLACE(
+                                REGEXP_SUBSTR(l_chunk, 'Error on table[^'||CHR(10)||']*') || ' ' ||
+                                l_reason,
+                                '[[:space:]]+', ' '));
+
+                    -- Backlog #571: a FaMassaddDistributions rejection belongs to the
+                    -- assignment (distribution) row at that position of THIS work
+                    -- item's distributions CSV (generator order: TFM_SEQUENCE_ID).
+                    -- SQL*Loader numbers PHYSICAL lines, so a value carrying a line
+                    -- break spans several records: each row's first record is 1 +
+                    -- the records of the rows before it, and a record inside that
+                    -- span still belongs to the same row. The row gets its own real
+                    -- error; PROPAGATE_DOCUMENT_ERRORS then quotes it onto its own
+                    -- header and the other assets of the book batch.
+                    IF INSTR(UPPER(l_chunk), 'FA_MASSADD_DISTRIBUTIONS') > 0 THEN
+                        BEGIN
+                            SELECT TFM_SEQUENCE_ID INTO l_dist_seq FROM (
+                                SELECT x.TFM_SEQUENCE_ID, x.NL,
+                                       1 + NVL(SUM(x.NL + 1) OVER (
+                                               ORDER BY x.TFM_SEQUENCE_ID
+                                               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) FIRST_REC
+                                FROM (
+                                    SELECT d.TFM_SEQUENCE_ID,
+                                           NVL(REGEXP_COUNT(
+                                               d.LOCATION_SEGMENT1 || d.LOCATION_SEGMENT2 || d.LOCATION_SEGMENT3
+                                               || d.LOCATION_SEGMENT4 || d.LOCATION_SEGMENT5 || d.LOCATION_SEGMENT6
+                                               || d.LOCATION_SEGMENT7
+                                               || d.EXPENSE_ACCOUNT_SEGMENT1 || d.EXPENSE_ACCOUNT_SEGMENT2
+                                               || d.EXPENSE_ACCOUNT_SEGMENT3 || d.EXPENSE_ACCOUNT_SEGMENT4
+                                               || d.EXPENSE_ACCOUNT_SEGMENT5 || d.EXPENSE_ACCOUNT_SEGMENT6
+                                               || d.EXPENSE_ACCOUNT_SEGMENT7 || d.EXPENSE_ACCOUNT_SEGMENT8
+                                               || d.EXPENSE_ACCOUNT_SEGMENT9 || d.EXPENSE_ACCOUNT_SEGMENT10,
+                                               CHR(10)), 0) NL
+                                    FROM   DMT_FA_ASSET_ASSIGN_TFM_TBL d
+                                    WHERE  d.RUN_ID = p_run_id
+                                    AND    d.FBDI_CSV_ID IS NOT NULL
+                                    AND    ((p_work_queue_id IS NOT NULL AND d.WORK_QUEUE_ID = p_work_queue_id)
+                                            OR (p_work_queue_id IS NULL AND (l_book IS NULL OR EXISTS (
+                                                    SELECT 1 FROM DMT_FA_ASSET_BOOK_TFM_TBL b
+                                                    WHERE  b.RUN_ID = d.RUN_ID AND b.ASSET_NUMBER = d.ASSET_NUMBER
+                                                    AND    b.BOOK_TYPE_CODE = l_book))))) x)
+                            WHERE l_recno BETWEEN FIRST_REC AND FIRST_REC + NL;
+                        EXCEPTION WHEN NO_DATA_FOUND THEN l_dist_seq := NULL;
+                        END;
+                        IF l_dist_seq IS NOT NULL AND l_err IS NOT NULL THEN
+                            UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL
+                            SET    TFM_STATUS = 'FAILED',
+                                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[FUSION_ERROR] ' || l_err),
+                                   LAST_UPDATED_DATE = SYSDATE
+                            WHERE  RUN_ID = p_run_id AND TFM_SEQUENCE_ID = l_dist_seq
+                            AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                        END IF;
+                        l_start := l_next;
+                        CONTINUE;
+                    END IF;
+
+                    -- Otherwise only FA_MASS_ADDITIONS rejections map to a header row.
                     IF INSTR(UPPER(l_chunk), 'FA_MASS_ADDITIONS') = 0 THEN
                         l_start := l_next;
                         CONTINUE;
                     END IF;
-                    -- real Fusion error = the "Error on table..." line + first ORA- line
-                    l_err := TRIM(REGEXP_REPLACE(
-                                REGEXP_SUBSTR(l_chunk, 'Error on table[^'||CHR(10)||']*') || ' ' ||
-                                REGEXP_SUBSTR(l_chunk, 'ORA-[0-9]+[^'||CHR(10)||']*'),
-                                '[[:space:]]+', ' '));
 
                     -- the asset at CSV position l_recno for this book
                     BEGIN

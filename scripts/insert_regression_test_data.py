@@ -2369,6 +2369,15 @@ def main():
         ("RT-ASSET-XG-G1", "RT XG Equipment 1"),
         ("RT-ASSET-XG-BAD", "BAD: prorate code too long for interface"),
         ("RT-ASSET-XG-G2", "RT XG Equipment 2"),
+        # Distribution-level cross-grain book batch (backlog #571), book
+        # US FIN SVCS CORP. XD-BAD's assignment carries a line break inside
+        # its location (a pasted legacy value), so SQL*Loader rejects that
+        # distribution record and commits nothing for the book. XD-BAD's own
+        # header and book and XD-G1 / XD-G2 must quote the distribution's real
+        # error; the distribution row itself carries it as its own error.
+        ("RT-ASSET-XD-G1", "RT XD Equipment 1"),
+        ("RT-ASSET-XD-BAD", "BAD: line break in distribution location"),
+        ("RT-ASSET-XD-G2", "RT XD Equipment 2"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_HDR_STG_TBL (
@@ -2400,6 +2409,9 @@ def main():
         ("RT-ASSET-XG-G1", "SUPREMO US CORP", 22000.00, 60),
         ("RT-ASSET-XG-BAD", "SUPREMO US CORP", 9000.00, 36),
         ("RT-ASSET-XG-G2", "SUPREMO US CORP", 14000.00, 60),
+        ("RT-ASSET-XD-G1", "US FIN SVCS CORP", 18000.00, 60),
+        ("RT-ASSET-XD-BAD", "US FIN SVCS CORP", 7000.00, 36),
+        ("RT-ASSET-XD-G2", "US FIN SVCS CORP", 12000.00, 60),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_BOOK_STG_TBL (
@@ -2435,6 +2447,10 @@ def main():
         ("RT-ASSET-XG-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XG-BAD", "68130", "USA", "NEW YORK", "NEW YORK"),
         ("RT-ASSET-XG-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
+        ("RT-ASSET-XD-G1", "68130", "USA", "NEW YORK", "NEW YORK"),
+        # Line break inside LOCATION_SEGMENT3: SQL*Loader rejects the record.
+        ("RT-ASSET-XD-BAD", "68130", "USA", "NEW YORK", "NEW\nYORK"),
+        ("RT-ASSET-XD-G2", "68130", "USA", "NEW YORK", "NEW YORK"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_FA_ASSET_ASSIGN_STG_TBL (
