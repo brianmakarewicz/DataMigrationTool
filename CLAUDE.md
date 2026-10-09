@@ -129,6 +129,18 @@ already superseded. It rotted for a week because it was left dirty and never syn
 A SessionStart hook (`scripts/hooks/dmt_git_sync_check.py`, wired in `~/.claude/settings.json`)
 warns automatically when this repo's `main` is behind `origin/main` or the tree is dirty.
 
+## Shared local DB deploy rule (MANDATORY, owner decision 2026-10-08)
+
+Several agents share the local Docker database. Before and after every deploy there:
+
+1. Never deploy a package while any `DMT_WQ_` or `DMT_PF_` scheduler job is running. Check
+   `USER_SCHEDULER_RUNNING_JOBS` and wait until it shows none.
+2. Confirm 0 invalid objects in the schema right after deploying, and fix anything invalid before moving on.
+3. Only redeploy shared engine packages (scheduler, queue, worker, common utilities) when your change is
+   actually in them; never redeploy them as a side effect of deploying an object's own packages.
+
+Full text: `docs/DMT_DESIGN.html`, section 3, "How the schema is deployed".
+
 ## Blind tranche-review protocol (MANDATORY)
 
 Every completed tranche gets a **blind subagent review** before the next tranche starts.
