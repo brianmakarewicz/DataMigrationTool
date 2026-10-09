@@ -36,6 +36,14 @@ REPORTS = [
     ("SupplierSites",           "SUP_SITE_DM",      "SUP_SITE_RPT"),
     ("SupplierSiteAssignments", "SUP_SITE_ASSN_DM", "SUP_SITE_ASSN_RPT"),
     ("SupplierContacts",        "SUP_CONT_DM",      "SUP_CONT_RPT"),
+    # Supplier family V2 (2026-10-09, backlog #217): Contract v1 nine-column
+    # reports, rows found only by the load job id. Deployed alongside the V1
+    # SUP_*_DM models (never overwritten).
+    ("Suppliers",               "DMT_SUP_RECON_V2_DM",           "DMT_SUP_RECON_V2_RPT"),
+    ("SupplierAddresses",       "DMT_SUP_ADDR_RECON_V2_DM",      "DMT_SUP_ADDR_RECON_V2_RPT"),
+    ("SupplierSites",           "DMT_SUP_SITE_RECON_V2_DM",      "DMT_SUP_SITE_RECON_V2_RPT"),
+    ("SupplierSiteAssignments", "DMT_SUP_SITE_ASSN_RECON_V2_DM", "DMT_SUP_SITE_ASSN_RECON_V2_RPT"),
+    ("SupplierContacts",        "DMT_SUP_CONT_RECON_V2_DM",      "DMT_SUP_CONT_RECON_V2_RPT"),
     ("PurchaseOrders",          "PO_DM",             "PO_RPT"),
     ("BlanketPOs",              "BLANKET_PO_DM",     "BLANKET_PO_RPT"),
     # BlanketPOs V2 (2026-10-07, backlog #258): rows found only by the work

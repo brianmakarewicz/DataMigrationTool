@@ -11,44 +11,9 @@
     {
       "checker": "check_bip_recon_reports",
       "key": "BIP-NINE-COLUMNS|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_DM",
-      "backlog": 217,
+      "backlog": 710,
       "found": "2026-10-07",
       "detail": "DMT_PAYROLLRELATIONSHIPS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|SupplierAddresses|SUP_ADDR_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "SUP_ADDR_DM returns [address_interface_id, party_site_id, vendor_name, party_site_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|SupplierContacts|SUP_CONT_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "SUP_CONT_DM returns [contact_interface_id, contact_id, vendor_name, first_name, last_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|SupplierSiteAssignments|SUP_SITE_ASSN_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "SUP_SITE_ASSN_DM returns [assignment_interface_id, assignment_id, vendor_name, vendor_site_code, business_unit_name, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|SupplierSites|SUP_SITE_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "SUP_SITE_DM returns [vendor_site_interface_id, vendor_site_id, vendor_name, vendor_site_code, status, load_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
-    },
-    {
-      "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|Suppliers|SUP_DM",
-      "backlog": 217,
-      "found": "2026-10-07",
-      "detail": "SUP_DM returns [vendor_interface_id, vendor_id, vendor_name, segment1, status, load_request_id, import_request_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
     },
     {
       "checker": "check_bip_recon_reports",
