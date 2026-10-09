@@ -2810,15 +2810,17 @@ def main():
     print("\n=== 32b. Item Categories ===")
     # Category BATCH_ID matches its item's batch so an item and its category land
     # in the same batch group (both transforms use NVL(s.BATCH_ID, run_id)).
-    # BAD (backlog #154): a second Purchasing assignment for the GOOD plain item.
-    # Purchasing is single-assignment and Fusion gives every new item its default
-    # Purchasing category, so Fusion rejects this row with EGP-2775085
+    # BAD (backlog #154): a Purchasing assignment for AS55001, a Vision item that
+    # already exists in the master org with Purchasing category Misc.Misc and is
+    # not part of the run (so the category keeps the source item number, #610).
+    # Purchasing is single-assignment, so Fusion rejects the row with EGP-2775085
     # (EGP_MULTIASSIGN_NOT_ALLOWED). It proves that real rejection text reaches
     # the row ([FUSION_ERROR], from EGP_IMPORT_ERRORS via the Items report).
-    # 999.99 ("999.99 Miscellaneous") is the Purchasing category run 229 used;
-    # CATEGORY_NAME must be the real name or Fusion rejects the row with
-    # EGP_INVALID_CAT_PKS instead (scenario RegressionTest261009080330). SOURCE_ID is set
-    # explicitly so it does not collide with the plain item's GOOD row.
+    # Scenarios RegressionTest261009080330 / 261009104823 instead put the second
+    # Purchasing row on the run's own new plain item: the first had a wrong
+    # category name (EGP_INVALID_CAT_PKS), and in the second Fusion accepted it,
+    # because since #610 the category goes with the item it is created with.
+    # CATEGORY_NAME must be the real name ("999.99 Miscellaneous").
     for item_num, org, cat_set, cat_code, cat_name, batch, label, src in [
         ("DMT-RT-PLAIN-001",  MASTER_ORG, "eCommerce Catalog", "Canned_Fruit",  "Canned Fruit", 8101,
          "GOOD: eCommerce Catalog (multi-assign) category for plain item", None),
@@ -2828,9 +2830,9 @@ def main():
          "GOOD: eCommerce Catalog (multi-assign) category for lot item", None),
         ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
          "BAD: nonexistent item + fake category set [BAD-UPS]", None),
-        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99", "999.99 Miscellaneous", 8101,
-         "BAD: second Purchasing (single-assignment) category for plain item [EGP-2775085]",
-         "RT-ITEMCAT-PURCH-BAD-DMT-RT-PLAIN-001"),
+        ("AS55001",  MASTER_ORG, "Purchasing", "999.99", "999.99 Miscellaneous", 8101,
+         "BAD: second Purchasing (single-assignment) category for existing item AS55001 [EGP-2775085]",
+         "RT-ITEMCAT-PURCH-BAD-AS55001"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_EGP_ITEM_CAT_STG_TBL (
