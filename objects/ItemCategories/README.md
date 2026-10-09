@@ -103,9 +103,15 @@ pre-V3 report (prefix-scoped); replaying V3 for run 229's own work item (load 10
 10065647) returns the EGP-2775085 text on both Purchasing rows. No import-report parsing is
 needed. This change does not touch how a category row resolves its item number (that is
 backlog #610 / PR #729).
-Regression BAD row `RT-ITEMCAT-PURCH-BAD-DMT-RT-PLAIN-001` (scenario RegressionTest261009080330):
-a second Purchasing assignment (999.99) for the GOOD plain item, expected FAILED with
-`[FUSION_ERROR] EGP_MULTIASSIGN_NOT_ALLOWED: ...`.
+Regression BAD row `RT-ITEMCAT-PURCH-BAD-AS55001` (scenario RegressionTest261009113635): a
+Purchasing assignment (999.99 "999.99 Miscellaneous") for the existing Vision item AS55001,
+which already holds Purchasing category Misc.Misc in org 000. Proof run 376 (prefix 93419,
+STANDALONE:Items): the row FAILED with `[FUSION_ERROR] EGP_MULTIASSIGN_NOT_ALLOWED: Items cannot
+be assigned to multiple categories for this catalog ... (EGP-2775085)`, all 5 listed rows met,
+0 UNACCOUNTED, harness PASS. Two earlier scenarios aimed the same row at the run's own new
+plain item: RegressionTest261009080330 used a wrong category name (Fusion: EGP_INVALID_CAT_PKS,
+run 372), and in RegressionTest261009104823 Fusion accepted it (run 375, LOADED; since #610 the
+category is created together with its new item, so no default Purchasing category exists yet).
 
 ## History
 - DDL deployed initially.

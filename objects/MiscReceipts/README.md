@@ -98,6 +98,15 @@ DMT-REG-LOT-XG), both on the nonexistent subinventory `XGNOSUB`. Proof run 315 (
 93370): both transactions FAILED with `INV_INSTP_CNTXT_SYS_DEFINED ... SUBINVENTORY_CODE`,
 the lot and serial FAILED quoting it, GOOD rows LOADED, 0 UNACCOUNTED.
 
+**Child-grain-only defects (backlog #551, 2026-10-09).** Scenario RegressionTest261009080330
+adds two documents whose transaction is valid and only the detail is wrong:
+`RT-MR-XL-LOT-BAD` (qty-3 receipt of RA-100-4935-LOT, its one lot `DMT-REG-LOT-XL` carries 5) and
+`RT-MR-XS-SER-BAD` (qty-2 receipt of AS88000, serial range DMT-SER-XS-001..003). Fusion writes the
+detail error inline on the transaction row. Proof run 372 (prefix 93415, STANDALONE:Items +
+MiscReceipts): the transactions FAILED with `INV_LOTSR_LOT_QTY` and
+`INV_MATRX_INVALID_SERIAL_RANGE`, the lot and serial FAILED quoting them, every GOOD row (lot and
+serial included) LOADED, all 14 listed rows met, 0 UNACCOUNTED, harness PASS.
+
 ## Status
 WIRED INTO PIPELINE. Code built. Now in P2P scheduler sequence (last position).
 Needs first E2E test with real data.
