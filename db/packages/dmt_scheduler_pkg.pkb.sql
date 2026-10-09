@@ -57,7 +57,9 @@ AS
     -- one active run at a time, enforced at submission — a run whose
     -- selection includes an object already in an active run is
     -- rejected with a clear message naming the object and the
-    -- blocking run.
+    -- blocking run. A CANCELLED run (DMT_QUEUE_PKG.CANCEL_RUN, backlog
+    -- #635) never blocks: its RUN_STATUS is outside the active pair below
+    -- and its open items are CANCELLED, a terminal work status.
     -- ============================================================
     PROCEDURE assert_objects_not_active (p_cemli_csv IN VARCHAR2) IS
         l_remaining    VARCHAR2(4000);
@@ -79,7 +81,7 @@ AS
             JOIN   DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
             WHERE  q.CEMLI_CODE = l_cemli
             AND    r.RUN_STATUS IN ('QUEUED', 'IN_PROGRESS')
-            AND    q.WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+            AND    q.WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED');
 
             IF l_blocking_run IS NOT NULL THEN
                 RAISE_APPLICATION_ERROR(-20105,
@@ -447,12 +449,10 @@ AS
     END SUBMIT_OBJECTS;
 
     -- ============================================================
-    -- (A8, 2026-07-08) CANCEL_RUN REMOVED per design section 2:
-    -- "There is no cancellation (decided 2026-07-07) — runs always
-    -- execute to their terminal state ... the fix is an ALL-mode
-    -- re-run of the scenario under a new prefix." The CANCELLED
-    -- run status is likewise removed from DMT_PIPELINE_RUN_TBL's
-    -- check constraint (db/tables/dmt_pipeline_run_tbl.sql).
+    -- Cancelling a run: DMT_QUEUE_PKG.CANCEL_RUN (owner-approved
+    -- 2026-10-08, backlog #635), next to the heartbeat that owns the
+    -- run's scheduler jobs. The CANCEL_RUN removed from this package on
+    -- 2026-07-08 (A8) is not coming back here.
     -- ============================================================
 
     -- ============================================================

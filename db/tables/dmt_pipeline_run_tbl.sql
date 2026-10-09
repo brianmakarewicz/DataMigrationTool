@@ -31,7 +31,7 @@ begin
     ) ENABLE, 
 	 CONSTRAINT "DMT_PIPELINE_RUN_PK" PRIMARY KEY ("RUN_ID")
   USING INDEX  ENABLE, 
-	 CONSTRAINT "DMT_PIPELINE_RUN_STATUS_CK" CHECK (RUN_STATUS IN (''QUEUED'',''IN_PROGRESS'',''COMPLETED'',''COMPLETED_ERRORS'',''FAILED'',''NO_ROWS_PROCESSED'')) ENABLE,
+	 CONSTRAINT "DMT_PIPELINE_RUN_STATUS_CK" CHECK (RUN_STATUS IN (''QUEUED'',''IN_PROGRESS'',''COMPLETED'',''COMPLETED_ERRORS'',''FAILED'',''NO_ROWS_PROCESSED'',''CANCELLED'')) ENABLE,
 	 CONSTRAINT "DMT_PIPELINE_RUN_PREFLIGHT_CK" CHECK (PREFLIGHT_STATUS IN (''PREFLIGHTING'',''OK'',''FAILED'')) ENABLE
    ) ';
 exception when others then
@@ -43,16 +43,14 @@ end;
 -- Guarded idempotent migration blocks (A8, 2026-07-08): converge a
 -- pre-existing database to the definition above.
 --
--- 1) CANCELLED removed from the run-status vocabulary. Design
---    section 2: CANCEL_RUN is REMOVED — "There is no cancellation
---    (decided 2026-07-07) — runs always execute to their terminal
---    state"; the Overview run-status table defines exactly QUEUED /
---    IN_PROGRESS / COMPLETED / COMPLETED_ERRORS / FAILED /
---    NO_ROWS_PROCESSED. Drop + re-add of the check constraint
---    (-2443 = constraint does not exist, -2264 = name already in
---    use — both mean already converged). Any historical CANCELLED
---    row would block the re-add loudly — by design: such rows must
---    be triaged, not silently grandfathered.
+-- 1) Run-status vocabulary. CANCELLED was removed 2026-07-08 (A8)
+--    and RESTORED 2026-10-08 (owner-approved, backlog #635): the
+--    sanctioned DMT_QUEUE_PKG.CANCEL_RUN is the one writer of
+--    RUN_STATUS = 'CANCELLED' (design section 2, run-status table:
+--    QUEUED / IN_PROGRESS / COMPLETED / COMPLETED_ERRORS / FAILED /
+--    NO_ROWS_PROCESSED / CANCELLED). Drop + re-add of the check
+--    constraint converges any database (-2443 = constraint does not
+--    exist, -2264 = name already in use — both mean converged).
 -- ============================================================
 begin
   execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" DROP CONSTRAINT "DMT_PIPELINE_RUN_STATUS_CK"';
@@ -61,7 +59,7 @@ exception when others then
 end;
 /
 begin
-  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" ADD CONSTRAINT "DMT_PIPELINE_RUN_STATUS_CK" CHECK (RUN_STATUS IN (''QUEUED'',''IN_PROGRESS'',''COMPLETED'',''COMPLETED_ERRORS'',''FAILED'',''NO_ROWS_PROCESSED''))';
+  execute immediate 'ALTER TABLE "DMT_PIPELINE_RUN_TBL" ADD CONSTRAINT "DMT_PIPELINE_RUN_STATUS_CK" CHECK (RUN_STATUS IN (''QUEUED'',''IN_PROGRESS'',''COMPLETED'',''COMPLETED_ERRORS'',''FAILED'',''NO_ROWS_PROCESSED'',''CANCELLED''))';
 exception when others then
   if sqlcode not in (-2264) then raise; end if;
 end;
@@ -181,7 +179,7 @@ exception when others then
 end;
 /
 
-COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."RUN_STATUS" IS 'QUEUED -> IN_PROGRESS -> COMPLETED | COMPLETED_ERRORS | FAILED | NO_ROWS_PROCESSED (Overview run-status table; written only by the heartbeat rollup)';
+COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."RUN_STATUS" IS 'QUEUED -> IN_PROGRESS -> COMPLETED | COMPLETED_ERRORS | FAILED | NO_ROWS_PROCESSED, or CANCELLED (Overview run-status table; written by the heartbeat rollup, except CANCELLED which only DMT_QUEUE_PKG.CANCEL_RUN writes)';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CURRENT_CEMLI" IS 'Which object type is currently executing (updated via autonomous txn)';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CURRENT_STEP" IS 'VALIDATE | GENERATE | LOAD | POLL_LOAD | POLL_IMPORT | RECONCILE';
 COMMENT ON COLUMN "DMT_PIPELINE_RUN_TBL"."CEMLI_SEQUENCE" IS 'Ordered CSV of all CEMLIs to run in this pipeline';

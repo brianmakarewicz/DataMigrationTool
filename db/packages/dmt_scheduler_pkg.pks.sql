@@ -41,10 +41,8 @@ AS
         x_run_id           OUT NUMBER
     );
 
-    -- (A8, 2026-07-08) CANCEL_RUN REMOVED — design section 2: "There is
-    -- no cancellation (decided 2026-07-07) — runs always execute to their
-    -- terminal state. If something goes wrong mid-flight ... the fix is an
-    -- ALL-mode re-run of the scenario under a new prefix."
+    -- To cancel a run that can never finish, use DMT_QUEUE_PKG.CANCEL_RUN
+    -- (owner-approved 2026-10-08, backlog #635).
 
     -- Returns ordered CSV of CEMLI codes for a pipeline.
     FUNCTION GET_CEMLI_SEQUENCE (p_pipeline_code IN VARCHAR2) RETURN VARCHAR2;

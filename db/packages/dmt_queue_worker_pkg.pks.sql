@@ -37,6 +37,18 @@ AS
     -- the run is already claimed 'PREFLIGHTING' before this is spawned.
     PROCEDURE PREFLIGHT_ONE (p_run_id IN NUMBER);
 
+    -- Halt a run whose preflight did not pass: FAIL every not-yet-terminal
+    -- work item with p_message (NULL = the standard preflight-failed text)
+    -- and set PREFLIGHT_STATUS = 'FAILED'. RUN_STATUS is left to the
+    -- heartbeat rollup, which settles the run FAILED once every item is
+    -- terminal. Called by PREFLIGHT_ONE and by DMT_QUEUE_PKG's orphaned-
+    -- preflight recovery (a DMT_PF_ job that ended without a verdict twice,
+    -- backlog #565). Commits.
+    PROCEDURE FAIL_RUN_PREFLIGHT (
+        p_run_id  IN NUMBER,
+        p_message IN VARCHAR2 DEFAULT NULL
+    );
+
     -- ------------------------------------------------------------
     -- Catalog-driven row accounting (design section 5 "Object-status
     -- accounting" + Overview work-item status table, DONE/FAILED rows).

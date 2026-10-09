@@ -133,6 +133,116 @@ AS
     END spawn_preflight;
 
     -- ============================================================
+    -- RECOVER_ORPHAN_PREFLIGHT -- see the package spec (backlog #565).
+    -- A QUEUED run that is PREFLIGHTING with no DMT_PF_<run> job has lost
+    -- its preflight worker without a verdict: run_preflights only claims
+    -- NULL and dispatch_ready only releases 'OK', so without this the run
+    -- would wait forever and hold its objects' active-run lock. First
+    -- time: release the claim so run_preflights (same tick) re-spawns it.
+    -- Second time: fail the run with a clear message. The re-spawn count
+    -- is the number of earlier WARN entries this procedure wrote for the
+    -- run in the activity log (DMT_LOG_TBL).
+    -- ============================================================
+    PROCEDURE RECOVER_ORPHAN_PREFLIGHT (
+        p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'RECOVER_ORPHAN_PREFLIGHT';
+        l_job    VARCHAR2(30) := 'DMT_PF_' || p_run_id;
+        l_step   VARCHAR2(200);
+        l_cnt    NUMBER;
+        l_prior  NUMBER;
+    BEGIN
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'checking whether run ' || p_run_id || ' is an orphaned preflight';
+        SELECT COUNT(*) INTO l_cnt
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id
+          AND  RUN_STATUS = 'QUEUED'
+          AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+        IF l_cnt = 0 OR child_job_exists(l_job) THEN
+            RETURN;  -- not claimed, already resolved, or its job is still alive
+        END IF;
+
+        l_step := 'counting earlier preflight re-spawns for run ' || p_run_id;
+        SELECT COUNT(*) INTO l_prior
+        FROM   DMT_LOG_TBL
+        WHERE  RUN_ID = p_run_id
+          AND  PACKAGE_NAME = C_PKG
+          AND  PROCEDURE_NAME = C_PROC
+          AND  LOG_TYPE = DMT_UTIL_PKG.C_LOG_WARN;
+
+        IF l_prior = 0 THEN
+            l_step := 'releasing the preflight claim of run ' || p_run_id;
+            UPDATE DMT_PIPELINE_RUN_TBL
+            SET    PREFLIGHT_STATUS = NULL
+            WHERE  RUN_ID = p_run_id
+              AND  RUN_STATUS = 'QUEUED'
+              AND  PREFLIGHT_STATUS = 'PREFLIGHTING';
+            COMMIT;
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'Preflight job ' || l_job || ' is gone but the run '
+                                            || 'was still marked PREFLIGHTING: the job ended without '
+                                            || 'recording a result (for example it could not start '
+                                            || 'while a package was being redeployed). Released the '
+                                            || 'claim so the preflight is re-spawned once.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+        ELSE
+            l_step := 'failing run ' || p_run_id || ' after a second orphaned preflight';
+            DMT_QUEUE_WORKER_PKG.FAIL_RUN_PREFLIGHT(
+                p_run_id  => p_run_id,
+                p_message => 'Preflight job ' || l_job || ' ended twice without recording a '
+                             || 'result (it was re-spawned once). Run halted; nothing was '
+                             || 'submitted. See the activity log and the scheduler job log for '
+                             || l_job || '.');
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'Preflight job ' || l_job || ' ended a second time '
+                                            || 'without recording a result. Run halted: its work '
+                                            || 'items are FAILED and the heartbeat settles the run FAILED.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END RECOVER_ORPHAN_PREFLIGHT;
+
+    -- ============================================================
+    -- Phase 0a: run RECOVER_ORPHAN_PREFLIGHT for every QUEUED run still
+    -- claimed PREFLIGHTING (it returns at once for a run whose job lives).
+    -- ============================================================
+    PROCEDURE recover_orphan_preflights IS
+        C_PROC CONSTANT VARCHAR2(30) := 'recover_orphan_preflights';
+        l_code NUMBER;
+    BEGIN
+        FOR run_rec IN (
+            SELECT RUN_ID
+            FROM   DMT_PIPELINE_RUN_TBL
+            WHERE  RUN_STATUS = 'QUEUED'
+              AND  PREFLIGHT_STATUS = 'PREFLIGHTING'
+        ) LOOP
+            RECOVER_ORPHAN_PREFLIGHT(p_run_id => run_rec.RUN_ID, x_error_code => l_code);
+        END LOOP;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => NULL,
+                                   p_message   => 'recover_orphan_preflights phase loop error',
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END recover_orphan_preflights;
+
+    -- ============================================================
     -- Phase 0: for every QUEUED run not yet preflighted, claim it and
     -- spawn its preflight worker (above). Runs BEFORE dispatch so a run
     -- whose lookups will not refresh, or whose credentials will not
@@ -173,6 +283,7 @@ AS
             FROM DMT_WORK_QUEUE_TBL q
             JOIN DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
             WHERE q.WORK_STATUS = 'PENDING'
+              AND r.RUN_STATUS <> 'CANCELLED'   -- backlog #635: never revive a cancelled run
         )
         LOOP
             IF dependencies_met(rec.RUN_ID, rec.DEPENDS_ON, rec.POLICY) THEN
@@ -209,8 +320,12 @@ AS
     BEGIN
         FOR rec IN (
             SELECT QUEUE_ID, RUN_ID, CEMLI_CODE
-            FROM DMT_WORK_QUEUE_TBL
+            FROM DMT_WORK_QUEUE_TBL q
             WHERE WORK_STATUS IN ('AWAITING_LOAD', 'AWAITING_IMPORT', 'AWAITING_POSTRUN')
+              -- backlog #635: a cancelled run is never polled again, even if a
+              -- stopped job wrote a status after CANCEL_RUN marked its items.
+              AND NOT EXISTS (SELECT 1 FROM DMT_PIPELINE_RUN_TBL r
+                              WHERE r.RUN_ID = q.RUN_ID AND r.RUN_STATUS = 'CANCELLED')
               -- (Stage D live, 2026-07-08) NEXT_POLL_AFTER is a plain
               -- TIMESTAMP; comparing it to SYSTIMESTAMP (TIMESTAMP WITH
               -- TIME ZONE) re-interprets the stored value in the SESSION
@@ -269,6 +384,7 @@ AS
             JOIN DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
             WHERE q.WORK_STATUS = 'READY'
               AND r.PREFLIGHT_STATUS = 'OK'
+              AND r.RUN_STATUS <> 'CANCELLED'   -- backlog #635
             ORDER BY q.SORT_ORDER
         )
         LOOP
@@ -315,8 +431,10 @@ AS
     BEGIN
         FOR rec IN (
             SELECT QUEUE_ID, RUN_ID, CEMLI_CODE
-            FROM DMT_WORK_QUEUE_TBL
+            FROM DMT_WORK_QUEUE_TBL q
             WHERE WORK_STATUS = 'RECONCILING'
+              AND NOT EXISTS (SELECT 1 FROM DMT_PIPELINE_RUN_TBL r   -- backlog #635
+                              WHERE r.RUN_ID = q.RUN_ID AND r.RUN_STATUS = 'CANCELLED')
               -- Honour NEXT_POLL_AFTER exactly as dispatch_ess_polls does. Most
               -- RECONCILING rows have NEXT_POLL_AFTER NULL (reconcile immediately).
               -- The HDL base-lag deferral in RECONCILE_ONE sets it ~90s ahead so
@@ -449,7 +567,7 @@ AS
         )
         LOOP
             SELECT COUNT(*),
-                   SUM(CASE WHEN WORK_STATUS IN ('DONE','FAILED','SKIPPED') THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN WORK_STATUS IN ('DONE','FAILED','SKIPPED','CANCELLED') THEN 1 ELSE 0 END),
                    SUM(CASE WHEN WORK_STATUS = 'FAILED' THEN 1 ELSE 0 END),
                    SUM(CASE WHEN WORK_STATUS NOT IN ('PENDING','READY') THEN 1 ELSE 0 END)
             INTO l_total, l_terminal, l_failed, l_started
@@ -562,6 +680,7 @@ AS
     -- ============================================================
     PROCEDURE HEARTBEAT_TICK IS
     BEGIN
+        recover_orphan_preflights;
         run_preflights;
         promote_ready;
         dispatch_ess_polls;
@@ -645,7 +764,7 @@ AS
     BEGIN
         SELECT COUNT(*) INTO l_active
         FROM DMT_WORK_QUEUE_TBL
-        WHERE WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+        WHERE WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED');
 
         IF l_active = 0 THEN
             BEGIN
@@ -818,6 +937,231 @@ AS
             ENSURE_POLLER_RUNNING;
         END IF;
     END RERUN_RUN;
+
+    -- ============================================================
+    -- stop_run_job -- private helper of CANCEL_RUN: stop (if running) and
+    -- drop one scheduler job. DROP_JOB with force => TRUE first stops a
+    -- running instance; the stopped session's uncommitted work rolls back.
+    -- A job that is already gone is not an error.
+    -- ============================================================
+    PROCEDURE stop_run_job (
+        p_run_id     IN  NUMBER,
+        p_job_name   IN  VARCHAR2,
+        x_error_code OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'stop_run_job';
+    BEGIN
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+        IF child_job_exists(p_job_name) THEN
+            DBMS_SCHEDULER.DROP_JOB(job_name => p_job_name, force => TRUE);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- ORA-27475: the job finished and auto-dropped between the check and
+            -- the drop -- it is gone, which is the goal.
+            IF SQLCODE = -27475 THEN
+                x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+            ELSE
+                x_error_code := DMT_UTIL_PKG.C_ERROR;
+                DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                       p_message   => 'CANCEL_RUN could not stop scheduler job ' || p_job_name,
+                                       p_sqlerrm   => SQLERRM,
+                                       p_package   => C_PKG,
+                                       p_procedure => C_PROC);
+            END IF;
+    END stop_run_job;
+
+    -- ============================================================
+    -- CANCEL_RUN -- see the package spec (owner-approved 2026-10-08,
+    -- backlog #635). The one writer of RUN_STATUS = 'CANCELLED' and
+    -- WORK_STATUS = 'CANCELLED'. Touches only DMT_PIPELINE_RUN_TBL,
+    -- DMT_WORK_QUEUE_TBL, the run's scheduler jobs and the activity log --
+    -- never an STG or TFM table.
+    -- ============================================================
+    PROCEDURE CANCEL_RUN (
+        p_run_id       IN  NUMBER,
+        p_reason       IN  VARCHAR2,
+        p_cancelled_by IN  VARCHAR2 DEFAULT NULL,
+        x_error_code   OUT NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'CANCEL_RUN';
+        TYPE t_names IS TABLE OF VARCHAR2(128);
+        TYPE t_ids   IS TABLE OF NUMBER;
+        l_step        VARCHAR2(200);
+        l_status      DMT_PIPELINE_RUN_TBL.RUN_STATUS%TYPE;
+        l_by          VARCHAR2(100);
+        l_msg         VARCHAR2(4000);
+        l_ids         t_ids;
+        l_jobs        t_names;
+        l_late        NUMBER := 0;
+        l_job_code    NUMBER;
+        l_stopped     VARCHAR2(4000);
+        l_not_stopped NUMBER := 0;
+    BEGIN
+        x_error_code := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'validating the cancel reason';
+        IF TRIM(p_reason) IS NULL THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'CANCEL_RUN refused for run ' || p_run_id
+                                            || ': a cancel reason is required.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        l_step := 'locking run ' || p_run_id;
+        SELECT RUN_STATUS INTO l_status
+        FROM   DMT_PIPELINE_RUN_TBL
+        WHERE  RUN_ID = p_run_id
+        FOR UPDATE;
+
+        IF l_status = 'CANCELLED' THEN
+            ROLLBACK;
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'CANCEL_RUN: run ' || p_run_id
+                                            || ' is already CANCELLED; nothing to do.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_INFO,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        IF l_status NOT IN ('QUEUED', 'IN_PROGRESS') THEN
+            ROLLBACK;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'CANCEL_RUN refused for run ' || p_run_id
+                                            || ': it already finished with status ' || l_status
+                                            || '. Only a QUEUED or IN_PROGRESS run can be cancelled.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        l_by  := SUBSTR(NVL(p_cancelled_by, SYS_CONTEXT('USERENV', 'SESSION_USER')), 1, 100);
+        l_msg := SUBSTR('Cancelled by ' || l_by || ' at '
+                        || TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS TZH:TZM')
+                        || ': ' || TRIM(p_reason), 1, 4000);
+
+        -- Pass 1: cancel every not-yet-terminal work item and the run row in
+        -- one transaction, BEFORE touching the scheduler (DBMS_SCHEDULER calls
+        -- commit implicitly). From this commit on the heartbeat dispatches
+        -- nothing for the run.
+        l_step := 'cancelling the open work items of run ' || p_run_id;
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    WORK_STATUS   = 'CANCELLED',
+               ERROR_MESSAGE = l_msg,
+               COMPLETED_AT  = SYSTIMESTAMP
+        WHERE  RUN_ID = p_run_id
+          AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED')
+        RETURNING QUEUE_ID BULK COLLECT INTO l_ids;
+
+        l_step := 'marking run ' || p_run_id || ' CANCELLED';
+        UPDATE DMT_PIPELINE_RUN_TBL
+        SET    RUN_STATUS     = 'CANCELLED',
+               COMPLETED_DATE = SYSTIMESTAMP,
+               ERROR_MESSAGE  = SUBSTR(l_msg || CASE WHEN ERROR_MESSAGE IS NOT NULL
+                                                     THEN ' | earlier error: ' || ERROR_MESSAGE
+                                                END, 1, 4000)
+        WHERE  RUN_ID = p_run_id;
+        COMMIT;
+
+        -- Stop and drop every scheduler job that belongs to the run: its
+        -- preflight job and the data-phase / poll / reconcile job of each of
+        -- its work items (any status -- a job can outlive its item's status).
+        l_step := 'listing the scheduler jobs of run ' || p_run_id;
+        SELECT j.JOB_NAME
+        BULK COLLECT INTO l_jobs
+        FROM   USER_SCHEDULER_JOBS j
+        WHERE  j.JOB_NAME = 'DMT_PF_' || p_run_id
+           OR  j.JOB_NAME IN (SELECT 'DMT_WQ_' || q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
+                              WHERE q.RUN_ID = p_run_id
+                              UNION ALL
+                              SELECT 'DMT_PL_' || q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
+                              WHERE q.RUN_ID = p_run_id
+                              UNION ALL
+                              SELECT 'DMT_RC_' || q.QUEUE_ID FROM DMT_WORK_QUEUE_TBL q
+                              WHERE q.RUN_ID = p_run_id);
+
+        l_step := 'stopping the scheduler jobs of run ' || p_run_id;
+        FOR i IN 1 .. l_jobs.COUNT LOOP
+            stop_run_job(p_run_id => p_run_id, p_job_name => l_jobs(i), x_error_code => l_job_code);
+            IF l_job_code = DMT_UTIL_PKG.C_SUCCESS THEN
+                l_stopped := SUBSTR(l_stopped || CASE WHEN l_stopped IS NOT NULL THEN ', ' END
+                                    || l_jobs(i), 1, 3000);
+            ELSE
+                l_not_stopped := l_not_stopped + 1;
+            END IF;
+        END LOOP;
+
+        -- Pass 2: a job stopped above may have written its item's status
+        -- (its own error handler, or a commit just before the stop), and a
+        -- running data phase may have created split children. Put every such
+        -- item back to CANCELLED. Items that were already DONE / FAILED /
+        -- SKIPPED before the cancel are not in l_ids and keep their verdict.
+        l_step := 're-cancelling items a stopped job touched in run ' || p_run_id;
+        IF l_ids.COUNT > 0 THEN
+            FORALL i IN 1 .. l_ids.COUNT
+                UPDATE DMT_WORK_QUEUE_TBL
+                SET    WORK_STATUS   = 'CANCELLED',
+                       ERROR_MESSAGE = l_msg,
+                       COMPLETED_AT  = SYSTIMESTAMP
+                WHERE  QUEUE_ID = l_ids(i)
+                  AND  WORK_STATUS <> 'CANCELLED';
+            l_late := SQL%ROWCOUNT;
+        END IF;
+
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    WORK_STATUS   = 'CANCELLED',
+               ERROR_MESSAGE = l_msg,
+               COMPLETED_AT  = SYSTIMESTAMP
+        WHERE  RUN_ID = p_run_id
+          AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED');
+        l_late := l_late + SQL%ROWCOUNT;
+        COMMIT;
+
+        IF l_not_stopped > 0 THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+        END IF;
+
+        DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                         p_message   => 'Run ' || p_run_id || ' CANCELLED by ' || l_by || ': '
+                                        || SUBSTR(TRIM(p_reason), 1, 1000)
+                                        || '. Work items cancelled: ' || l_ids.COUNT
+                                        || CASE WHEN l_late > 0
+                                                THEN ' (' || l_late || ' re-cancelled after a stopped job wrote to them)'
+                                           END
+                                        || '. Scheduler jobs stopped: ' || NVL(l_stopped, 'none')
+                                        || CASE WHEN l_not_stopped > 0
+                                                THEN '. Jobs that could NOT be stopped: ' || l_not_stopped
+                                                     || ' (see the error entries above)'
+                                           END
+                                        || '. STG and TFM rows were not touched.',
+                         p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                         p_package   => C_PKG,
+                         p_procedure => C_PROC);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            ROLLBACK;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
+                             p_message   => 'CANCEL_RUN refused: no run with RUN_ID ' || p_run_id || '.',
+                             p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                             p_package   => C_PKG,
+                             p_procedure => C_PROC);
+        WHEN OTHERS THEN
+            ROLLBACK;
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
+                                   p_message   => l_step,
+                                   p_sqlerrm   => SQLERRM,
+                                   p_package   => C_PKG,
+                                   p_procedure => C_PROC);
+    END CANCEL_RUN;
 
 END DMT_QUEUE_PKG;
 /
