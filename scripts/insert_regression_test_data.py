@@ -2815,7 +2815,9 @@ def main():
     # Purchasing category, so Fusion rejects this row with EGP-2775085
     # (EGP_MULTIASSIGN_NOT_ALLOWED). It proves that real rejection text reaches
     # the row ([FUSION_ERROR], from EGP_IMPORT_ERRORS via the Items report).
-    # 999.99 is the Purchasing code run 229 used. Its SOURCE_ID is set
+    # 999.99 ("999.99 Miscellaneous") is the Purchasing category run 229 used;
+    # CATEGORY_NAME must be the real name or Fusion rejects the row with
+    # EGP_INVALID_CAT_PKS instead (scenario RegressionTest261009080330). SOURCE_ID is set
     # explicitly so it does not collide with the plain item's GOOD row.
     for item_num, org, cat_set, cat_code, cat_name, batch, label, src in [
         ("DMT-RT-PLAIN-001",  MASTER_ORG, "eCommerce Catalog", "Canned_Fruit",  "Canned Fruit", 8101,
@@ -2826,7 +2828,7 @@ def main():
          "GOOD: eCommerce Catalog (multi-assign) category for lot item", None),
         ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
          "BAD: nonexistent item + fake category set [BAD-UPS]", None),
-        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99", "999.99", 8101,
+        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99", "999.99 Miscellaneous", 8101,
          "BAD: second Purchasing (single-assignment) category for plain item [EGP-2775085]",
          "RT-ITEMCAT-PURCH-BAD-DMT-RT-PLAIN-001"),
     ]:
