@@ -1,5 +1,22 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-08 late -- Before regression: new combined baseline RegressionTest261008213401
+
+**Bottom line.** The next batch is merged on main and has a new combined regression baseline, RegressionTest261008213401 (local scenario id 622). Nothing has been run on it yet and nothing new is on ATP. The next step is a full local regression on this baseline, then promotion to ATP, which loads the same baseline there.
+
+**What is in this batch.** Everything merged after main ab5c3cc (PR #683, already promoted to ATP), from PR #684 through PR #702, with main at bae8aaf when the baseline was minted:
+- Cross-grain error handling for MiscReceipts and GLBudgets (#688), Projects and ProjectBudgets (#689), Assets (#696) and Grants (#697), each with its own regression rows.
+- ARInvoices import-id matched by business unit, business unit in the group label, and split-parent accounting (#693).
+- Reconciliation reports exactly mirror the deployed .xdm files, the ItemCategories registry repoint and the Items single-pass reconcile (#695).
+- AP RT-1099-G1 and the Items lot category row proven LOADED (#698).
+- ERP small fixes: import-report entity decoding, MiscReceipts lot and serial stamping, safe BIP parameter separator, removal of STG-outcome readers (#699).
+- ERP reconcilers write the standard error text (#702); deploy_scenario.py carries expected outcomes and has --keep-pointer (#694); prefix sync fixes (#684, #686); console page 58 ESS download (#687); docs and backlog updates (#685, #690, #691, #692, #700, #701).
+- Engine CANCEL_RUN and orphaned-preflight recovery (#703), merged after the baseline was minted. It did not change the seed, so the baseline still matches main.
+
+**The baseline.** It was minted with `scripts/deploy_scenario.py` from the committed seed (304 STG rows, 0 duplicates). For every staging table its rows match, column for column, the newest proven scenario for that object: AR from RegressionTest2610081442, Projects and ProjectBudgets from RegressionTest2610081757, MiscReceipts and GLBudgets from RegressionTest2610081756, Assets from RegressionTest2610081851, Grants from RegressionTest2610081853, SalaryBases from RegressionTest2610081435, Absences from RegressionTest2610081509, and everything else (including the corrected AP and Items rows) from RegressionTest2610081244. The only differences are the lot and serial interface numbers that the seed derives per scenario. Its expected outcomes merge those per-object lists into 46 sub-objects and 215 rows. Each listed key maps to exactly one STG row. Item Categories, GL budget lines, the good lot, a bad task and two team members are now listed too, using the outcomes their proof runs recorded. Three groups stay unlisted and fall back to the BAD key-marker rule: the Contract Agreement rows that share the PO tables, four MiscReceipts transactions whose SOURCE_ID is empty in the seed, and the good serial, whose key the seed derives from the scenario id (so it would differ on ATP).
+
+**Known issues.** SalaryBases and Absences now have rows in the baseline, so their "zero records" entries were removed from `scripts/regression_known_issues.json`. Those two objects are now tested. Backlog #505 and #221 are RESOLVED. The batch items are marked IN TEST in the backlog until the regression passes.
+
 ## Session -- 2026-10-08 -- Regression cycle complete, main ab5c3cc promoted to ATP
 
 **Bottom line.** Main at commit ab5c3cc passed the full gate on local and on ATP and is now promoted to ATP.
