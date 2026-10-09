@@ -56,6 +56,9 @@ AS
 -- the orchestrator owns the transaction boundary.
 --
 -- REVISIONS:
+--   2026-10-09  BM  Task and transaction-control own-row match (backlog #655): run
+--                   349 proved their report rows are matched on '/' tokens, like
+--                   team members.
 --   2026-10-09  BM  Upward cross-grain propagation (backlog #545). Live run 343
 --                   (prefix 93393, project RTPRJ-XG1) proved Import Projects
 --                   rejects a valid project when one child fails: the report lists
@@ -291,7 +294,18 @@ AS
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TASK_NAME = l_ir_errors(i).row_identifier
-                        OR PROJECT_NUMBER || '/' || TASK_NAME = l_ir_errors(i).row_identifier);
+                        OR PROJECT_NUMBER || '/' || TASK_NAME = l_ir_errors(i).row_identifier
+                        -- LIST_TASK_ERROR row (run 349): the parser joins
+                        -- TERROR_PROJECT_NAME, TERROR_PROJECT_NUMBER, ERROR_TASK_NUMBER,
+                        -- ERROR_TASK_NAME with '/', empty ones included
+                        -- ("<project name>//<task number>/<task name>"), so match the
+                        -- task number and the project name or number as '/' tokens.
+                        OR (INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                  '/' || TASK_NUMBER || '/') > 0
+                            AND (INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                       '/' || PROJECT_NAME || '/') > 0
+                                 OR INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                          '/' || PROJECT_NUMBER || '/') > 0)));
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSIF l_src LIKE '%TEAM%' OR l_src LIKE '%PART%' OR l_src LIKE '%MEMBER%' THEN
@@ -321,7 +335,18 @@ AS
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier
-                        OR PROJECT_NUMBER || '/' || TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier);
+                        OR PROJECT_NUMBER || '/' || TXN_CTRL_REFERENCE = l_ir_errors(i).row_identifier
+                        -- LIST_TXN_CTRL_ERROR row (run 349): the parser joins
+                        -- TC_ERR_PROJECT_NAME, _PROJECT_NUMBER, _TASK_NAME, _TASK_NUMBER,
+                        -- _SOURCE_REFERENCE with '/', empty ones included
+                        -- ("<project name>////<reference>"), so match the control
+                        -- reference and the project name or number as '/' tokens.
+                        OR (INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                  '/' || TXN_CTRL_REFERENCE || '/') > 0
+                            AND (INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                       '/' || PROJECT_NAME || '/') > 0
+                                 OR INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                          '/' || PROJECT_NUMBER || '/') > 0)));
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSE
