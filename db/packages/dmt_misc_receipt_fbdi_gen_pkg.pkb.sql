@@ -426,7 +426,10 @@ AS
             SELECT NVL(p.INV_LOTSERIAL_INTERFACE_NUM,
                        l.INVENTORY_LOT_INTERFACE_NUMBER) AS INVENTORY_LOT_INTERFACE_NUMBER,
                    l.INVENTORY_SERIAL_INTERFACE_NUM,
-                   l.SOURCE_CODE, l.SOURCE_LINE_ID, l.LOT_NUMBER, l.DESCRIPTION,
+                   -- Backlog #218: a lot carries its parent transaction's
+                   -- SOURCE_LINE_ID (= the parent TFM id), as serials do.
+                   l.SOURCE_CODE, NVL(p.SOURCE_LINE_ID, l.SOURCE_LINE_ID) AS SOURCE_LINE_ID,
+                   l.LOT_NUMBER, l.DESCRIPTION,
                    l.LOT_EXPIRATION_DATE, l.TRANSACTION_QUANTITY, l.PRIMARY_QUANTITY
             FROM   DMT_INV_TRX_LOTS_TFM_TBL l
             LEFT JOIN DMT_INV_TRX_LOTS_STG_TBL ls

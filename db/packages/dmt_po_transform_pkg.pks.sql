@@ -24,7 +24,7 @@
 
     -- Transform eligible PO header staging rows for this run.
     -- Applies run prefix to DOCUMENT_NUM, dep_prefix to VENDOR_NUM.
-    -- Derives INTERFACE_HEADER_KEY = run_id || '_HDR_' || stg_seq_id.
+    -- Derives INTERFACE_HEADER_KEY = TO_CHAR(TFM_SEQUENCE_ID) (backlog #218).
     PROCEDURE TRANSFORM_HEADERS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
@@ -34,8 +34,8 @@
     );
 
     -- Transform eligible PO line staging rows for this run.
-    -- Derives INTERFACE_LINE_KEY = run_id || '_LN_' || stg_seq_id.
-    -- INTERFACE_HEADER_KEY copied verbatim from staging (user must supply matching key).
+    -- Derives INTERFACE_LINE_KEY = TO_CHAR(TFM_SEQUENCE_ID); header key = parent header TFM id.
+    -- The parent header is found through the staged INTERFACE_HEADER_KEY.
     PROCEDURE TRANSFORM_LINES (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
@@ -45,8 +45,8 @@
     );
 
     -- Transform eligible PO line location staging rows for this run.
-    -- Derives INTERFACE_LINE_LOCATION_KEY = run_id || '_LOC_' || stg_seq_id.
-    -- INTERFACE_LINE_KEY copied verbatim from staging.
+    -- Derives INTERFACE_LINE_LOCATION_KEY = TO_CHAR(TFM_SEQUENCE_ID); line key = parent line TFM id.
+    -- The parent line is found through the staged INTERFACE_LINE_KEY.
     PROCEDURE TRANSFORM_LINE_LOCS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
@@ -56,8 +56,8 @@
     );
 
     -- Transform eligible PO distribution staging rows for this run.
-    -- Derives INTERFACE_DISTRIBUTION_KEY = run_id || '_DIST_' || stg_seq_id.
-    -- INTERFACE_LINE_LOCATION_KEY copied verbatim from staging.
+    -- Derives INTERFACE_DISTRIBUTION_KEY = TO_CHAR(TFM_SEQUENCE_ID); location key = parent location TFM id.
+    -- The parent schedule is found through the staged INTERFACE_LINE_LOCATION_KEY.
     PROCEDURE TRANSFORM_DISTS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,

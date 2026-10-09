@@ -21,7 +21,7 @@ AS
 
     -- Transform eligible Requisition header staging rows for this run.
     -- Applies run prefix to REQUISITION_NUMBER.
-    -- Derives INTERFACE_HEADER_KEY = run_id || '_RQHDR_' || stg_seq_id.
+    -- Derives INTERFACE_HEADER_KEY = TO_CHAR(TFM_SEQUENCE_ID) (backlog #218).
     -- Sets INTERFACE_SOURCE_CODE = 'DMT', BATCH_ID = TO_CHAR(run_id).
     PROCEDURE TRANSFORM_HEADERS (
         p_run_id   IN NUMBER,
@@ -31,8 +31,8 @@ AS
     );
 
     -- Transform eligible Requisition line staging rows for this run.
-    -- Derives INTERFACE_LINE_KEY = run_id || '_RQLN_' || stg_seq_id.
-    -- INTERFACE_HEADER_KEY copied from staging (user must supply matching key).
+    -- Derives INTERFACE_LINE_KEY = TO_CHAR(TFM_SEQUENCE_ID); header key = parent header TFM id.
+    -- The parent header is found through the staged INTERFACE_HEADER_KEY.
     PROCEDURE TRANSFORM_LINES (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,
@@ -41,8 +41,8 @@ AS
     );
 
     -- Transform eligible Requisition distribution staging rows for this run.
-    -- Derives INTERFACE_DISTRIBUTION_KEY = run_id || '_RQDIST_' || stg_seq_id.
-    -- INTERFACE_LINE_KEY copied from staging.
+    -- Derives INTERFACE_DISTRIBUTION_KEY = TO_CHAR(TFM_SEQUENCE_ID); line key = parent line TFM id.
+    -- The parent line is found through the staged INTERFACE_LINE_KEY.
     PROCEDURE TRANSFORM_DISTS (
         p_run_id   IN NUMBER,
         p_reprocess_errors IN BOOLEAN DEFAULT FALSE,

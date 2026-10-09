@@ -45,7 +45,7 @@
 
         -- ── Main transactions: STG → TFM ──
         INSERT INTO DMT_INV_TRX_TFM_TBL (
-            STG_SEQUENCE_ID, RUN_ID,
+            TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
             -- Organization & Item (no prefix on ITEM_NUMBER — items already exist in Fusion)
             ORGANIZATION_NAME, ITEM_NUMBER, REVISION,
             SUBINVENTORY_CODE, LOCATOR_NAME,
@@ -109,7 +109,7 @@
             TFM_STATUS, LAST_UPDATED_DATE
         )
         SELECT
-            s.STG_SEQUENCE_ID, p_run_id,
+            DMT_INV_TRX_TFM_SEQ.NEXTVAL, s.STG_SEQUENCE_ID, p_run_id,
             -- Organization & Item
             s.ORGANIZATION_NAME, DMT_XREF_PKG.ITEM_NUMBER(s.ITEM_NUMBER), s.REVISION,
             s.SUBINVENTORY_CODE, s.LOCATOR_NAME,
@@ -161,7 +161,11 @@
             -- Source tracking — SOURCE_CODE = 'DMT', SOURCE_HEADER_ID = run_id
             NVL(s.SOURCE_CODE, 'DMT'),
             NVL(s.SOURCE_HEADER_ID, p_run_id),
-            NVL(s.SOURCE_LINE_ID, s.STG_SEQUENCE_ID),
+            -- Backlog #218 (owner rule 2026-10-07): SOURCE_LINE_ID links the
+            -- transaction to its lot and serial rows in the file, so it is the
+            -- row's own TFM_SEQUENCE_ID (never the source value or the STG id).
+            -- Every NEXTVAL reference in one row returns the same value.
+            DMT_INV_TRX_TFM_SEQ.NEXTVAL,
             s.INVENTORY_ITEM,
             -- DSP segments
             s.DSP_SEGMENT1, s.DSP_SEGMENT2, s.DSP_SEGMENT3, s.DSP_SEGMENT4, s.DSP_SEGMENT5,
@@ -219,8 +223,8 @@
         -- MiscReceipts Contract v1 data model (bip/MiscReceipts/DMT_INV_TRX_RECON_DM.xdm)
         -- emits RECORD_KEY = TO_CHAR(SOURCE_LINE_ID) on both the BASE tier
         -- (INV_MATERIAL_TXNS) and the INTERFACE tier (INV_TRANSACTIONS_INTERFACE),
-        -- where SOURCE_LINE_ID is the value this transform stamps (= the TFM
-        -- STG_SEQUENCE_ID). The shared reconciler
+        -- where SOURCE_LINE_ID is the value this transform stamps (= the row's
+        -- TFM_SEQUENCE_ID, backlog #218). The shared reconciler
         -- (DMT_MISC_RECEIPT_RESULTS_PKG.APPLY_CONTRACT_V1_MISC_RECEIPTS) joins the
         -- report rows to this table on RECON_KEY = report RECORD_KEY, so this stamp
         -- must equal TO_CHAR(SOURCE_LINE_ID) exactly. Only NULL keys are set (never
