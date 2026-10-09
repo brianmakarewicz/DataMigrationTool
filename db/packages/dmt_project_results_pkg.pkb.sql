@@ -56,6 +56,15 @@ AS
 -- the orchestrator owns the transaction boundary.
 --
 -- REVISIONS:
+--   2026-10-09  BM  Upward cross-grain propagation (backlog #545). Live run 343
+--                   (prefix 93393, project RTPRJ-XG1) proved Import Projects
+--                   rejects a valid project when one child fails: the report lists
+--                   the team member's own error ("The specified resource doesn't
+--                   exist.") and the project only with a pointer ("The project
+--                   wasn't imported because import errors exist for the project
+--                   team members."). A child's own error now goes to its project
+--                   and to its siblings; the team-member report row is matched on
+--                   its project-name and member-name tokens.
 --   2026-10-08  BM  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog
 --                   #170): a rejected project's real error is quoted onto its
 --                   tasks, team members and transaction controls.
@@ -80,6 +89,8 @@ AS
     TYPE T_DOC_PAIR IS RECORD (
         DOC_NUMBER   DMT_PJF_PROJECTS_TFM_TBL.PROJECT_NUMBER%TYPE,  -- the project
         DOC_NAME     DMT_PJF_PROJECTS_TFM_TBL.PROJECT_NAME%TYPE,    -- team members key on it
+        SOURCE_KIND  VARCHAR2(10),     -- PROJECT / TASK / MEMBER / CONTROL: the grain that failed
+        SOURCE_SEQ   NUMBER,           -- TFM_SEQUENCE_ID of the failed row (never quoted onto itself)
         QUOTED_ERROR VARCHAR2(4000)    -- DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(...)
     );
     TYPE T_DOC_PAIR_TBL IS TABLE OF T_DOC_PAIR;
@@ -291,7 +302,15 @@ AS
                        RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'GENERATED'
                 AND    (TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
-                        OR PROJECT_NAME || '/' || TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier);
+                        OR PROJECT_NAME || '/' || TEAM_MEMBER_NAME = l_ir_errors(i).row_identifier
+                        -- LIST_TEAM_MEMBER_ERROR row (run 343): the parser joins
+                        -- TM_ERROR_PROJECT_NAME, _PROJECT_NUMBER, _TM_NAME, _TM_NUMBER
+                        -- with '/', empty ones included ("<project>//<member>/"), so
+                        -- match the project name and member name as '/' tokens.
+                        OR (INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                  '/' || PROJECT_NAME || '/') > 0
+                            AND INSTR('/' || l_ir_errors(i).row_identifier || '/',
+                                      '/' || TEAM_MEMBER_NAME || '/') > 0));
                 x_matched := x_matched + SQL%ROWCOUNT;
 
             ELSIF l_src LIKE '%TXN%' OR l_src LIKE '%CONTROL%' THEN
@@ -698,15 +717,23 @@ AS
     -- the '#IMPORT_REPORT#' marker, which the apply skips, so without this step
     -- they stay GENERATED and the shared sweep marks them UNACCOUNTED.
     --
-    -- Direction: header to children only. A child's own error is not proven to
-    -- reject its project (Import Projects can load a project and reject a task),
-    -- so child errors are not spread upward or to siblings until a live run shows
-    -- Fusion's behavior (backlog #545).
+    -- Direction: both ways (backlog #545). Live run 343 proved Import Projects
+    -- rejects a valid project when one of its children fails, and names the child
+    -- with its own error while the project gets only a pointer ("The project
+    -- wasn't imported because import errors exist for the project team members.").
     --
-    -- Sources: project rows of this run and work item with TFM_STATUS = 'FAILED'
-    --   carrying their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR] '
+    -- Sources: rows of this run and work item with TFM_STATUS = 'FAILED' carrying
+    --   their OWN real Fusion error -- ERROR_TEXT contains '[FUSION_ERROR] '
     --   (Contract v1 apply) or '[IMPORT_REPORT] ' (the import-report harvest) and
-    --   does NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted).
+    --   does NOT contain C_DOC_ERROR_MARKER (a quote is never re-quoted):
+    --   * a task, team member or transaction control (the child that caused the
+    --     rejection): its error is quoted onto its project and onto the project's
+    --     other children, naming the child, e.g. "project <number> (team member
+    --     <name>): <message>";
+    --   * a project, only when none of its children carries an own error: then the
+    --     project's error is the cause and is quoted onto its children. When a child
+    --     failed, the project's own report text is only the pointer to it, so the
+    --     child's error is the one quoted.
     -- Targets: every task / transaction control of the same project (PROJECT_NUMBER;
     --   PROJECT_NAME when the child carries no number) and every team member of the
     --   same project (PROJECT_NAME -- team members carry no project number) that
@@ -731,6 +758,7 @@ AS
         C_TAG_RX   CONSTANT VARCHAR2(40) := '\[(FUSION_ERROR|IMPORT_REPORT)\] ';
         l_marker   VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
         l_pairs    T_DOC_PAIR_TBL;
+        l_projects NUMBER := 0;
         l_tasks    NUMBER := 0;
         l_members  NUMBER := 0;
         l_controls NUMBER := 0;
@@ -739,28 +767,103 @@ AS
         l_step := 'collecting rejected-project (source, quote) pairs for run ' || p_run_id;
         -- The quoted message is the source's own error from its first real tag on,
         -- with that leading tag removed (FORMAT_DOCUMENT_ERROR adds its own).
+        -- Work-item scope everywhere, as the shared sweep scopes it: rows stamped
+        -- with another work item are excluded; unstamped rows are run-scoped.
+        WITH own_err AS (
+            -- children failed with their OWN real error, keyed to their project
+            SELECT 'TASK' AS KIND, t.TFM_SEQUENCE_ID AS SEQ,
+                   t.PROJECT_NUMBER AS DOC_NUMBER, t.PROJECT_NAME AS DOC_NAME,
+                   'task ' || t.TASK_NUMBER AS GRAIN_KEY, t.ERROR_TEXT
+            FROM   DMT_PJF_TASKS_TFM_TBL t
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    t.TFM_STATUS = 'FAILED'
+            AND    REGEXP_INSTR(t.ERROR_TEXT, C_TAG_RX) > 0
+            AND    DBMS_LOB.INSTR(t.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            -- team members carry no project number: take it from the project row
+            SELECT 'MEMBER', m.TFM_SEQUENCE_ID,
+                   (SELECT MAX(p.PROJECT_NUMBER) FROM DMT_PJF_PROJECTS_TFM_TBL p
+                    WHERE  p.RUN_ID = m.RUN_ID AND p.PROJECT_NAME = m.PROJECT_NAME),
+                   m.PROJECT_NAME,
+                   'team member ' || m.TEAM_MEMBER_NAME, m.ERROR_TEXT
+            FROM   DMT_PJF_TEAM_MEMBERS_TFM_TBL m
+            WHERE  m.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR m.WORK_QUEUE_ID IS NULL
+                    OR m.WORK_QUEUE_ID = p_work_queue_id)
+            AND    m.TFM_STATUS = 'FAILED'
+            AND    REGEXP_INSTR(m.ERROR_TEXT, C_TAG_RX) > 0
+            AND    DBMS_LOB.INSTR(m.ERROR_TEXT, l_marker) = 0
+            UNION ALL
+            SELECT 'CONTROL', c.TFM_SEQUENCE_ID,
+                   c.PROJECT_NUMBER, c.PROJECT_NAME,
+                   'transaction control ' || c.TXN_CTRL_REFERENCE, c.ERROR_TEXT
+            FROM   DMT_PJC_TXN_CONTROLS_TFM_TBL c
+            WHERE  c.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR c.WORK_QUEUE_ID IS NULL
+                    OR c.WORK_QUEUE_ID = p_work_queue_id)
+            AND    c.TFM_STATUS = 'FAILED'
+            AND    REGEXP_INSTR(c.ERROR_TEXT, C_TAG_RX) > 0
+            AND    DBMS_LOB.INSTR(c.ERROR_TEXT, l_marker) = 0
+        )
+        SELECT e.DOC_NUMBER,
+               e.DOC_NAME,
+               e.KIND,
+               e.SEQ,
+               DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
+                   'project', e.DOC_NUMBER || ' (' || e.GRAIN_KEY || ')',
+                   REGEXP_REPLACE(
+                       DBMS_LOB.SUBSTR(e.ERROR_TEXT, 3800, REGEXP_INSTR(e.ERROR_TEXT, C_TAG_RX)),
+                       '^' || C_TAG_RX))
+        BULK COLLECT INTO l_pairs
+        FROM   own_err e
+        WHERE  e.DOC_NUMBER IS NOT NULL
+        UNION ALL
         SELECT p.PROJECT_NUMBER,
                p.PROJECT_NAME,
+               'PROJECT',
+               p.TFM_SEQUENCE_ID,
                DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
                    'project', p.PROJECT_NUMBER,
                    REGEXP_REPLACE(
                        DBMS_LOB.SUBSTR(p.ERROR_TEXT, 3800, REGEXP_INSTR(p.ERROR_TEXT, C_TAG_RX)),
                        '^' || C_TAG_RX))
-        BULK COLLECT INTO l_pairs
         FROM   DMT_PJF_PROJECTS_TFM_TBL p
         WHERE  p.RUN_ID = p_run_id
-        -- Work-item scope, as the shared sweep scopes it: rows stamped with
-        -- another work item are excluded; unstamped rows are run-scoped.
         AND    (p_work_queue_id IS NULL OR p.WORK_QUEUE_ID IS NULL
                 OR p.WORK_QUEUE_ID = p_work_queue_id)
         AND    p.TFM_STATUS = 'FAILED'
         AND    REGEXP_INSTR(p.ERROR_TEXT, C_TAG_RX) > 0
         AND    DBMS_LOB.INSTR(p.ERROR_TEXT, l_marker) = 0
-        AND    p.PROJECT_NUMBER IS NOT NULL;
+        AND    p.PROJECT_NUMBER IS NOT NULL
+        -- a failed child is the cause; the project's own text is then a pointer
+        AND    NOT EXISTS (SELECT 1 FROM own_err e
+                           WHERE  e.DOC_NUMBER = p.PROJECT_NUMBER
+                           OR     e.DOC_NAME   = p.PROJECT_NAME);
 
         -- One bulk UPDATE per child table (FORALL over the pairs). Each pair
         -- appends its quote only when the row does not already carry it, so a
         -- second reconcile pass adds nothing.
+        -- The project a failed child brought down carries that child's error.
+        l_step := 'appending quoted child errors to their projects';
+        FORALL i IN 1 .. l_pairs.COUNT
+            UPDATE DMT_PJF_PROJECTS_TFM_TBL t
+            SET    t.TFM_STATUS           = 'FAILED',
+                   t.ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR),
+                   t.RESULTS_UPDATED_DATE = SYSDATE,
+                   t.LAST_UPDATED_DATE    = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
+                    OR t.WORK_QUEUE_ID = p_work_queue_id)
+            AND    l_pairs(i).SOURCE_KIND <> 'PROJECT'
+            AND    t.PROJECT_NUMBER = l_pairs(i).DOC_NUMBER
+            AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
+            AND    t.FBDI_CSV_ID IS NOT NULL
+            AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
+            AND    NVL(DBMS_LOB.INSTR(t.ERROR_TEXT, l_pairs(i).QUOTED_ERROR), 0) = 0;
+        l_projects := SQL%ROWCOUNT;
+
         l_step := 'appending quoted project errors to tasks';
         FORALL i IN 1 .. l_pairs.COUNT
             UPDATE DMT_PJF_TASKS_TFM_TBL t
@@ -773,6 +876,8 @@ AS
                     OR t.WORK_QUEUE_ID = p_work_queue_id)
             AND    (t.PROJECT_NUMBER = l_pairs(i).DOC_NUMBER
                     OR (t.PROJECT_NUMBER IS NULL AND t.PROJECT_NAME = l_pairs(i).DOC_NAME))
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'TASK'
+                        AND t.TFM_SEQUENCE_ID = l_pairs(i).SOURCE_SEQ)
             AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
             AND    t.FBDI_CSV_ID IS NOT NULL
             AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
@@ -790,6 +895,8 @@ AS
             AND    (p_work_queue_id IS NULL OR t.WORK_QUEUE_ID IS NULL
                     OR t.WORK_QUEUE_ID = p_work_queue_id)
             AND    t.PROJECT_NAME = l_pairs(i).DOC_NAME
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'MEMBER'
+                        AND t.TFM_SEQUENCE_ID = l_pairs(i).SOURCE_SEQ)
             AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
             AND    t.FBDI_CSV_ID IS NOT NULL
             AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
@@ -808,6 +915,8 @@ AS
                     OR t.WORK_QUEUE_ID = p_work_queue_id)
             AND    (t.PROJECT_NUMBER = l_pairs(i).DOC_NUMBER
                     OR (t.PROJECT_NUMBER IS NULL AND t.PROJECT_NAME = l_pairs(i).DOC_NAME))
+            AND    NOT (l_pairs(i).SOURCE_KIND = 'CONTROL'
+                        AND t.TFM_SEQUENCE_ID = l_pairs(i).SOURCE_SEQ)
             AND    t.TFM_STATUS NOT IN ('LOADED', 'STAGED')
             AND    t.FBDI_CSV_ID IS NOT NULL
             AND    l_pairs(i).QUOTED_ERROR IS NOT NULL
@@ -816,8 +925,9 @@ AS
 
         DMT_UTIL_PKG.LOG(
             p_run_id    => p_run_id,
-            p_message   => C_PROC || ' complete. Rejected projects: ' || l_pairs.COUNT
-                           || ' | rows given a quoted document error: tasks ' || l_tasks
+            p_message   => C_PROC || ' complete. Rejection sources: ' || l_pairs.COUNT
+                           || ' | rows given a quoted document error: projects ' || l_projects
+                           || ', tasks ' || l_tasks
                            || ', team members ' || l_members
                            || ', transaction controls ' || l_controls || '.',
             p_package   => C_PKG,

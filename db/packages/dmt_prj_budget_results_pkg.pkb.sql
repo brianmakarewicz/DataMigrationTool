@@ -15,6 +15,11 @@ AS
 --  1.4  2026-10-08  Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS, backlog #172):
 --                   the plan version is the document; a rejected line's real error is
 --                   quoted onto its sibling lines.
+--  1.5  2026-10-09  Line identity inside a plan version (backlog #546): the source
+--                   budget line reference is a plan-version attribute, so lines of one
+--                   version share RECON_KEY. The report harvest also matches the line
+--                   columns Fusion echoes in G_12 (task, resource, period, start date),
+--                   and the propagation quote names the line by them.
 -- No absence=LOADED fallback. A row is LOADED only from a base-table hit
 -- with its PLAN_VERSION_ID, FAILED only with a real Fusion message, and is
 -- otherwise left for the shared unaccounted sweep.
@@ -111,7 +116,18 @@ AS
     -- The report's per-row group is LIST_G_12/G_12: column P = the source budget
     -- line reference (= our RECON_KEY = SRC_BUDGET_LINE_REFERENCE, an EXACT match),
     -- column Y = the rejection MESSAGE_TEXT. We therefore target G_12/P/Y directly
-    -- with XMLTABLE. (The generic DMT_IMPORT_REPORT_PKG.PARSE_ERRORS only walks
+    -- with XMLTABLE.
+    --
+    -- Line identity (backlog #546). Fusion requires every line of one plan version
+    -- to carry the same source reference (PJO_XFACE_MULTIPLE_SRC_REF otherwise), so
+    -- P names the plan version, not the line. Each G_12 row echoes the line Fusion
+    -- read from the CSV: E = task number, J = resource name, K = period name,
+    -- AB = planning start date (YYYY/MM/DD, the generator's format). Proven on the
+    -- run 339 report (request 10083640). A G_12 row is matched to the TFM line with
+    -- the same RECON_KEY AND the same values in those columns; a column the report
+    -- leaves empty is not compared. So within a multi-line version only the line
+    -- Fusion named takes the message as its own error; its siblings are quoted by
+    -- PROPAGATE_DOCUMENT_ERRORS. (The generic DMT_IMPORT_REPORT_PKG.PARSE_ERRORS only walks
     -- groups whose tag contains 'ERROR'; the budget groups are G_2/G_12, so it
     -- matches nothing here — this targeted parse is required.)
     --
@@ -198,14 +214,19 @@ AS
         -- (= RECON_KEY, exact), column Y = the rejection message. Only rows with a
         -- non-null message are stamped FAILED, and only if not already terminal.
         FOR r IN (
-            SELECT x.recon_key, x.message_text
+            SELECT x.recon_key, x.message_text,
+                   x.task_number, x.resource_nm, x.period_name, x.start_date
             FROM   XMLTABLE('/DATA_DS/LIST_G_12/G_12' PASSING l_xml
                 COLUMNS
                     -- RECON_KEY is VARCHAR2(1000) on the TFM table; match that width
                     -- so a long source ref never blows up XMLTABLE (ORA-19279) and
                     -- silently downgrades the whole report to the WARN path.
                     recon_key    VARCHAR2(1000) PATH 'P',
-                    message_text VARCHAR2(4000) PATH 'Y'
+                    message_text VARCHAR2(4000) PATH 'Y',
+                    task_number  VARCHAR2(1000) PATH 'E',
+                    resource_nm  VARCHAR2(1000) PATH 'J',
+                    period_name  VARCHAR2(1000) PATH 'K',
+                    start_date   VARCHAR2(30)   PATH 'AB'
             ) x
             WHERE  x.recon_key IS NOT NULL
             AND    x.message_text IS NOT NULL
@@ -219,6 +240,10 @@ AS
                    LAST_UPDATED_DATE    = SYSDATE
             WHERE  RUN_ID    = p_run_id
             AND    RECON_KEY = r.recon_key
+            AND    (r.task_number IS NULL OR r.task_number IN (TASK_NUMBER, TASK_NAME))
+            AND    (r.resource_nm IS NULL OR RESOURCE_NAME = r.resource_nm)
+            AND    (r.period_name IS NULL OR PERIOD_NAME = r.period_name)
+            AND    (r.start_date  IS NULL OR TO_CHAR(PLANNING_START_DATE, 'YYYY/MM/DD') = r.start_date)
             AND    TFM_STATUS NOT IN ('LOADED','FAILED');
             x_matched := x_matched + SQL%ROWCOUNT;
         END LOOP;
@@ -531,8 +556,14 @@ AS
                l.PLAN_VERSION_NAME,
                l.PLAN_VERSION_NUMBER,
                l.TFM_SEQUENCE_ID,
+               -- The line is named by its reference plus the line columns, because
+               -- lines of one version share the reference (backlog #546).
                DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR(
-                   'line', l.RECON_KEY,
+                   'line', l.RECON_KEY
+                           || ' (task ' || l.TASK_NUMBER
+                           || ', resource ' || l.RESOURCE_NAME
+                           || NVL2(l.PERIOD_NAME, ', period ' || l.PERIOD_NAME, '')
+                           || ')',
                    DBMS_LOB.SUBSTR(l.ERROR_TEXT, 3800, DBMS_LOB.INSTR(l.ERROR_TEXT, C_TAG)))
         BULK COLLECT INTO l_pairs
         FROM   DMT_PRJ_BUDGET_TFM_TBL l

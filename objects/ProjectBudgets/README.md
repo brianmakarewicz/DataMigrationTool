@@ -96,6 +96,27 @@ version whose lines share a reference is matched as a whole by the harvest. The 
 backlog #172 describes cannot arise with today's keying; the propagation is defensive. Line identity
 inside a multi-line version is backlog #546.
 
+## Line identity inside one plan version (backlog #546, 2026-10-09)
+
+Fusion's BudgetsXfaceBIP report does tell the lines of one version apart. Every `G_12` row echoes
+the line Fusion read from the CSV: `E` = task number, `J` = resource name, `K` = period name,
+`AB`/`AC` = planning start/end date (YYYY/MM/DD), `P` = the shared source reference, `Y` = the
+message (empty on a line Fusion did not blame). The harvest now matches a `G_12` row to the TFM
+line with the same `RECON_KEY` **and** the same task, resource, period and start date (a column the
+report leaves empty is not compared), and the propagation quote names the line by them:
+`Rejected with document: line <reference> (task <task>, resource <resource>[, period <period>])`.
+
+Live proof, scenario RegressionTest261009013036 (minted with `--keep-pointer`): plan version
+`RT ML Budget Version` on CFIT022 with two lines sharing the reference `RT-PJB-ML`, ML-A valid,
+ML-B resource `RT No Such Resource`. Run 343 (report 10084503) and run 345 (prefix 93395): Fusion
+rejected the whole version (FAILURE_COUNT counts it), listed both lines in `G_12`, and gave the
+message only on ML-B ("The resource name RT No Such Resource doesn't exist in the planning resource
+breakdown structure PRGUS RBS - Lower Resource Level."). ML-B is FAILED with that error as its own;
+ML-A is FAILED with the quote. GOOD1 LOADED, 0 UNACCOUNTED, `dmt_regression_run.py` PASS.
+
+A LOADED version still marks all its lines LOADED with the version's `PLAN_VERSION_ID`: Fusion
+accepts or rejects the version as a whole, so the version id is the line's proof.
+
 ## Pipeline
 - Module: Projects
 - FBDI Template: PjoBudgetInterface.xlsm

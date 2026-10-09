@@ -1722,6 +1722,27 @@ def main():
             'ZZ_BOGUS_STATUS', 'USD', 'RT-PRJ-BAD1'
         )
     """, label="BAD Project: invalid PROJECT_STATUS_NAME [BAD-LKP]")
+
+    # Upward cross-grain probe (backlog #545): a VALID project RTPRJ-XG1 whose
+    # only defect is one child, its team member (a person nobody.xg1@fake.com
+    # that does not exist in Fusion). Its task and transaction control are valid.
+    # The run shows whether Import Projects rejects the project when a child
+    # fails, or loads the project and rejects only the child.
+    run_sql(cur, """
+        INSERT INTO DMT_PJF_PROJECTS_STG_TBL (
+            PROJECT_NAME, PROJECT_NUMBER,
+            SOURCE_TEMPLATE_NUMBER,
+            ORGANIZATION_NAME, DESCRIPTION,
+            PROJECT_START_DATE, PROJECT_FINISH_DATE,
+            PROJECT_STATUS_NAME, PROJECT_CURRENCY_CODE, SOURCE_ID
+        ) VALUES (
+            'RT Project XG-1', 'RTPRJ-XG1',
+            'PRGUS Sponsored',
+            :org, 'Upward cross-grain probe: only its team member is invalid',
+            DATE '2025-01-01', DATE '2025-12-31',
+            'Active', 'USD', 'RT-PRJ-RTPRJ-XG1'
+        )
+    """, {"org": PRJ_ORG}, label="XG Project: valid project, invalid team member child [XG-UP]")
     tag_scenario(cur, "DMT_PJF_PROJECTS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1784,6 +1805,22 @@ def main():
             'Y', 'Y', 'RTPRJ-BAD1.1', 'RT-TSK-RTPRJ-BAD1.1'
         )
     """, label="BAD Task: valid task under rejected project RTPRJ-BAD1 [BAD-DOC]")
+
+    # Upward cross-grain probe (backlog #545): a valid task of RTPRJ-XG1.
+    run_sql(cur, """
+        INSERT INTO DMT_PJF_TASKS_STG_TBL (
+            PROJECT_NAME, PROJECT_NUMBER,
+            TASK_NAME, TASK_NUMBER,
+            PLANNING_START_DATE, PLANNING_END_DATE,
+            CHARGEABLE_FLAG, BILLABLE_FLAG,
+            SOURCE_TASK_REFERENCE, SOURCE_ID
+        ) VALUES (
+            'RT Project XG-1', 'RTPRJ-XG1',
+            'RT XG Design Phase', 'RTPRJ-XG1.1',
+            DATE '2025-01-01', DATE '2025-12-31',
+            'Y', 'Y', 'RTPRJ-XG1.1', 'RT-TSK-RTPRJ-XG1.1'
+        )
+    """, label="XG Task: valid task of RTPRJ-XG1 [XG-UP]")
     tag_scenario(cur, "DMT_PJF_TASKS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1823,6 +1860,20 @@ def main():
             'Y', 'RT-TM-RTPRJ-BAD1-ACOOK'
         )
     """, label="BAD Team Member: Alan Cook on rejected project RTPRJ-BAD1 [BAD-DOC]")
+
+    # Upward cross-grain probe (backlog #545): the only defect of RTPRJ-XG1, a
+    # team member who does not exist in Fusion.
+    run_sql(cur, """
+        INSERT INTO DMT_PJF_TEAM_MEMBERS_STG_TBL (
+            PROJECT_NAME, TEAM_MEMBER_NAME, TEAM_MEMBER_EMAIL,
+            PROJECT_ROLE_NAME, START_DATE_ACTIVE,
+            TRACK_TIME_FLAG, SOURCE_ID
+        ) VALUES (
+            'RT Project XG-1', 'RT Nobody XG1', 'nobody.xg1@fake.com',
+            'Project Manager', DATE '2025-01-01',
+            'Y', 'RT-TM-RTPRJ-XG1-NOBODY'
+        )
+    """, label="BAD Team Member: non-existent person on RTPRJ-XG1 [XG-UP]")
     tag_scenario(cur, "DMT_PJF_TEAM_MEMBERS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1861,6 +1912,19 @@ def main():
             DATE '2025-01-01', 'RT-TXC-RTPRJ-BAD1'
         )
     """, label="BAD Txn Control: on rejected project RTPRJ-BAD1 [BAD-DOC]")
+
+    # Upward cross-grain probe (backlog #545): a valid transaction control of RTPRJ-XG1.
+    run_sql(cur, """
+        INSERT INTO DMT_PJC_TXN_CONTROLS_STG_TBL (
+            TXN_CTRL_REFERENCE, PROJECT_NAME, PROJECT_NUMBER,
+            EXPENDITURE_TYPE, CHARGEABLE_FLAG,
+            START_DATE_ACTIVE, SOURCE_ID
+        ) VALUES (
+            'RT-TXC-RTPRJ-XG1', 'RT Project XG-1', 'RTPRJ-XG1',
+            'Professional Services', 'Y',
+            DATE '2025-01-01', 'RT-TXC-RTPRJ-XG1'
+        )
+    """, label="XG Txn Control: valid control of RTPRJ-XG1 [XG-UP]")
     tag_scenario(cur, "DMT_PJC_TXN_CONTROLS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -2135,6 +2199,36 @@ def main():
                 :ref, 'Create', :ref
             )
         """, {"ref": ref, "res": resource}, label=label)
+
+    # Line identity inside one plan version (backlog #546): ONE plan version
+    # ('RT ML Budget Version') whose two lines carry the SAME source budget line
+    # reference, as Fusion requires of every line of a version. ML-A is valid;
+    # ML-B names a resource that does not exist [BAD-LKP]. The reference is
+    # shared, so only the report's line columns (task, resource, period, start
+    # date) can tell the lines apart.
+    for label, src, resource in [
+        ("BAD Project Budget ML-A: valid line of a multi-line version [BAD-DOC]",
+         "RT-PJB-ML-A", "Financial Resources"),
+        ("BAD Project Budget ML-B: non-existent resource in a multi-line version [BAD-LKP]",
+         "RT-PJB-ML-B", "RT No Such Resource"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_PRJ_BUDGET_STG_TBL (
+                FINANCIAL_PLAN_TYPE, PROJECT_NUMBER, PROJECT_NAME,
+                TASK_NUMBER, PLAN_VERSION_NAME, PLAN_VERSION_STATUS,
+                RESOURCE_NAME, LINE_TYPE,
+                PLANNING_START_DATE, PLANNING_END_DATE, PLANNING_CURRENCY,
+                TOTAL_TC_RAW_COST, TOTAL_TC_REVENUE,
+                SRC_BUDGET_LINE_REFERENCE, PROCESSING_MODE, SOURCE_ID
+            ) VALUES (
+                'Cost and Revenue Budget', 'CFIT022', 'Data Load 6',
+                'CFIT022', 'RT ML Budget Version', 'Baseline',
+                :res, 'LINE',
+                DATE '2026-01-01', DATE '2028-01-01', 'USD',
+                70000, 80000,
+                'RT-PJB-ML', 'Create', :src
+            )
+        """, {"src": src, "res": resource}, label=label)
     tag_scenario(cur, "DMT_PRJ_BUDGET_STG_TBL", scenario_id)
 
     # ====================================================================
