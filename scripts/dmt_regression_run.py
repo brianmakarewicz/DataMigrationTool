@@ -59,6 +59,9 @@ import time
 import os
 import oracledb
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dmt_db_connect import connect_with_retry, retry_db  # noqa: E402
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace',
                               line_buffering=True)
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace',
@@ -180,7 +183,10 @@ BAD_KEY_REGEX = re.compile(r'-B\d+\b')
 PREVALIDATION_BAD_CATEGORIES = ('PRE_VALIDATION',)
 
 
-def connect():
+def connect(call_timeout_ms=120_000):
+    """Connect with a bounded connect (tcp_connect_timeout + overall deadline),
+    keepalive (expire_time), retries with backoff, and a finite call_timeout.
+    Runs 293 and 338 hung forever in an unbounded python-oracledb connect."""
     # DMT2 is Docker-only (CLAUDE.md: no ATP yet). Honor DMT2_CONN
     # (user/password@host:port/service) like scripts/deploy_recon_bip_reports.py;
     # fall back to the local Docker instance. The old connect_atp('queryapp')
@@ -193,7 +199,8 @@ def connect():
     import os as _os
     _w = _os.environ.get('DMT2_WALLET')
     _kw = dict(config_dir=_w, wallet_location=_w, wallet_password=_os.environ.get('DMT2_WALLET_PW')) if _w else {}
-    return oracledb.connect(user=user, password=password, dsn=dsn, **_kw)
+    return connect_with_retry(call_timeout_ms=call_timeout_ms,
+                              user=user, password=password, dsn=dsn, **_kw)
 
 
 def is_bad_key(display_key):
@@ -236,8 +243,7 @@ def is_bad_row(display_key, error_text=None):
 def submit_run(pipelines, scenario, run_mode, on_failure):
     """Submit via SUBMIT_PIPELINE with a call timeout; fall back to the
     documented inline-insert workaround if the package call hangs."""
-    conn = connect()
-    conn.call_timeout = 90_000  # ms — SUBMIT_PIPELINE has hung indefinitely before
+    conn = connect(90_000)  # ms — SUBMIT_PIPELINE has hung indefinitely before
     cur = conn.cursor()
     run_id_var = cur.var(oracledb.NUMBER)
     try:
@@ -258,10 +264,6 @@ def submit_run(pipelines, scenario, run_mode, on_failure):
                      })
         run_id = int(run_id_var.getvalue())
         print(f"  SUBMIT_PIPELINE ok -> RUN_ID={run_id}")
-        conn.call_timeout = 0
-        ensure_poller(conn)
-        conn.close()
-        return run_id
     except Exception as e:
         print(f"  SUBMIT_PIPELINE failed/hung ({str(e)[:120]}) — using inline fallback")
         try:
@@ -269,14 +271,21 @@ def submit_run(pipelines, scenario, run_mode, on_failure):
         except Exception:
             pass
         return fallback_submit(pipelines, scenario, run_mode, on_failure)
+    # The run exists now: a poller problem must never fall through to the
+    # inline fallback (that would create a second run). Never call_timeout=0.
+    try:
+        conn.close()
+    except Exception:
+        pass
+    ensure_poller()
+    return run_id
 
 
 def fallback_submit(pipelines, scenario, run_mode, on_failure):
     """Replicate create_run_and_queue as one pure-SQL transaction.
     GET_CEMLI_SEQUENCE / GET_CEMLI_DEPENDENCIES are instant public functions;
     only the inserts run inside the long transaction."""
-    conn = connect()
-    conn.call_timeout = 30_000
+    conn = connect(30_000)
     cur = conn.cursor()
 
     plan = []          # (pipeline_label, cemli, depends_on, is_split)
@@ -334,14 +343,21 @@ def fallback_submit(pipelines, scenario, run_mode, on_failure):
     ])
     conn.commit()
     print(f"  Inline fallback created RUN_ID={run_id} prefix={prefix} ({len(plan)} queue rows)")
-    ensure_poller(conn)
     conn.close()
+    ensure_poller()
     return run_id
 
 
-def ensure_poller(conn):
-    cur = conn.cursor()
-    cur.callproc('DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING')
+def ensure_poller():
+    """Enable the queue poller on a fresh connection with a finite call
+    timeout, retried on a DB error / timeout."""
+    def _once():
+        conn = connect(120_000)
+        try:
+            conn.cursor().callproc('DMT_QUEUE_PKG.ENSURE_POLLER_RUNNING')
+        finally:
+            conn.close()
+    retry_db(_once, what='ENSURE_POLLER_RUNNING')
     print("  Poller enabled (DMT_QUEUE_POLLER).")
 
 
@@ -355,31 +371,31 @@ def wait_for_run(run_id, timeout_min, stall_min):
     deadline = time.time() + timeout_min * 60
     last_snapshot, last_change = None, time.time()
     final_status = ''
+    poll_errors = 0
     while time.time() < deadline:
-        conn = connect()
-        conn.call_timeout = 60_000
-        cur = conn.cursor()
         try:
-            cur.execute("""SELECT RUN_STATUS, CURRENT_CEMLI, CURRENT_STEP
-                           FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = :1""", [run_id])
-            row = cur.fetchone()
-            run_status, cur_cemli, cur_step = row if row else ('MISSING', None, None)
-            cur.execute("""SELECT WORK_STATUS, COUNT(*) FROM DMT_WORK_QUEUE_TBL
-                           WHERE RUN_ID = :1 GROUP BY WORK_STATUS ORDER BY 1""", [run_id])
-            qmap = dict(cur.fetchall())
-        finally:
-            conn.close()
+            run_status, cur_cemli, cur_step, qmap = _poll_once(run_id)
+            poll_errors = 0
+        except Exception as e:
+            # One failed poll (connect timeout, call timeout, dropped session)
+            # is retried on the next tick, never fatal; the deadline still ends it.
+            poll_errors += 1
+            stamp = datetime.datetime.now().strftime('%H:%M:%S')
+            print(f"  [{stamp}] poll failed ({poll_errors} in a row): {str(e)[:160]} — retrying",
+                  flush=True)
+            time.sleep(min(45, 10 * poll_errors))
+            continue
 
         snapshot = (run_status, tuple(sorted(qmap.items())))
         stamp = datetime.datetime.now().strftime('%H:%M:%S')
         if snapshot != last_snapshot:
             qtxt = ' '.join(f"{k}={v}" for k, v in sorted(qmap.items()))
             step = f" @ {cur_cemli}/{cur_step}" if cur_cemli else ''
-            print(f"  [{stamp}] {run_status}{step} | {qtxt}")
+            print(f"  [{stamp}] {run_status}{step} | {qtxt}", flush=True)
             last_snapshot, last_change = snapshot, time.time()
         elif time.time() - last_change > stall_min * 60:
             print(f"  [{stamp}] WARNING: no state change in {stall_min} min "
-                  f"(status={run_status}) — possible stall")
+                  f"(status={run_status}) — possible stall", flush=True)
             last_change = time.time()  # only warn once per stall interval
 
         non_terminal_q = sum(v for k, v in qmap.items() if k not in TERMINAL_QUEUE_STATUSES)
@@ -388,6 +404,23 @@ def wait_for_run(run_id, timeout_min, stall_min):
             break
         time.sleep(45)
     return final_status
+
+
+def _poll_once(run_id):
+    """One status read on a fresh, time-bounded connection."""
+    conn = connect(60_000)
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT RUN_STATUS, CURRENT_CEMLI, CURRENT_STEP
+                       FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = :1""", [run_id])
+        row = cur.fetchone()
+        run_status, cur_cemli, cur_step = row if row else ('MISSING', None, None)
+        cur.execute("""SELECT WORK_STATUS, COUNT(*) FROM DMT_WORK_QUEUE_TBL
+                       WHERE RUN_ID = :1 GROUP BY WORK_STATUS ORDER BY 1""", [run_id])
+        qmap = dict(cur.fetchall())
+    finally:
+        conn.close()
+    return run_status, cur_cemli, cur_step, qmap
 
 
 # ---------------------------------------------------------------------------
@@ -508,8 +541,7 @@ def rest_spot_check(cur, run_id, result):
 
 
 def evaluate(run_id, baseline_arg):
-    conn = connect()
-    conn.call_timeout = 120_000
+    conn = connect(120_000)
     cur = conn.cursor()
     result = {'run_id': run_id, 'failures': [], 'review': [], 'objects': {}, 'baseline': None}
 
@@ -940,8 +972,7 @@ def main():
     args = ap.parse_args()
 
     if args.rest_only:
-        conn = connect()
-        conn.call_timeout = 180_000
+        conn = connect(180_000)
         cur = conn.cursor()
         result = {'failures': [], 'review': []}
         rest_spot_check(cur, None, result)
@@ -959,7 +990,9 @@ def main():
         if not final:
             print(f"\nTIMED OUT after {args.timeout_min} min — evaluating partial state")
 
-    result = evaluate(run_id, args.baseline)
+    # A DB error / timeout during evaluation retries the whole (read-only)
+    # evaluation on a fresh connection instead of killing the run's verdict.
+    result = retry_db(lambda: evaluate(run_id, args.baseline), what='evaluation')
 
     print(f"\n{'=' * 70}")
     n_fail, n_rev = len(result['failures']), len(result['review'])
