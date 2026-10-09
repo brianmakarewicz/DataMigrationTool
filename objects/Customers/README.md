@@ -589,3 +589,14 @@ abbreviation, consistent across the three account tables). No misalignment.
    needed and no NOT-MODELED gap (all seven TCA import tabs are modeled).
 2. **No spec-header fix required** — `DMT_CUST_FBDI_GEN_PKG` already lists the
    seven CSVs with their correct `HZ_IMP_*_T` interface tables.
+
+## Reconciliation report pages by header (2026-10-09, backlog #684)
+
+The registered report is now `bip/Customers/DMT_CUST_RECON_V7_DM.xdm`, deployed alongside `DMT_CUST_RECON_V6_DM` (never overwritten).
+It pages on header boundaries (owner decision 2026-10-09, design section 5, "Reconciliation
+fetches page on header boundaries"): a page is the next BIP_CHUNK_SIZE headers, keyed by the party original system reference,
+plus every base and interface row that belongs to them, and each row carries that header key in
+the tenth column `PAGE_KEY`. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers, sends the last
+header key back as `P_AFTER_KEY`, has no page cap, and fails the fetch with an error if a page
+does not advance. Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text are the
+same as in `DMT_CUST_RECON_V6_DM`.

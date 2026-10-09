@@ -50,6 +50,9 @@ REPORTS = [
     # item's Fusion job ids and the Blanket document style. Deployed alongside
     # DMT_BLANKET_PO_RECON_DM (never overwritten).
     ("BlanketPOs",              "DMT_BLANKET_PO_RECON_V2_DM", "DMT_BLANKET_PO_RECON_V2_RPT"),
+    # BlanketPOs V3 (2026-10-09, backlog #683): alongside the earlier versions (never
+    # overwritten); pages by header (the agreement document number) with PAGE_KEY.
+    ("BlanketPOs", "DMT_BLANKET_PO_RECON_V3_DM", "DMT_BLANKET_PO_RECON_V3_RPT"),
     ("Contracts",               "CONTRACT_DM",       "CONTRACT_RPT"),
     # Contracts V2 (2026-10-07, backlog #259): rows found only by the work
     # item's Fusion job ids and the Contract document style. Deployed alongside
@@ -59,11 +62,17 @@ REPORTS = [
     # APInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # rows by Fusion job id only, real Payables rejection text only (#166).
     ("APInvoices",              "DMT_AP_RECON_V2_DM", "DMT_AP_RECON_V2_RPT"),
+    # APInvoices V3 (2026-10-09, backlog #681): alongside the earlier versions (never
+    # overwritten); pages by header (the prefixed invoice number) with PAGE_KEY.
+    ("APInvoices", "DMT_AP_RECON_V3_DM", "DMT_AP_RECON_V3_RPT"),
     ("Customers",               "DMT_CUST_RECON_V5_DM", "DMT_CUST_RECON_V5_RPT"),
     # Customers V6 (2026-10-07, owner decision): alongside V5 (never overwritten);
     # base rows by REQUEST_ID = the Fusion import batch id the load sent
     # (P_FUSION_BATCH_ID), interface rows by LOAD_REQUEST_ID, never by the prefix.
     ("Customers",               "DMT_CUST_RECON_V6_DM", "DMT_CUST_RECON_V6_RPT"),
+    # Customers V7 (2026-10-09, backlog #684): alongside the earlier versions (never
+    # overwritten); pages by header (the party original system reference) with PAGE_KEY.
+    ("Customers", "DMT_CUST_RECON_V7_DM", "DMT_CUST_RECON_V7_RPT"),
     ("ARInvoices",              "DMT_AR_RECON_DM",   "DMT_AR_RECON_RPT"),
     # ARInvoices V2 (2026-10-07): deployed alongside V1 (never overwritten);
     # interface error aggregation scoped to the load (V1 hit ORA-01489).
@@ -86,11 +95,20 @@ REPORTS = [
     # GLBalances V4 (backlog #173): GROUP_ID = work queue id, never ALL; base rows
     # by the import job's own GroupID/LedgerID arguments.
     ("GLBalances",              "DMT_GL_BAL_RECON_V4_DM", "DMT_GL_BAL_RECON_V4_RPT"),
+    # GLBalances V5 (2026-10-09, backlog #686): alongside the earlier versions (never
+    # overwritten); pages by header (the journal) with PAGE_KEY.
+    ("GLBalances", "DMT_GL_BAL_RECON_V5_DM", "DMT_GL_BAL_RECON_V5_RPT"),
     ("GLBudgets",               "GL_BUDGET_DM",      "GL_BUDGET_RPT"),
+    # GLBudgets V2 (2026-10-09, backlog #687): alongside the earlier versions (never
+    # overwritten); pages by header (the budget cell key) with PAGE_KEY.
+    ("GLBudgets", "DMT_GL_BUDGET_RECON_V2_DM", "DMT_GL_BUDGET_RECON_V2_RPT"),
     # MiscReceipts V2 (2026-10-07, backlog #262): rows found only by the work
     # item's load job id (LOAD_REQUEST_ID). Deployed alongside
     # DMT_INV_TRX_RECON_DM (never overwritten).
     ("MiscReceipts",            "DMT_INV_TRX_RECON_V2_DM", "DMT_INV_TRX_RECON_V2_RPT"),
+    # MiscReceipts V3 (2026-10-09, backlog #689): alongside the earlier versions (never
+    # overwritten); pages by header (the receipt source line id) with PAGE_KEY.
+    ("MiscReceipts", "DMT_INV_TRX_RECON_V3_DM", "DMT_INV_TRX_RECON_V3_RPT"),
     # Items V2 (2026-10-06): deployed alongside the original DMT_ITEM_RECON_DM
     # (never overwritten). Category tiers also match request_id = import ESS
     # id and carry MESSAGE_NAME + text from both EGP interface tables.
@@ -99,6 +117,9 @@ REPORTS = [
     # the work item's Fusion job ids (base by the Item Import REQUEST_ID,
     # interface and errors by LOAD_REQUEST_ID / REQUEST_ID), never by the prefix.
     ("Items",                   "DMT_ITEM_RECON_V3_DM", "DMT_ITEM_RECON_V3_RPT"),
+    # Items V4 (2026-10-09, backlog #688): alongside the earlier versions (never
+    # overwritten); pages by header (item number plus organization) with PAGE_KEY.
+    ("Items", "DMT_ITEM_RECON_V4_DM", "DMT_ITEM_RECON_V4_RPT"),
     # ItemCategories ITEM_CAT_DM / ITEM_CAT_RPT: retired (backlog #480). Item
     # categories reconcile through the Items V3 report above (record type
     # ItemCategory); registry row 100000026 now names that report.
@@ -147,6 +168,9 @@ REPORTS = [
     # project base tables), interface rows by LOAD_REQUEST_ID. Deployed alongside
     # DMT_PROJECT_RECON_DM (never overwritten).
     ("Projects",                 "DMT_PROJECT_RECON_V2_DM",    "DMT_PROJECT_RECON_V2_RPT"),
+    # Projects V3 (2026-10-09, backlog #692): alongside the earlier versions (never
+    # overwritten); pages by header (the project number) with PAGE_KEY.
+    ("Projects", "DMT_PROJECT_RECON_V3_DM", "DMT_PROJECT_RECON_V3_RPT"),
     # ProjectBudgets recon V2 (2026-10-07, known-good fix): deployed alongside the
     # original PRJ_BUDGET_DM (never overwritten). Run scoped by the prefixed
     # PM_BUDGET_REFERENCE so budgets on EXISTING projects reconcile.
@@ -155,6 +179,9 @@ REPORTS = [
     # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
     # the run prefix. Deployed alongside V1 and V2 (never overwritten).
     ("ProjectBudgets",           "DMT_PRJ_BUDGET_RECON_V3_DM",           "DMT_PRJ_BUDGET_RECON_V3_RPT"),
+    # ProjectBudgets V4 (2026-10-09, backlog #691): alongside the earlier versions (never
+    # overwritten); pages by header (project plus plan version) with PAGE_KEY.
+    ("ProjectBudgets", "DMT_PRJ_BUDGET_RECON_V4_DM", "DMT_PRJ_BUDGET_RECON_V4_RPT"),
     # Grants V2 (2026-10-07, docs/findings/known_good_Grants.md): BASE tier keyed
     # on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, prefix-scoped. Deployed alongside
     # the original DMT_GRANT_RECON_DM (never overwritten).
@@ -168,6 +195,9 @@ REPORTS = [
     # overwritten). Same rows and columns as V2; tie-safe keyset paging (WITH
     # TIES) with an OBJECT_TYPE tiebreak, refreshed RECORD_KEY comments.
     ("Requisitions",             "DMT_REQ_RECON_V3_DM",        "DMT_REQ_RECON_V3_RPT"),
+    # Requisitions V4 (2026-10-09, backlog #694): alongside the earlier versions (never
+    # overwritten); pages by header (the requisition number) with PAGE_KEY.
+    ("Requisitions", "DMT_REQ_RECON_V4_DM", "DMT_REQ_RECON_V4_RPT"),
     # BillingEvents V2 (2026-10-07, owner decision): base events by the import
     # job's REQUEST_ID, interface rows by LOAD_REQUEST_ID, never by the run prefix.
     # Alongside BILLING_EVENT_DM (never overwritten).
@@ -176,15 +206,24 @@ REPORTS = [
     # POSTED FA_MASS_ADDITIONS row by the load job's LOAD_REQUEST_ID (FA_ADDITIONS_B
     # has no request id), never by the run prefix. Alongside DMT_FA_ASSET_RECON_DM.
     ("Assets",                   "DMT_FA_ASSET_RECON_V2_DM",   "DMT_FA_ASSET_RECON_V2_RPT"),
+    # Assets V3 (2026-10-09, backlog #682): alongside the earlier versions (never
+    # overwritten); pages by header (the asset number) with PAGE_KEY.
+    ("Assets", "DMT_FA_ASSET_RECON_V3_DM", "DMT_FA_ASSET_RECON_V3_RPT"),
     # PurchaseOrders V2 (2026-10-07, backlog #264): rows found only by the work
     # item's Fusion job ids and the Standard document style; the run-id LIKE on
     # the interface keys is gone. Deployed alongside DMT_PO_RECON_DM (never
     # overwritten).
     ("PurchaseOrders",           "DMT_PO_RECON_V2_DM",         "DMT_PO_RECON_V2_RPT"),
+    # PurchaseOrders V3 (2026-10-09, backlog #693): alongside the earlier versions (never
+    # overwritten); pages by header (the PO number) with PAGE_KEY.
+    ("PurchaseOrders", "DMT_PO_RECON_V3_DM", "DMT_PO_RECON_V3_RPT"),
     # Expenditures V2 (2026-10-07, owner decision): rows found only by the work
     # item's Fusion job ids (import REQUEST_ID / load LOAD_REQUEST_ID), never by
     # the run prefix. Deployed alongside DMT_EXP_RECON_DM (never overwritten).
     ("Expenditures",             "DMT_EXP_RECON_V2_DM",        "DMT_EXP_RECON_V2_RPT"),
+    # Expenditures V3 (2026-10-09, backlog #685): alongside the earlier versions (never
+    # overwritten); pages by header (the original transaction reference) with PAGE_KEY.
+    ("Expenditures", "DMT_EXP_RECON_V3_DM", "DMT_EXP_RECON_V3_RPT"),
     # CashBanks (backlog #136) -- three-tier base-table recon DM/report was
     # committed (bip/CashBanks/) and registered (dmt_bip_report_tbl.sql) but was
     # never added to this deploy manifest, so the live /Custom/DMT2/CashBanks/
