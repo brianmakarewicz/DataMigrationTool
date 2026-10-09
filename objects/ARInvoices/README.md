@@ -106,7 +106,8 @@ models both with one STG + one TFM table each.
   `trx_id~line_id`, backlog #85); the registry's row-grain id is that column, and the drill-down shows
   `trx~line`. A distribution's Verify-in-Fusion key is its invoice's CustomerTransactionId (#675).
   New write-once scenario RegressionTest261009074409 (id 662) adds invoice 86753501: one line with eight
-  REV distributions (RT-AR-MD-A1, -REV1..8). Proof run 362 (prefix 93405, O2C): 5 lines LOADED with line
+  REV distributions (RT-AR-MD-A1, -REV1..8). Proof run 364 (prefix 93407, O2C, final code; run 362 /
+  prefix 93405 before the cursor guard gave the same AR outcomes): regression verdict PASS, 5 lines LOADED with line
   ids, all 8 new distributions LOADED, the baseline rows' outcomes identical to run 347 (6 lines and 4
   distributions FAILED with real or quoted errors), 0 UNACCOUNTED.
 - 2026-10-08 a line with no BU or batch source is failed, with the rest of its DMT invoice
