@@ -7,6 +7,7 @@
 -- REVISIONS:
 --  1.1  2026-10-07  Run prefix on SRC_BUDGET_LINE_REFERENCE + PLAN_VERSION_NAME; fit-guard fails, never truncates
 --  1.2  2026-10-07  Pre-TFM exclusion matched on run + sub-object, not LIKE on the tag text
+--  1.3  2026-10-09  Sub-object label 'Project Budget Lines' everywhere (catalog seed + views), backlog #656
 -- ============================================================
 
     C_PKG CONSTANT VARCHAR2(50) := 'DMT_PRJ_BUDGET_TRANSFORM_PKG';
@@ -21,7 +22,7 @@
     -- [TRANSFORM_ERROR]; it is never truncated (truncation would collide keys).
     C_BUDGET_REF_MAX   CONSTANT PLS_INTEGER := 100;
     C_VERSION_NAME_MAX CONSTANT PLS_INTEGER := 240;
-    C_SUB_OBJECT       CONSTANT VARCHAR2(30) := 'Project Budgets';
+    C_SUB_OBJECT       CONSTANT VARCHAR2(30) := 'Project Budget Lines';
 
     PROCEDURE TRANSFORM (
         p_run_id   IN NUMBER,
@@ -234,7 +235,7 @@
             BEGIN
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
-                SELECT p_run_id, 'ProjectBudgets', 'Project Budget Lines', s.STG_SEQUENCE_ID,
+                SELECT p_run_id, 'ProjectBudgets', C_SUB_OBJECT, s.STG_SEQUENCE_ID,
                        '[TRANSFORM_ERROR] ' || l_errm
                 FROM   DMT_PRJ_BUDGET_STG_TBL s
                 WHERE  ( DMT_UTIL_PKG.STG_ROW_SELECTED(p_run_mode, s.STG_STATUS, p_run_id, 'DMT_PRJ_BUDGET_STG_TBL', s.STG_SEQUENCE_ID) = 'Y' )
@@ -244,11 +245,11 @@
                                 WHERE t.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID AND t.RUN_ID = p_run_id)
                 AND NOT EXISTS (SELECT 1 FROM DMT_STG_TFM_ERROR_TBL e
                                 WHERE e.RUN_ID = p_run_id AND e.STG_SEQUENCE_ID = s.STG_SEQUENCE_ID
-                                AND e.SUB_OBJECT = 'Project Budget Lines');
+                                AND e.SUB_OBJECT = C_SUB_OBJECT);
                 UPDATE DMT_PRJ_BUDGET_STG_TBL
                 SET    STG_STATUS = 'FAILED', LAST_UPDATED_DATE = SYSDATE
                 WHERE  STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
-                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = 'Project Budget Lines')
+                                           WHERE RUN_ID = p_run_id AND SUB_OBJECT = C_SUB_OBJECT)
                 AND    STG_STATUS IN ('NEW','TRANSFORMED')
                 AND    (p_scenario_id IS NULL OR SCENARIO_ID = p_scenario_id
                         OR (p_include_untagged = 'Y' AND SCENARIO_ID IS NULL));

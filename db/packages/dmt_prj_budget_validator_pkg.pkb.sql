@@ -36,7 +36,7 @@ AS
         AND    STG_SEQUENCE_ID IN (SELECT STG_SEQUENCE_ID FROM DMT_STG_TFM_ERROR_TBL
                                    WHERE RUN_ID = p_run_id
         -- <<EDIT-SCOPE — this table's SUB_OBJECT>>
-                                   AND SUB_OBJECT = 'Project Budgets'
+                                   AND SUB_OBJECT = 'Project Budget Lines'
         -- <<END EDIT-SCOPE — nothing below this changes>>
                                   );
     END FLAG_STG_FAILED;
@@ -93,7 +93,7 @@ AS
             IF l_any_loaded > 0 AND DMT_UTIL_PKG.SHOULD_VALIDATE_UPSTREAM(p_run_id) = 'Y' THEN
                 INSERT INTO DMT_STG_TFM_ERROR_TBL
                        (RUN_ID, CEMLI_CODE, SUB_OBJECT, STG_SEQUENCE_ID, ERROR_TEXT)
-                SELECT p_run_id, 'ProjectBudgets', 'Project Budgets', e.STG_SEQUENCE_ID,
+                SELECT p_run_id, 'ProjectBudgets', 'Project Budget Lines', e.STG_SEQUENCE_ID,
                        '[PRE_VALIDATION] Project ''' || e.PROJECT_NAME ||
                        ''' is not loaded — budget record skipped.'
                 FROM   DMT_PRJ_BUDGET_STG_TBL e

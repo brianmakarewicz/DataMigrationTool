@@ -72,7 +72,7 @@ using (
     union all select 'Projects', 'Team Members', 'DMT_PJF_TEAM_MEMBERS_TFM_TBL', 'TFM_STATUS', null, 3 from dual
     union all select 'Projects', 'Txn Controls', 'DMT_PJC_TXN_CONTROLS_TFM_TBL', 'TFM_STATUS', null, 4 from dual
     union all select 'Expenditures', 'Project Expenditures', 'DMT_PJC_EXPENDITURES_TFM_TBL', 'TFM_STATUS', null, 1 from dual
-    union all select 'ProjectBudgets', 'Project Budgets', 'DMT_PRJ_BUDGET_TFM_TBL', 'TFM_STATUS', null, 1 from dual
+    union all select 'ProjectBudgets', 'Project Budget Lines', 'DMT_PRJ_BUDGET_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     union all select 'BillingEvents', 'Billing Events', 'DMT_PJB_BILL_EVENTS_TFM_TBL', 'TFM_STATUS', null, 1 from dual
     -- Grants: the award header plus every award child TFM table (backlog #567).
     -- Each child table carries its own rows, so no row filter. Display names are
