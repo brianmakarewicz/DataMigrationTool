@@ -892,6 +892,48 @@ AS
                         l_cnt    PLS_INTEGER := 0;
                         l_keys   DMT_PARTITION_KEY_TBL;
                         l_label  VARCHAR2(4000);
+                        -- Partition ordering (backlog #610). A token may carry an
+                        -- "AFTER" array of sibling partition values (same partition
+                        -- column) that must be DONE before this child starts. The
+                        -- array is removed from the stored PARTITION_KEY and becomes
+                        -- QUEUE_ID:<sibling queue id> tokens in DEPENDS_ON, which
+                        -- DMT_QUEUE_PKG evaluates like CEMLI tokens.
+                        TYPE t_num_by_str IS TABLE OF NUMBER INDEX BY VARCHAR2(4000);
+                        TYPE t_after_list IS TABLE OF JSON_ARRAY_T INDEX BY PLS_INTEGER;
+                        TYPE t_qids       IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
+                        l_qid_by_value t_num_by_str;
+                        l_after        t_after_list;
+                        l_child_qid    t_qids;
+                        l_token        VARCHAR2(4000);
+                        l_obj          JSON_OBJECT_T;
+                        l_new_qid      NUMBER;
+                        l_dep_tokens   VARCHAR2(4000);
+                        l_dep_qid      NUMBER;
+                        l_n_edges      PLS_INTEGER;
+
+                        -- TRUE when sibling p_from (transitively) already waits on
+                        -- p_to through QUEUE_ID tokens written earlier in this loop.
+                        -- Used to refuse an edge that would close a cycle (two
+                        -- partitions each waiting for the other would never start).
+                        FUNCTION waits_on (p_from IN NUMBER, p_to IN NUMBER,
+                                           p_depth IN PLS_INTEGER DEFAULT 0) RETURN BOOLEAN IS
+                            l_deps VARCHAR2(4000);
+                        BEGIN
+                            IF p_from = p_to THEN RETURN TRUE; END IF;
+                            IF p_depth > 50 THEN RETURN TRUE; END IF;  -- defensive bound
+                            SELECT DEPENDS_ON INTO l_deps
+                            FROM   DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_from;
+                            FOR d IN (
+                                SELECT TO_NUMBER(SUBSTR(tok, 10)) AS QID
+                                FROM (SELECT TRIM(REGEXP_SUBSTR(l_deps, '[^,]+', 1, LEVEL)) AS tok
+                                      FROM dual
+                                      CONNECT BY LEVEL <= REGEXP_COUNT(l_deps, '[^,]+'))
+                                WHERE tok LIKE 'QUEUE_ID:%'
+                            ) LOOP
+                                IF waits_on(d.QID, p_to, p_depth + 1) THEN RETURN TRUE; END IF;
+                            END LOOP;
+                            RETURN FALSE;
+                        END waits_on;
                     BEGIN
                         invoke_registered(
                             p_proc       => l_keys_proc,
@@ -908,14 +950,75 @@ AS
                                 l_label := SUBSTR(NVL(JSON_VALUE(l_keys(i), '$.LABEL'),
                                                       JSON_VALUE(l_keys(i), '$.' || l_child_col)),
                                                   1, 200);
+                                -- Backlog #610: lift an "AFTER" ordering array out of
+                                -- the token. A token without one is stored unchanged.
+                                l_token := l_keys(i);
+                                IF l_keys(i) LIKE '%"AFTER"%' THEN
+                                    l_obj := JSON_OBJECT_T.PARSE(l_keys(i));
+                                    IF l_obj.HAS('AFTER') THEN
+                                        l_after(i) := l_obj.GET_ARRAY('AFTER');
+                                        l_obj.REMOVE('AFTER');
+                                        l_token := l_obj.TO_STRING;
+                                    END IF;
+                                END IF;
                                 INSERT INTO DMT_WORK_QUEUE_TBL (
                                     RUN_ID, PIPELINE, CEMLI_CODE, PARTITION_KEY, PARTITION_LABEL,
                                     PARENT_QUEUE_ID, SORT_ORDER, DEPENDS_ON, WORK_STATUS
                                 ) VALUES (
-                                    l_rec.RUN_ID, l_rec.PIPELINE, l_rec.CEMLI_CODE, l_keys(i), l_label,
+                                    l_rec.RUN_ID, l_rec.PIPELINE, l_rec.CEMLI_CODE, l_token, l_label,
                                     p_queue_id, l_rec.SORT_ORDER, l_rec.DEPENDS_ON, 'READY'
-                                );
+                                ) RETURNING QUEUE_ID INTO l_new_qid;
+                                l_child_qid(i) := l_new_qid;
+                                l_qid_by_value(NVL(JSON_VALUE(l_keys(i), '$.' || l_child_col), '(null)')) := l_new_qid;
                                 l_cnt := l_cnt + 1;
+                            END LOOP;
+
+                            -- Backlog #610: a child whose token named AFTER partitions
+                            -- waits for those sibling children to be DONE. It is held
+                            -- PENDING with QUEUE_ID:<id> tokens appended to the
+                            -- inherited DEPENDS_ON; promote_ready releases it. Same
+                            -- transaction as the inserts, so no dispatcher sees it
+                            -- READY first. An edge that would close a cycle is skipped
+                            -- (logged), so no partition can wait forever.
+                            FOR i IN 1 .. l_keys.COUNT LOOP
+                                CONTINUE WHEN NOT l_after.EXISTS(i);
+                                l_dep_tokens := NULL;
+                                l_n_edges    := 0;
+                                FOR j IN 0 .. l_after(i).GET_SIZE - 1 LOOP
+                                    l_dep_qid := NULL;
+                                    IF l_qid_by_value.EXISTS(l_after(i).GET_STRING(j)) THEN
+                                        l_dep_qid := l_qid_by_value(l_after(i).GET_STRING(j));
+                                    END IF;
+                                    IF l_dep_qid IS NULL OR l_dep_qid = l_child_qid(i) THEN
+                                        CONTINUE;
+                                    END IF;
+                                    IF waits_on(l_dep_qid, l_child_qid(i)) THEN
+                                        DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                                            l_rec.CEMLI_CODE || ' partition ' || l_child_qid(i)
+                                            || ' not ordered after partition ' || l_dep_qid
+                                            || ': that partition already waits on this one (cycle).',
+                                            'WARN', C_PKG, 'EXECUTE_ONE');
+                                        CONTINUE;
+                                    END IF;
+                                    l_dep_tokens := l_dep_tokens
+                                        || CASE WHEN l_dep_tokens IS NOT NULL THEN ',' END
+                                        || 'QUEUE_ID:' || l_dep_qid;
+                                    l_n_edges := l_n_edges + 1;
+                                    -- Record the edge now so waits_on sees it for
+                                    -- the next children of this loop.
+                                    UPDATE DMT_WORK_QUEUE_TBL
+                                    SET    DEPENDS_ON = CASE WHEN l_rec.DEPENDS_ON IS NOT NULL
+                                                             THEN l_rec.DEPENDS_ON || ',' END
+                                                        || l_dep_tokens,
+                                           WORK_STATUS = 'PENDING'
+                                    WHERE  QUEUE_ID = l_child_qid(i);
+                                END LOOP;
+                                IF l_n_edges > 0 THEN
+                                    DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
+                                        l_rec.CEMLI_CODE || ' partition ' || l_child_qid(i)
+                                        || ' waits for ' || l_dep_tokens || ' (backlog #610 ordering).',
+                                        'INFO', C_PKG, 'EXECUTE_ONE');
+                                END IF;
                             END LOOP;
                         END IF;
 

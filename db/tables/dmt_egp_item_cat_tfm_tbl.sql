@@ -24,7 +24,8 @@ begin
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
 	"FUSION_CATEGORY_ID" NUMBER, 
-	"WORK_QUEUE_ID" NUMBER, 
+	"WORK_QUEUE_ID" NUMBER,
+	"ITEM_TFM_SEQUENCE_ID" NUMBER,
 	 CONSTRAINT "DMT_EGP_ITEM_CAT_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
    ) ';
@@ -126,3 +127,30 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_EGP_ITEM_CAT_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- ITEM_TFM_SEQUENCE_ID (backlog #610, owner decision 2026-10-09): the TFM_SEQUENCE_ID
+-- of the item row of the SAME run that this category assignment belongs to (the
+-- DMT_EGP_ITEM_TFM_TBL row transformed from the item STG row with the same source
+-- item number and organization). Parent-child join key per design section 6 ("a
+-- child carries its parent's TFM sequence id"). NULL when the item is not part of
+-- the run (a category-only load for an item that already exists in Fusion); the
+-- category then carries the source item number unchanged. Guarded in-file ALTER so
+-- an existing DB converges via db/install.sql; the CREATE above carries it for
+-- fresh installs.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_EGP_ITEM_CAT_TFM_TBL' and column_name = 'ITEM_TFM_SEQUENCE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_EGP_ITEM_CAT_TFM_TBL" ADD ("ITEM_TFM_SEQUENCE_ID" NUMBER)';
+  end if;
+end;
+/
+begin
+  execute immediate 'CREATE INDEX "DMT_EGP_ITEM_CAT_TFM_N6" ON "DMT_EGP_ITEM_CAT_TFM_TBL" ("ITEM_TFM_SEQUENCE_ID")';
+exception when others then
+  if sqlcode not in (-955,-1408) then raise; end if;
+end;
+/
+COMMENT ON COLUMN "DMT_EGP_ITEM_CAT_TFM_TBL"."ITEM_TFM_SEQUENCE_ID" IS 'TFM_SEQUENCE_ID of the same-run item row (DMT_EGP_ITEM_TFM_TBL) this category assignment belongs to; its ITEM_NUMBER is copied from that row. NULL when the item is not part of the run (category-only load of an existing Fusion item: source item number used unchanged). Backlog #610.';

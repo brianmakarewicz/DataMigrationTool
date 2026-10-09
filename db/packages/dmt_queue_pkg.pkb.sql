@@ -35,7 +35,19 @@ AS
             -- CONTINUE (section 2, decided 2026-07-07): dependencies need only
             -- be terminal (DONE or FAILED) — dependents launch anyway and
             -- per-row dependency validation sorts out individual rows.
-            IF p_policy = 'CONTINUE' THEN
+            -- Backlog #610: a 'QUEUE_ID:<n>' token names ONE work item (a sibling
+            -- partition of the same object, written by DMT_QUEUE_WORKER_PKG when a
+            -- partition must load after another, e.g. an Items category batch
+            -- after the batch holding its items). Same HALT / CONTINUE meaning as
+            -- a CEMLI token, applied to that one row. CEMLI codes never contain ':'.
+            IF l_dep LIKE 'QUEUE_ID:%' THEN
+                SELECT COUNT(*) INTO l_done
+                FROM DMT_WORK_QUEUE_TBL
+                WHERE RUN_ID = p_run_id
+                  AND QUEUE_ID = TO_NUMBER(SUBSTR(l_dep, 10))
+                  AND ((p_policy = 'CONTINUE' AND WORK_STATUS NOT IN ('DONE', 'FAILED'))
+                    OR (NVL(p_policy, 'HALT') <> 'CONTINUE' AND WORK_STATUS <> 'DONE'));
+            ELSIF p_policy = 'CONTINUE' THEN
                 SELECT COUNT(*) INTO l_done
                 FROM DMT_WORK_QUEUE_TBL
                 WHERE RUN_ID = p_run_id
@@ -521,15 +533,25 @@ AS
                 -- just FAILED) plus the repeat-until-stable loop resolves multi-level chains
                 -- (A fails → B skipped → C skipped). Exact comma-token matching avoids the
                 -- old LIKE '%x%' substring false-matches (e.g. 'Suppliers' vs 'SupplierSites').
+                -- Backlog #610: a 'QUEUE_ID:<n>' token (one sibling partition) cascades
+                -- the same way, so a partition held behind a failed one is skipped
+                -- instead of waiting forever.
                 LOOP
                     UPDATE DMT_WORK_QUEUE_TBL q
                     SET WORK_STATUS = 'SKIPPED',
                         ERROR_MESSAGE = 'Skipped: upstream ' ||
-                            (SELECT u.CEMLI_CODE FROM DMT_WORK_QUEUE_TBL u
+                            (SELECT u.CEMLI_CODE
+                                    || CASE WHEN INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
+                                                       ',QUEUE_ID:' || u.QUEUE_ID || ',') > 0
+                                            THEN ' partition ' || NVL(u.PARTITION_LABEL, TO_CHAR(u.QUEUE_ID))
+                                       END
+                             FROM DMT_WORK_QUEUE_TBL u
                              WHERE u.RUN_ID = q.RUN_ID
                                AND u.WORK_STATUS IN ('FAILED', 'SKIPPED')
-                               AND INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
-                                         ',' || u.CEMLI_CODE || ',') > 0
+                               AND (INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
+                                          ',' || u.CEMLI_CODE || ',') > 0
+                                    OR INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
+                                             ',QUEUE_ID:' || u.QUEUE_ID || ',') > 0)
                                AND ROWNUM = 1) || ' failed/skipped (HALT policy)',
                         COMPLETED_AT = SYSTIMESTAMP
                     WHERE q.RUN_ID = run_rec.RUN_ID
@@ -539,8 +561,10 @@ AS
                           SELECT 1 FROM DMT_WORK_QUEUE_TBL u
                           WHERE u.RUN_ID = q.RUN_ID
                             AND u.WORK_STATUS IN ('FAILED', 'SKIPPED')
-                            AND INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
-                                      ',' || u.CEMLI_CODE || ',') > 0
+                            AND (INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
+                                       ',' || u.CEMLI_CODE || ',') > 0
+                                 OR INSTR(',' || REPLACE(q.DEPENDS_ON, ' ') || ',',
+                                          ',QUEUE_ID:' || u.QUEUE_ID || ',') > 0)
                       );
                     l_changed := SQL%ROWCOUNT;
                     EXIT WHEN l_changed = 0;
