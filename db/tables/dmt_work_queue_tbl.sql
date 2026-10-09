@@ -27,7 +27,7 @@ begin
 	 CONSTRAINT "DMT_WORK_QUEUE_STATUS_CK" CHECK (
         WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''PROCESSING'',''GENERATING'',
                         ''LOADING'',''AWAITING_LOAD'',''AWAITING_IMPORT'',''AWAITING_POSTRUN'',''RECONCILING'',
-                        ''DONE'',''FAILED'',''SKIPPED'')) ENABLE
+                        ''DONE'',''FAILED'',''SKIPPED'',''CANCELLED'')) ENABLE
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
@@ -62,7 +62,33 @@ begin
     execute immediate 'ALTER TABLE DMT_WORK_QUEUE_TBL ADD CONSTRAINT DMT_WORK_QUEUE_STATUS_CK CHECK (
         WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''PROCESSING'',''GENERATING'',
                         ''LOADING'',''AWAITING_LOAD'',''AWAITING_IMPORT'',''AWAITING_POSTRUN'',''RECONCILING'',
-                        ''DONE'',''FAILED'',''SKIPPED'')) ENABLE';
+                        ''DONE'',''FAILED'',''SKIPPED'',''CANCELLED'')) ENABLE';
+  end if;
+exception when others then
+  if sqlcode not in (-942) then raise; end if;
+end;
+/
+
+-- ---------------------------------------------------------------------------
+-- CANCELLED work status (2026-10-08, owner-approved, backlog #635). A work
+-- item that was not yet terminal when its run was cancelled by the sanctioned
+-- DMT_QUEUE_PKG.CANCEL_RUN ends CANCELLED: terminal, never dispatched again,
+-- and never holds the one-active-run-per-object lock. CANCEL_RUN is its only
+-- writer (design section 2, work-item status table). Guarded + idempotent:
+-- the constraint is swapped only while it does not yet allow CANCELLED.
+-- ---------------------------------------------------------------------------
+declare
+  l_missing number;
+begin
+  select count(*) into l_missing from user_constraints
+   where constraint_name = 'DMT_WORK_QUEUE_STATUS_CK'
+     and instr(search_condition_vc, 'CANCELLED') = 0;
+  if l_missing > 0 then
+    execute immediate 'ALTER TABLE DMT_WORK_QUEUE_TBL DROP CONSTRAINT DMT_WORK_QUEUE_STATUS_CK';
+    execute immediate 'ALTER TABLE DMT_WORK_QUEUE_TBL ADD CONSTRAINT DMT_WORK_QUEUE_STATUS_CK CHECK (
+        WORK_STATUS IN (''PENDING'',''READY'',''SPLITTING'',''PROCESSING'',''GENERATING'',
+                        ''LOADING'',''AWAITING_LOAD'',''AWAITING_IMPORT'',''AWAITING_POSTRUN'',''RECONCILING'',
+                        ''DONE'',''FAILED'',''SKIPPED'',''CANCELLED'')) ENABLE';
   end if;
 exception when others then
   if sqlcode not in (-942) then raise; end if;

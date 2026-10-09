@@ -692,7 +692,7 @@ AS
         SELECT COUNT(*) INTO l_open
         FROM   DMT_WORK_QUEUE_TBL
         WHERE  PARENT_QUEUE_ID = p_parent_queue_id
-        AND    WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+        AND    WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED');
         IF l_open > 0 THEN
             RETURN;  -- a later child settles it
         END IF;
@@ -739,6 +739,23 @@ AS
     -- Dispatch is registry-driven (DMT_PIPELINE_DEF_TBL.EXEC_PROC) —
     -- the former hardcoded ~39-branch CASE over CEMLI codes is retired.
     -- ============================================================
+    -- (Function placed here, ahead of EXECUTE_ONE, because the three child-job
+    -- entry points below call it; EXECUTE_ONE's own header follows it.)
+    -- item_cancelled -- TRUE when the work item or its run is CANCELLED
+    -- (DMT_QUEUE_PKG.CANCEL_RUN, backlog #635). A child job the heartbeat
+    -- spawned just before the cancel committed must do nothing: EXECUTE_ONE,
+    -- POLL_ONE and RECONCILE_ONE return at once when this is TRUE.
+    FUNCTION item_cancelled (p_queue_id IN NUMBER) RETURN BOOLEAN IS
+        l_n NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO l_n
+        FROM   DMT_WORK_QUEUE_TBL q
+        JOIN   DMT_PIPELINE_RUN_TBL r ON r.RUN_ID = q.RUN_ID
+        WHERE  q.QUEUE_ID = p_queue_id
+          AND  (q.WORK_STATUS = 'CANCELLED' OR r.RUN_STATUS = 'CANCELLED');
+        RETURN l_n > 0;
+    END item_cancelled;
+
     PROCEDURE EXECUTE_ONE (p_queue_id IN NUMBER) IS
         l_rec       DMT_WORK_QUEUE_TBL%ROWTYPE;
         l_run_rec   DMT_PIPELINE_RUN_TBL%ROWTYPE;
@@ -751,6 +768,9 @@ AS
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
         l_reconciled_inline BOOLEAN := FALSE;  -- loader reconciled inline (double-reconcile fix)
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
         SELECT * INTO l_run_rec FROM DMT_PIPELINE_RUN_TBL WHERE RUN_ID = l_rec.RUN_ID;
 
@@ -1095,6 +1115,9 @@ AS
         l_recon_cemli VARCHAR2(1);
         l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
         -- Attribution (backlog #30): stamp run + work-item id for this child job.
@@ -1724,6 +1747,9 @@ AS
         l_exec_mode   VARCHAR2(10);
         l_recon_cemli VARCHAR2(1);
     BEGIN
+        IF item_cancelled(p_queue_id) THEN
+            RETURN;  -- run cancelled before this job started (backlog #635)
+        END IF;
         SELECT * INTO l_rec FROM DMT_WORK_QUEUE_TBL WHERE QUEUE_ID = p_queue_id;
 
         -- Attribution (backlog #30): stamp run + work-item id for this child job.
@@ -1999,13 +2025,19 @@ AS
     END POLL_ONE;
 
     -- ============================================================
-    -- fail_run_preflight -- halt a run whose preflight did not pass:
+    -- FAIL_RUN_PREFLIGHT -- halt a run whose preflight did not pass:
     -- FAIL every not-yet-terminal work item with a clear message and set
     -- PREFLIGHT_STATUS = 'FAILED'. RUN_STATUS is left to the heartbeat
     -- rollup (one-writer-per-status-altitude) -- with all items terminal
     -- FAILED, the rollup settles the run FAILED. Nothing is dispatched.
+    -- Public since 2026-10-08 so DMT_QUEUE_PKG's orphaned-preflight
+    -- recovery (backlog #565) fails a run through this same path with its
+    -- own message (p_message NULL = the standard text).
     -- ============================================================
-    PROCEDURE fail_run_preflight (p_run_id IN NUMBER) IS
+    PROCEDURE FAIL_RUN_PREFLIGHT (
+        p_run_id  IN NUMBER,
+        p_message IN VARCHAR2 DEFAULT NULL
+    ) IS
         C_HALT_MSG CONSTANT VARCHAR2(400) :=
             'Preflight failed before any load: the Fusion lookup refresh or a run '
             || 'credential did not pass. Run halted; nothing was submitted. See the '
@@ -2013,23 +2045,23 @@ AS
     BEGIN
         UPDATE DMT_WORK_QUEUE_TBL
         SET    WORK_STATUS   = 'FAILED',
-               ERROR_MESSAGE = C_HALT_MSG,
+               ERROR_MESSAGE = SUBSTR(NVL(p_message, C_HALT_MSG), 1, 4000),
                COMPLETED_AT  = SYSTIMESTAMP
         WHERE  RUN_ID = p_run_id
-          AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED');
+          AND  WORK_STATUS NOT IN ('DONE', 'FAILED', 'SKIPPED', 'CANCELLED');
 
         UPDATE DMT_PIPELINE_RUN_TBL
         SET    PREFLIGHT_STATUS = 'FAILED'
         WHERE  RUN_ID = p_run_id;
         COMMIT;
-    END fail_run_preflight;
+    END FAIL_RUN_PREFLIGHT;
 
     -- ============================================================
     -- PREFLIGHT_ONE -- the async preflight worker (child job). Runs the
     -- run's preflight OFF the heartbeat tick so its live Fusion calls
     -- (lookup refresh + credential probes) never stall dispatch/polling.
     -- Success -> PREFLIGHT_STATUS 'OK' (dispatch_ready then releases the
-    -- run's items). Failure -> the run is halted via fail_run_preflight.
+    -- run's items). Failure -> the run is halted via FAIL_RUN_PREFLIGHT.
     -- Always resolves the run out of the 'PREFLIGHTING' claim, so a run
     -- can never get stuck mid-preflight.
     -- ============================================================
@@ -2050,7 +2082,7 @@ AS
             WHERE  RUN_ID = p_run_id;
             COMMIT;
         ELSE
-            fail_run_preflight(p_run_id);
+            FAIL_RUN_PREFLIGHT(p_run_id => p_run_id);
             DMT_UTIL_PKG.LOG(p_run_id    => p_run_id,
                              p_message   => C_PROC || ': preflight failed -- run halted, nothing loaded.',
                              p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
@@ -2060,7 +2092,7 @@ AS
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK;
-            fail_run_preflight(p_run_id);
+            FAIL_RUN_PREFLIGHT(p_run_id => p_run_id);
             DMT_UTIL_PKG.LOG_ERROR(p_run_id    => p_run_id,
                                    p_message   => l_step,
                                    p_sqlerrm   => SQLERRM,

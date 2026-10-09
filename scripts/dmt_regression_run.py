@@ -151,9 +151,11 @@ def resolve_expectations(cur, spec, records):
                     found.add(src)
         missing += [f"{sub} / {src}" for src in d['rows'] if src not in found]
     return exp, missing
-# CANCELLED removed 2026-07-08 (A8): no cancellation — Overview run-status table.
-TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED'}
-TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED'}
+# CANCELLED restored 2026-10-08 (backlog #635): DMT_QUEUE_PKG.CANCEL_RUN ends a run
+# and its open work items CANCELLED. Terminal, but never a pass (evaluate() fails
+# any run that is not COMPLETED / COMPLETED_ERRORS and any CANCELLED work item).
+TERMINAL_RUN_STATUSES = {'COMPLETED', 'COMPLETED_ERRORS', 'FAILED', 'NO_ROWS_PROCESSED', 'CANCELLED'}
+TERMINAL_QUEUE_STATUSES = {'DONE', 'FAILED', 'SKIPPED', 'CANCELLED'}
 KNOWN_LOG_TYPES = {'INFO', 'WARN', 'ERROR', 'DEBUG'}
 
 # Markers identifying intentionally-bad seed rows in DISPLAY_KEY. The seed
@@ -535,8 +537,8 @@ def evaluate(run_id, baseline_arg):
     print(f"\n[1] Queue: {len(queue)} objects")
     for cemli, wstatus, werr in queue:
         result['objects'][cemli] = {'queue_status': wstatus, 'queue_error': werr}
-        if wstatus == 'FAILED':
-            result['failures'].append(f"queue FAILED: {cemli} — {werr or '(no error message)'}")
+        if wstatus in ('FAILED', 'CANCELLED'):
+            result['failures'].append(f"queue {wstatus}: {cemli} — {werr or '(no error message)'}")
             print(f"    FAIL  {cemli}: {wstatus} — {str(werr)[:120]}")
         elif wstatus not in TERMINAL_QUEUE_STATUSES:
             result['failures'].append(f"queue stuck: {cemli} left in {wstatus}")

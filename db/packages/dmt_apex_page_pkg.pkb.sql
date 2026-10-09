@@ -523,6 +523,7 @@
                WHEN 'DONE'    THEN 'DONE'      -- finished + fully accounted -> counts decide
                WHEN 'FAILED'  THEN 'ERRORED'   -- work item broke -> Red
                WHEN 'SKIPPED' THEN 'SKIPPED'
+               WHEN 'CANCELLED' THEN 'SKIPPED'  -- run cancelled (CANCEL_RUN) -> grey, terminal
                WHEN 'PENDING' THEN 'PENDING'
                ELSE 'RUNNING'
              END;
@@ -580,7 +581,7 @@ BEGIN
     EXCEPTION WHEN NO_DATA_FOUND THEN l_run_status := NULL;
     END;
     l_run_active := NVL(l_run_status,'IN_PROGRESS')
-                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED');
+                    NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','NO_ROWS_PROCESSED','CANCELLED');
 
     -- Check if work queue has rows for this run
     SELECT COUNT(*) INTO l_has_queue

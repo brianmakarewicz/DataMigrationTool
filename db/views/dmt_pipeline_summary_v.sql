@@ -156,6 +156,7 @@ SELECT
                                                     ELSE '' END
                 WHEN 'COMPLETED'           THEN 'Complete'
                 WHEN 'COMPLETED_ERRORS'    THEN 'Completed with errors'
+                WHEN 'CANCELLED'           THEN 'Cancelled: ' || SUBSTR(m.ERROR_MESSAGE, 1, 80)
                 ELSE m.RUN_STATUS
             END
         WHEN NVL(p.TOTAL_ROWS, 0) = 0 THEN 'No rows'
@@ -181,6 +182,7 @@ SELECT
                 WHEN 'NO_ROWS_PROCESSED' THEN 'u-color-15'  -- grey
                 WHEN 'COMPLETED'         THEN 'u-color-9'   -- green
                 WHEN 'COMPLETED_ERRORS'  THEN 'u-color-16'  -- orange
+                WHEN 'CANCELLED'         THEN 'u-color-15'  -- grey (DMT_QUEUE_PKG.CANCEL_RUN)
                 ELSE 'u-color-15'
             END
         WHEN NVL(p.TOTAL_ROWS, 0) = 0 THEN 'u-color-15'  -- grey (skipped)

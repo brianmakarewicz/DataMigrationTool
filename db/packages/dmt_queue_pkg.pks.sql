@@ -80,5 +80,64 @@ AS
     -- ============================================================
     PROCEDURE RERUN_RUN (p_run_id IN NUMBER);
 
+    -- ============================================================
+    -- CANCEL_RUN -- the sanctioned way to end a run that can never
+    -- finish on its own (owner-approved 2026-10-08, backlog #635).
+    --
+    --   1. Refuses a run that is already terminal (COMPLETED /
+    --      COMPLETED_ERRORS / FAILED / NO_ROWS_PROCESSED). p_reason is
+    --      required. Calling it again on a CANCELLED run keeps the first
+    --      cancel's status and message but repeats steps 3-4 (safe retry
+    --      when a job could not be stopped the first time).
+    --   2. Marks every not-yet-terminal work item of the run CANCELLED
+    --      (ERROR_MESSAGE = the reason, COMPLETED_AT stamped) and the run
+    --      row RUN_STATUS = 'CANCELLED' with COMPLETED_DATE and an
+    --      ERROR_MESSAGE recording who cancelled it, when, and why. Items
+    --      already DONE / FAILED / SKIPPED keep their verdicts. Commits
+    --      before touching the scheduler so the heartbeat cannot dispatch
+    --      anything new for the run.
+    --   3. Stops and drops every scheduler job of the run: DMT_PF_<run>
+    --      (preflight) and DMT_WQ_ / DMT_PL_ / DMT_RC_<queue_id> (data
+    --      phase, ESS poll, reconcile). A stopped job's uncommitted work
+    --      rolls back. Then re-marks CANCELLED any item a job moved in the
+    --      meantime.
+    --   4. Writes a WARN entry to the activity log (DMT_LOG_TBL) with the
+    --      reason, the item count and the jobs stopped.
+    --
+    -- NEVER touches STG or TFM rows: rows the run already generated stay
+    -- exactly as they are (a re-run uses a new prefix). A Fusion ESS job
+    -- the run already submitted keeps running in Fusion; only our
+    -- watching of it stops. A run with no work items (a hand-inserted run
+    -- row) is cancelled by its run row alone.
+    --
+    -- p_cancelled_by: who asked (NULL = the database session user).
+    -- x_error_code: DMT_UTIL_PKG.C_SUCCESS, or C_ERROR with the reason in
+    -- the activity log (unknown run, blank reason, run already terminal,
+    -- or a job that could not be stopped).
+    -- ============================================================
+    PROCEDURE CANCEL_RUN (
+        p_run_id       IN  NUMBER,
+        p_reason       IN  VARCHAR2,
+        p_cancelled_by IN  VARCHAR2 DEFAULT NULL,
+        x_error_code   OUT NUMBER
+    );
+
+    -- ============================================================
+    -- RECOVER_ORPHAN_PREFLIGHT -- heartbeat recovery for a run whose
+    -- preflight job died without recording a verdict (backlog #565: a
+    -- DMT_PF_ job that fails to start, e.g. ORA-04063 while a package is
+    -- being redeployed, leaves PREFLIGHT_STATUS = 'PREFLIGHTING' forever).
+    -- Acts only on a QUEUED run that is PREFLIGHTING with no DMT_PF_<run>
+    -- scheduler job: the first time it releases the claim (NULL) so the
+    -- same tick re-spawns the preflight once; the second time it fails the
+    -- run through DMT_QUEUE_WORKER_PKG.FAIL_RUN_PREFLIGHT with a clear
+    -- message. Any other run is left untouched. Called by HEARTBEAT_TICK
+    -- for every candidate run; public so it can be unit-tested.
+    -- ============================================================
+    PROCEDURE RECOVER_ORPHAN_PREFLIGHT (
+        p_run_id     IN  NUMBER,
+        x_error_code OUT NUMBER
+    );
+
 END DMT_QUEUE_PKG;
 /
