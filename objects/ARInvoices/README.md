@@ -100,7 +100,8 @@ models both with one STG + one TFM table each.
   run-prefixed invoice key (INTERFACE_LINE_ATTRIBUTE1); a page is the next `BIP_CHUNK_SIZE` invoices
   plus every line and distribution of them. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers when a
   report returns `PAGE_KEY` (other reports unchanged); the former 5-report-rows-per-sent-row allowance
-  in `DMT_AR_RESULTS_PKG` is gone (page cap = invoices sent). A loaded line now also stores its own
+  in `DMT_AR_RESULTS_PKG` is gone, and a header-paged fetch has no page cap (it fails loudly if the
+  header cursor stops advancing). A loaded line now also stores its own
   `CUSTOMER_TRX_LINE_ID` in the new column `FUSION_CUSTOMER_TRX_LINE_ID` (report FUSION_ID =
   `trx_id~line_id`, backlog #85); the registry's row-grain id is that column, and the drill-down shows
   `trx~line`. A distribution's Verify-in-Fusion key is its invoice's CustomerTransactionId (#675).

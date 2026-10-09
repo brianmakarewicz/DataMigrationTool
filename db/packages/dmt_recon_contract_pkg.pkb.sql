@@ -20,6 +20,10 @@
 -- A report that does not emit PAGE_KEY (every report except ARInvoices V5
 -- today) yields NULL for it and keeps the original row keyset unchanged, so
 -- this is opt-in per report and needs no change in any other caller.
+-- A header-paged fetch applies no page-count cap (p_row_cap is ignored for it);
+-- instead it fails loudly (C_ERROR, empty x_rows) when a page's first header
+-- key is not greater than the cursor it was given (design section 5,
+-- "Reconciliation fetches page on header boundaries", decided 2026-10-09).
 -- Rows of a header-paged page are returned ordered by PAGE_KEY (BINARY), then
 -- RECORD_KEY, so the page's last row carries its greatest header key.
 --
@@ -59,6 +63,8 @@
         -- last one seen. Both stay 0 / NULL for a report without PAGE_KEY.
         l_page_headers  PLS_INTEGER;
         l_last_page_key VARCHAR2(1000);
+        l_first_page_key VARCHAR2(1000);  -- first header on this page (cursor-advance guard)
+        l_advanced      PLS_INTEGER;
         l_max_pages     PLS_INTEGER;
         l_n             PLS_INTEGER := 0;
         l_batch_param   VARCHAR2(100);
@@ -186,8 +192,9 @@
             -- Parse this page's seven contract columns into the collection.
             l_page_rows     := 0;
             l_last_key      := NULL;
-            l_page_headers  := 0;
-            l_last_page_key := NULL;
+            l_page_headers   := 0;
+            l_last_page_key  := NULL;
+            l_first_page_key := NULL;
             -- Backlog #65: also parse the report's DMT_REFERENCE (Slot C DFF, tier 2)
             -- and SOURCE_REF (business key, tier 3) columns. A DM that does not emit
             -- these nodes yields NULL for them (XMLTABLE PATH returns NULL for an
@@ -240,6 +247,7 @@
                    AND (l_last_page_key IS NULL OR r.page_key <> l_last_page_key) THEN
                     l_page_headers  := l_page_headers + 1;
                     l_last_page_key := r.page_key;
+                    l_first_page_key := NVL(l_first_page_key, r.page_key);
                 END IF;
             END LOOP;
 
@@ -253,6 +261,32 @@
                 p_package   => C_PKG,
                 p_procedure => C_PROC);
 
+            -- Header cursor guard (design section 5, decided 2026-10-09): a header
+            -- page must start after the cursor it was given (BINARY order, as the
+            -- report sorts). If it does not, the report is not advancing; fail
+            -- loudly with an empty result, never return a partial set as success.
+            IF l_page_headers > 0 AND l_after_key IS NOT NULL THEN
+                SELECT CASE WHEN NLSSORT(l_first_page_key, 'NLS_SORT=BINARY')
+                                 > NLSSORT(l_after_key, 'NLS_SORT=BINARY')
+                            THEN 1 ELSE 0 END
+                INTO   l_advanced
+                FROM   dual;
+                IF l_advanced = 0 THEN
+                    DMT_UTIL_PKG.LOG(
+                        p_run_id    => p_run_id,
+                        p_message   => C_PROC || ': header cursor did not advance for CEMLI '
+                                       || p_cemli_code || ' on page ' || l_page
+                                       || ' (after key ' || l_after_key || ', first header '
+                                       || l_first_page_key || '). Report is not paging; fetch failed.',
+                        p_log_type  => DMT_UTIL_PKG.C_LOG_ERROR,
+                        p_package   => C_PKG,
+                        p_procedure => C_PROC);
+                    x_rows.DELETE;
+                    x_error_code := DMT_UTIL_PKG.C_ERROR;
+                    RETURN;
+                END IF;
+            END IF;
+
             -- Short page => last page (keyset is exact, no overlap). A header-paged
             -- page is short when it holds fewer headers than the chunk size; the
             -- number of line and distribution rows under those headers never
@@ -263,9 +297,11 @@
                 EXIT WHEN l_page_rows < l_chunk_size;
             END IF;
 
-            -- Safety cap: a report that keeps returning full pages beyond the
-            -- expected row count is misbehaving; stop and surface it.
-            IF l_page >= l_max_pages THEN
+            -- Safety cap (row keyset only): a report that keeps returning full
+            -- pages beyond the expected row count is misbehaving; stop and surface
+            -- it. A header-paged report has no page cap (design section 5, decided
+            -- 2026-10-09): the cursor guard above stops a report that does not advance.
+            IF l_page_headers = 0 AND l_page >= l_max_pages THEN
                 DMT_UTIL_PKG.LOG(
                     p_run_id    => p_run_id,
                     p_message   => C_PROC || ': page cap (' || l_max_pages || ') reached for '

@@ -77,8 +77,8 @@ AS
 --                   skips the fetch when it has no load id (split parent row).
 --   2026-10-08  BM  Backlog #503: the Contract v1 apply UPDATEs are scoped to the
 --                   child work item (WORK_QUEUE_ID) when one is given.
---   2026-10-09  BM  Backlog #224: recon V5 pages by header (DMT invoice), page
---                   cap = invoices sent, no fixed rows-per-row allowance. Backlog
+--   2026-10-09  BM  Backlog #224: recon V5 pages by header (DMT invoice); no
+--                   page cap, no fixed rows-per-row allowance. Backlog
 --                   #85: a LOADED line also stores its own CUSTOMER_TRX_LINE_ID.
 -- ============================================================
 
@@ -94,9 +94,10 @@ AS
     -- HEADER boundaries: each page is the next BIP_CHUNK_SIZE DMT invoices (header
     -- key = INTERFACE_LINE_ATTRIBUTE1, the report's PAGE_KEY) plus EVERY line and
     -- distribution of those invoices, however many AutoAccounting created. The
-    -- former fixed allowance of 5 report rows per sent row is gone: the page-count
-    -- cap is now the number of DMT invoices this work item sent, and no count of
-    -- lines or distributions can cut a document short.
+    -- former fixed allowance of 5 report rows per sent row is gone, and so is any
+    -- page-count cap: the shared fetch ends on a short header page and fails loudly
+    -- if the header cursor stops advancing, so no count of lines or distributions
+    -- can cut a document short.
 
     -- Cross-grain propagation (PROPAGATE_DOCUMENT_ERRORS).
     -- Working set: "line TARGET_LINE_SEQ is on the same Fusion invoice as the
@@ -164,7 +165,6 @@ AS
         p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ARINVOICES';
-        l_header_count NUMBER := 0;
         l_trx_id    NUMBER;          -- backlog #85: header CUSTOMER_TRX_ID of a base line
         l_line_id   NUMBER;          -- backlog #85: the line's own CUSTOMER_TRX_LINE_ID
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
@@ -175,16 +175,6 @@ AS
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
-        -- Header count drives the shared fetch's page-count cap (backlog #224):
-        -- report V5 pages by DMT invoice (INTERFACE_LINE_ATTRIBUTE1), so the cap is
-        -- the number of invoices this work item sent, never a multiple of rows.
-        -- Done statically here (not in the shared pkg).
-        SELECT COUNT(DISTINCT INTERFACE_LINE_ATTRIBUTE1)
-        INTO   l_header_count
-        FROM   DMT_RA_LINES_TFM_TBL
-        WHERE  RUN_ID = p_run_id
-        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id);
-
         -- Report V4 (owner decision 2026-10-07) finds rows only by this load's
         -- Fusion job ids: base lines by the AutoInvoice import job's REQUEST_ID,
         -- interface rows and errors by the load request id. Both ids belong to
@@ -195,7 +185,8 @@ AS
             p_run_id        => p_run_id,
             p_load_ess_id   => TO_NUMBER(p_request_id),
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_header_count,
+            -- No p_row_cap (backlog #224): report V5 pages by header, which the
+            -- shared fetch runs without a page-count cap.
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 
