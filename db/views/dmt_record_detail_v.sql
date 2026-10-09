@@ -356,7 +356,15 @@ UNION ALL
 SELECT 'ARInvoices', 'AR Distributions',
        TFM_SEQUENCE_ID, STG_SEQUENCE_ID, RUN_ID,
        ACCOUNT_CLASS || ' ' || SEGMENT1 || '.' || SEGMENT2 || '.' || SEGMENT3,
-       ACCOUNT_CLASS,
+       -- Verify-in-Fusion key (backlog #675): the Fusion CustomerTransactionId of the
+       -- invoice this distribution belongs to, read from its own line in the same run
+       -- (same INTERFACE_LINE_ATTRIBUTE1/2). The receivablesInvoices resource is
+       -- header level; the account class alone ('REV') made the lookup fail (HTTP 500).
+       (SELECT TO_CHAR(MAX(l.FUSION_CUSTOMER_TRX_ID))
+        FROM   DMT_RA_LINES_TFM_TBL l
+        WHERE  l.RUN_ID = d.RUN_ID
+        AND    l.INTERFACE_LINE_ATTRIBUTE1 = d.INTERFACE_LINE_ATTRIBUTE1
+        AND    l.INTERFACE_LINE_ATTRIBUTE2 = d.INTERFACE_LINE_ATTRIBUTE2),
        TFM_STATUS, ERROR_TEXT,
        REGEXP_SUBSTR(ERROR_TEXT, '^\[([^]]+)\]', 1, 1, 'c', 1),
        RESULTS_UPDATED_DATE,
@@ -364,7 +372,7 @@ SELECT 'ARInvoices', 'AR Distributions',
        CAST(NULL AS VARCHAR2(400)),
        CAST(NULL AS VARCHAR2(400)),
        TO_CHAR(FUSION_CUST_TRX_LINE_GL_DIST_ID)
-FROM DMT_RA_DISTS_TFM_TBL
+FROM DMT_RA_DISTS_TFM_TBL d
 -- ---- GL ----
 UNION ALL
 SELECT 'GLBalances', 'GL Journals',
