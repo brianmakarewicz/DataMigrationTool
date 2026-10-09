@@ -1,5 +1,52 @@
 # DMT2 -- Session Status Log
 
+## Session -- 2026-10-09 -- After regression: main 3b536d6 promoted to ATP
+
+**Bottom line.** Main at commit 3b536d6 passed the full gate on local and on ATP and is now promoted to ATP.
+
+**Local.** Regression run 339 passed with no new failures. The 8 failures it reported are all known pre-existing issues. The local click-through passed 61 of 61 pages.
+
+**ATP.** The deploy was clean. The gate passed, there were 0 invalid objects, and the APEX app and runtime config checked out. The new combined baseline RegressionTest261008213401 (304 STG rows) was loaded onto ATP from the same committed seed. It had 0 duplicates and its row counts match local. ATP regression run 180 used prefix 93391, which is exactly the highest prefix used plus one. It passed with no new failures and the same 8 known issues. The ATP click-through passed 61 of 61 pages.
+
+**What this batch delivered (PRs #683 through #706).**
+- Cross-grain error propagation is finished for every ERP object. MiscReceipts, GLBudgets, Projects, ProjectBudgets, Assets and Grants were fixed in this batch. GL, PO, BPA and AR were confirmed as already covered.
+- Console page 58 now downloads ESS job output.
+- ERP reconcilers write the standard error wording.
+- The reconciliation query files now match the deployed reports.
+- The AP 1099 test row and the Items category test row were corrected.
+- AR work items were fixed. The import id is matched by business unit, the labels name the business unit, and a split parent now fails when some of its rows are unassigned.
+- Join keys use the TFM sequence id for Requisitions, the PO family, Contracts and MiscReceipts. AR is an approved exception.
+- The engine has CANCEL_RUN and recovers runs left behind by an orphaned preflight job.
+- BIP report parameters use a safe separator.
+- The scenario tool (deploy_scenario.py) was fixed.
+- The test harness was fixed. Its database connect is now bounded, and SQLcl output is read as UTF-8. 82 SQL files had a mis-encoded dash, which was corrected.
+
+**Owner decisions recorded 2026-10-08.**
+- Work order is ERP first, then config objects, then HCM. Config and HCM are deferred until ERP is done.
+- Deploy rule: no package deploys while a DMT_WQ_ or DMT_PF_ job is running.
+- Prefix rule: before any run, set the prefix to exactly the next unused value, and never waste prefixes.
+- TaxCards rule for when a row counts as LOADED.
+- AR line key exception (AR keeps its own line key instead of the TFM sequence id).
+- Split-parent wording and Assets wording for error messages.
+
+**Backlog.** The 33 items marked IN TEST for this batch are now RESOLVED, verified by local run 339 and ATP run 180. The backlog summary counts table was rebuilt so it matches the item list (404 items).
+
+**Next.** Finish the remaining ERP follow-ups first:
+- Assets: Fusion rejects the distributions file.
+- Assets: the wrong import id is picked up.
+- Grants: child rows do not show in the record view.
+- Projects: child-to-parent error linking.
+- ProjectBudgets: lines within one plan version.
+- Expenditures: a report call still uses the retired run id.
+- ItemCategories: a dead package still needs removing.
+- Requisitions: report paging needs a tiebreak column.
+- Harness: the per-object lock has a gap.
+- Error-text checker: it misses some cases.
+- Split parent: the FAILED path has never run live.
+- Known-issues unit test: it fails on main.
+
+After that come the config objects, then HCM.
+
 ## Session -- 2026-10-08 late -- Before regression: new combined baseline RegressionTest261008213401
 
 **Bottom line.** The next batch is merged on main and has a new combined regression baseline, RegressionTest261008213401 (local scenario id 622). Nothing has been run on it yet and nothing new is on ATP. The next step is a full local regression on this baseline, then promotion to ATP, which loads the same baseline there.
