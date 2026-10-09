@@ -12,7 +12,6 @@
     FUNCTION GET_PARTITION_KEYS (p_run_id IN NUMBER) RETURN DMT_PARTITION_KEY_TBL;
     PROCEDURE RECONCILE_BATCH (p_run_id IN NUMBER, p_load_ess_id IN NUMBER, p_import_ess_id IN NUMBER DEFAULT NULL,
         p_work_queue_id IN NUMBER DEFAULT NULL);
-    PROCEDURE PARSE_AND_UPDATE (p_run_id IN NUMBER, p_xml IN XMLTYPE, p_import_ess_id IN NUMBER DEFAULT NULL);
     -- RESET_UNACCOUNTED -- re-run-reconcile recovery (backlog #95). Static UPDATE
     -- over this object's OWN literally-named TFM table(s): flip this run's
     -- UNACCOUNTED rows back to GENERATED and strip the bare [UNACCOUNTED] tag so

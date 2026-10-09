@@ -14,6 +14,11 @@ AS
 --                   with its own load + import ids; rows found by job id
 --                   (base by the import REQUEST_ID, interface by the import
 --                   REQUEST_ID / the load LOAD_REQUEST_ID), never by prefix.
+--   2026-10-09  BM  Backlog #606: the second registry report call with the
+--                   retired P_BATCH_ID and the PARSE_AND_UPDATE that read its
+--                   pre-contract columns are removed. Report V2 is the only
+--                   report call; the import-report harvest it carried is now
+--                   HARVEST_IMPORT_REPORT (one download per work item).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_EXPENDITURE_RESULTS_PKG';
@@ -172,376 +177,169 @@ AS
     END harvest_processing_errors;
 
     -- --------------------------------------------------------
-    -- (bip_soap_post + FETCH_BIP_RESULTS removed — the BIP runReport transport
-    --  is now the shared DMT_UTIL_PKG.RUN_BIP_REPORT, called from RECONCILE_BATCH.
-    --  It builds the same v2 runReport envelope, posts it, checks the SOAP fault,
-    --  extracts <reportBytes> and decodes any size, returning the parsed XMLTYPE.
-    --  b64_to_clob was already centralised in DMT_UTIL_PKG.BASE64_DECODE_CLOB.)
-
+    -- HARVEST_IMPORT_REPORT (private) -- backlog #606.
+    -- The Projects-family import purges rejected rows from the interface table,
+    -- so the Contract v1 report (APPLY_CONTRACT_V1_EXPENDITURES) cannot return
+    -- them; their only per-row error source is the "Import and Process Cost
+    -- Transactions" ESS output (design section 5, [IMPORT_REPORT] fallback).
+    -- This downloads that output ONCE for the work item's own import job id and
+    -- marks each still-open TFM row FAILED with the real Fusion message, from
+    -- three places in the report:
+    --   1. the generic DMT_IMPORT_REPORT_PKG.PARSE_ERRORS list, matched on
+    --      ORIG_TRANSACTION_REFERENCE ([IMPORT_REPORT] text);
+    --   2. LIST_G_STAG_ERR/G_STAG_ERR staging rejections (TXN_INTERFACE_ID_10 =
+    --      the transaction reference, MESSAGE_NAME_10 = the Fusion message);
+    --   3. the cost-time rejections read by HARVEST_PROCESSING_ERRORS.
+    -- Only a real per-row message is a verdict; a row with none stays GENERATED
+    -- for the shared unaccounted sweep (no fabricated FAILED). Rows already
+    -- LOADED or FAILED are never touched.
+    -- Replaces PARSE_AND_UPDATE, which was fed by a second registry report call
+    -- with the retired P_BATCH_ID = load id and parsed a pre-contract column
+    -- shape (ORIG_TRANSACTION_REFERENCE / PROJECT_NUMBER ...) that the
+    -- registered V2 report no longer returns, so its report-row loop matched
+    -- nothing; only its import-report harvest produced outcomes, and that
+    -- harvest is kept here unchanged.
     -- --------------------------------------------------------
-    -- PARSE_AND_UPDATE — Two-tier reconciliation, no absence=LOADED
-    -- Receives the already-decoded BIP report XMLTYPE (NULL on zero rows) from
-    -- the shared transport DMT_UTIL_PKG.RUN_BIP_REPORT.
-    -- --------------------------------------------------------
-    PROCEDURE PARSE_AND_UPDATE (
-        p_run_id IN NUMBER,
-        p_xml            IN XMLTYPE,
-        p_import_ess_id  IN NUMBER DEFAULT NULL
+    PROCEDURE HARVEST_IMPORT_REPORT (
+        p_run_id        IN NUMBER,
+        p_import_ess_id IN NUMBER
     ) IS
-        C_PROC       CONSTANT VARCHAR2(30) := 'PARSE_AND_UPDATE';
-        l_xml        XMLTYPE := p_xml;
-        l_loaded     NUMBER := 0;
-        l_failed     NUMBER := 0;
-        l_not_recon  NUMBER := 0;
-        l_ir_matched NUMBER := 0;
+        C_PROC       CONSTANT VARCHAR2(30) := 'HARVEST_IMPORT_REPORT';
+        l_open       NUMBER := 0;
+        l_ir_xml     CLOB;
+        l_ir_errors  DMT_IMPORT_REPORT_PKG.t_error_list;
+        l_generic    NUMBER := 0;
+        l_staging    NUMBER := 0;
+        l_costing    NUMBER := 0;
     BEGIN
-        DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' start.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
-
-        -- l_xml is the decoded BIP report XMLTYPE from RUN_BIP_REPORT (NULL on
-        -- zero rows from both tiers).
-        IF l_xml IS NULL THEN
-            -- No reportBytes at all — BIP returned 0 rows from BOTH tiers.
+        IF p_import_ess_id IS NULL THEN
             DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': No <reportBytes> in BIP response. Attempting Import Report fallback.',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-
-            -- Try Import Report fallback before marking everything FAILED
-            IF p_import_ess_id IS NOT NULL THEN
-                DECLARE
-                    l_ir_errors DMT_IMPORT_REPORT_PKG.t_error_list;
-                    l_ir_xml    CLOB;
-                BEGIN
-                    BEGIN
-                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            DMT_UTIL_PKG.LOG(
-                                p_run_id => p_run_id,
-                                p_message        => C_PROC || ': Failed to download ESS output XML for request ' ||
-                                    p_import_ess_id || ': ' || SQLERRM,
-                                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                                p_package        => C_PKG,
-                                p_procedure      => C_PROC);
-                            l_ir_xml := NULL;
-                    END;
-
-                    IF l_ir_xml IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir_xml) > 0 THEN
-                        l_ir_errors := DMT_IMPORT_REPORT_PKG.PARSE_ERRORS(l_ir_xml);
-
-                        -- Static single-key match on ORIG_TRANSACTION_REFERENCE.
-                        -- The composed [IMPORT_REPORT] message is built by the
-                        -- shared DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR helper
-                        -- (backlog item 28); the UPDATE itself stays static.
-                        FOR i IN 1..l_ir_errors.COUNT LOOP
-                            -- Only a real per-row Fusion message is a verdict. An
-                            -- import-report error row with no message is NOT stamped
-                            -- FAILED; the TFM row is left GENERATED for the honest
-                            -- unaccounted sweep (no fabricated verdict).
-                            IF l_ir_errors(i).row_identifier IS NOT NULL
-                               AND l_ir_errors(i).error_message IS NOT NULL THEN
-                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                                SET    TFM_STATUS           = 'FAILED',
-                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
-                                       RESULTS_UPDATED_DATE = SYSDATE,
-                                       LAST_UPDATED_DATE    = SYSDATE
-                                WHERE  RUN_ID              = p_run_id
-                                AND    TFM_STATUS                   = 'GENERATED'
-                                AND    ORIG_TRANSACTION_REFERENCE   = l_ir_errors(i).row_identifier;
-                                l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
-                            END IF;
-                        END LOOP;
-
-                        -- Targeted parse: the Import and Process Cost Transactions
-                        -- report lists per-transaction validation rejections in
-                        -- LIST_G_STAG_ERR/G_STAG_ERR with fields suffixed _10
-                        -- (TXN_INTERFACE_ID_10 = the transaction reference,
-                        -- MESSAGE_NAME_10 = the real Fusion error code). The generic
-                        -- parser above does not recognise that layout, so match these
-                        -- directly to their TFM row with the real Fusion message.
-                        BEGIN
-                            -- Only rows with a REAL Fusion message (MESSAGE_NAME_10)
-                            -- are a verdict. A G_STAG_ERR row with no message is NOT
-                            -- stamped FAILED; its TFM row is left GENERATED for the
-                            -- honest unaccounted sweep (no fabricated verdict).
-                            FOR e IN (
-                                SELECT x.ref, x.msg
-                                FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir_xml)
-                                        COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
-                                                msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
-                                WHERE  x.ref IS NOT NULL
-                                AND    x.msg IS NOT NULL
-                            ) LOOP
-                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                                SET    TFM_STATUS           = 'FAILED',
-                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           '[FUSION_ERROR] ' || e.msg),
-                                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                                WHERE  RUN_ID = p_run_id
-                                AND    ORIG_TRANSACTION_REFERENCE = e.ref
-                                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
-                                l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
-                            END LOOP;
-                        EXCEPTION WHEN OTHERS THEN
-                            DMT_UTIL_PKG.LOG(p_run_id => p_run_id,
-                                p_message => C_PROC || ': G_STAG_ERR targeted parse failed: ' || SQLERRM,
-                                p_log_type => DMT_UTIL_PKG.C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
-                        END;
-
-                        -- Cost-time rejections live in OTHER report groups than
-                        -- G_STAG_ERR (see HARVEST_PROCESSING_ERRORS for the full
-                        -- layout + the "check XML vs harvester on new UNACCOUNTED"
-                        -- maintenance note). Without this they stay UNACCOUNTED.
-                        l_ir_matched := l_ir_matched + harvest_processing_errors(p_run_id, l_ir_xml);
-
-                        DMT_UTIL_PKG.LOG(
-                            p_run_id => p_run_id,
-                            p_message        => 'Import Report parsed (BIP 0-row fallback): ' || l_ir_errors.COUNT ||
-                                ' errors matched to ' || l_ir_matched || ' unreconciled rows.',
-                            p_package        => C_PKG,
-                            p_procedure      => C_PROC);
-
-                        IF l_ir_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
-                            DBMS_LOB.FREETEMPORARY(l_ir_xml);
-                        END IF;
-                    END IF;
-                END;
-            END IF;
-
-            -- Rows the Import Report fallback matched are now FAILED with a REAL
-            -- import error. The rows it did NOT match remain GENERATED: we could
-            -- determine neither a base-table LOADED nor a real Fusion per-record
-            -- error for them, so we do NOT fabricate a FAILED. They are left
-            -- unaccounted; the accounting gate reports the object not-DONE and
-            -- the funnel surfaces them as unreconciled.
-            DMT_UTIL_PKG.LOG(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ': After Import Report fallback, ' ||
-                                    l_ir_matched || ' rows matched a real import error; remaining ' ||
-                                    'GENERATED rows left unaccounted (not marked FAILED).',
-                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
-            GOTO parse_done;
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': no import ESS id; import report not read.',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
         END IF;
 
-        -- Process rows from BIP XML — two-tier reconciliation
-        FOR r IN (
-            SELECT x.orig_transaction_reference,
-                   x.project_number,
-                   x.task_number,
-                   x.expenditure_type,
-                   UPPER(x.source_type)   AS source_type,
-                   UPPER(x.fusion_status) AS fusion_status,
-                   x.fusion_id,
-                   x.error_msg
-            FROM   XMLTABLE('/DATA_DS/G_1' PASSING l_xml
-                COLUMNS
-                    orig_transaction_reference VARCHAR2(240)  PATH 'ORIG_TRANSACTION_REFERENCE',
-                    project_number             VARCHAR2(25)   PATH 'PROJECT_NUMBER',
-                    task_number                VARCHAR2(100)  PATH 'TASK_NUMBER',
-                    expenditure_type           VARCHAR2(240)  PATH 'EXPENDITURE_TYPE',
-                    source_type                VARCHAR2(20)   PATH 'SOURCE_TYPE',
-                    fusion_status              VARCHAR2(50)   PATH 'FUSION_STATUS',
-                    fusion_id                  NUMBER         PATH 'FUSION_ID',
-                    error_msg                  VARCHAR2(4000) PATH 'ERROR_MESSAGE'
-            ) x
-            -- Process BASE rows first so a genuinely-posted row is marked LOADED
-            -- before its (possibly still-present) INTERFACE row is seen.
-            ORDER BY CASE WHEN UPPER(x.source_type) = 'BASE' THEN 0 ELSE 1 END
-        ) LOOP
-            IF r.source_type = 'BASE' THEN
-                -- Tier 2: Found in base table = positively LOADED
-                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                SET    TFM_STATUS                       = 'LOADED',
-                       FUSION_EXPENDITURE_ITEM_ID   = r.fusion_id,
-                       RESULTS_UPDATED_DATE         = SYSDATE,
-                       LAST_UPDATED_DATE            = SYSDATE
-                WHERE  RUN_ID               = p_run_id
-                AND    ORIG_TRANSACTION_REFERENCE    = r.orig_transaction_reference
-                AND    TFM_STATUS                      NOT IN ('LOADED','FAILED');
-                l_loaded := l_loaded + SQL%ROWCOUNT;
+        SELECT COUNT(*) INTO l_open
+        FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+        WHERE  RUN_ID = p_run_id
+        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
 
-            ELSIF r.source_type = 'INTERFACE' THEN
-                -- Tier 1: interface row. The BASE tier is the ONLY source of LOADED.
-                -- A row reaching here is not in the base table. We may only mark it
-                -- FAILED when the interface carries a REAL Fusion rejection message:
-                -- a reject-class status AND a non-null error_msg. In that case we
-                -- write the actual returned error_msg. If the interface returned only
-                -- a status label and no message (including a "success" status like 'P'
-                -- with no base row), we have NO real Fusion error -- do NOT fabricate a
-                -- FAILED. Leave the row GENERATED so the Import Report fallback below
-                -- or the shared honest sweep accounts for it (sweep -> UNACCOUNTED).
-                IF r.fusion_status IN ('ERROR','REJECTED','FAILED','FAILURE','N','R')
-                   AND r.error_msg IS NOT NULL THEN
-                    UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                    SET    TFM_STATUS               = 'FAILED',
-                           ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                                     '[FUSION_ERROR] ' || r.error_msg),
-                           RESULTS_UPDATED_DATE = SYSDATE,
-                           LAST_UPDATED_DATE    = SYSDATE
-                    WHERE  RUN_ID            = p_run_id
-                    AND    ORIG_TRANSACTION_REFERENCE = r.orig_transaction_reference
-                    AND    TFM_STATUS                    NOT IN ('LOADED','FAILED');
-                    l_failed := l_failed + SQL%ROWCOUNT;
-                END IF;
+        IF l_open = 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': every row already LOADED or FAILED; import report not read.',
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        BEGIN
+            l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DMT_UTIL_PKG.LOG(
+                    p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': Failed to download ESS output XML for request ' ||
+                                   p_import_ess_id || ': ' || SQLERRM,
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+                l_ir_xml := NULL;
+        END;
+
+        IF l_ir_xml IS NULL OR DBMS_LOB.GETLENGTH(l_ir_xml) = 0 THEN
+            DMT_UTIL_PKG.LOG(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ': import report for request ' || p_import_ess_id ||
+                               ' is empty; ' || l_open || ' open row(s) left for the unaccounted sweep.',
+                p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+            RETURN;
+        END IF;
+
+        -- 1. Generic import-report errors. Static single-key match on
+        --    ORIG_TRANSACTION_REFERENCE; the message is built by the shared
+        --    DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR helper (backlog item 28).
+        l_ir_errors := DMT_IMPORT_REPORT_PKG.PARSE_ERRORS(l_ir_xml);
+        FOR i IN 1..l_ir_errors.COUNT LOOP
+            IF l_ir_errors(i).row_identifier IS NOT NULL
+               AND l_ir_errors(i).error_message IS NOT NULL THEN
+                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
+                       RESULTS_UPDATED_DATE = SYSDATE,
+                       LAST_UPDATED_DATE    = SYSDATE
+                WHERE  RUN_ID                     = p_run_id
+                AND    TFM_STATUS                 = 'GENERATED'
+                AND    ORIG_TRANSACTION_REFERENCE = l_ir_errors(i).row_identifier;
+                l_generic := l_generic + SQL%ROWCOUNT;
             END IF;
         END LOOP;
 
-        -- Import Report fallback: if we have an import ESS ID and there are
-        -- still GENERATED rows, try to match errors from the ESS Import Report XML.
-        IF p_import_ess_id IS NOT NULL THEN
-            DECLARE
-                l_still_gen  NUMBER := 0;
-                l_ir_errors  DMT_IMPORT_REPORT_PKG.t_error_list;
-                l_ir_xml     CLOB;
-            BEGIN
-                SELECT COUNT(*) INTO l_still_gen
-                FROM   DMT_PJC_EXPENDITURES_TFM_TBL
+        -- 2. Staging rejections (LIST_G_STAG_ERR/G_STAG_ERR, fields suffixed _10).
+        --    The generic parser does not recognise that layout. Only rows with a
+        --    real Fusion message (MESSAGE_NAME_10) are a verdict.
+        BEGIN
+            FOR e IN (
+                SELECT x.ref, x.msg
+                FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir_xml)
+                        COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
+                                msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
+                WHERE  x.ref IS NOT NULL
+                AND    x.msg IS NOT NULL
+            ) LOOP
+                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
+                SET    TFM_STATUS           = 'FAILED',
+                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
+                           '[FUSION_ERROR] ' || e.msg),
+                       RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
                 WHERE  RUN_ID = p_run_id
-                AND    TFM_STATUS         = 'GENERATED';
+                AND    ORIG_TRANSACTION_REFERENCE = e.ref
+                AND    TFM_STATUS NOT IN ('LOADED','FAILED');
+                l_staging := l_staging + SQL%ROWCOUNT;
+            END LOOP;
+        EXCEPTION WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG(p_run_id => p_run_id,
+                p_message => C_PROC || ': G_STAG_ERR targeted parse failed: ' || SQLERRM,
+                p_log_type => DMT_UTIL_PKG.C_LOG_WARN, p_package => C_PKG, p_procedure => C_PROC);
+        END;
 
-                IF l_still_gen > 0 THEN
-                    DMT_UTIL_PKG.LOG(
-                        p_run_id => p_run_id,
-                        p_message        => C_PROC || ': ' || l_still_gen ||
-                            ' rows still GENERATED after BIP. Attempting Import Report error matching (ESS ' ||
-                            p_import_ess_id || ').',
-                        p_package        => C_PKG,
-                        p_procedure      => C_PROC);
+        -- 3. Cost-time rejections (project dates, rates, ...) live in other report
+        --    groups than G_STAG_ERR; see HARVEST_PROCESSING_ERRORS and its
+        --    maintenance note. Without this they stay UNACCOUNTED.
+        l_costing := harvest_processing_errors(p_run_id, l_ir_xml);
 
-                    BEGIN
-                        l_ir_xml := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            DMT_UTIL_PKG.LOG(
-                                p_run_id => p_run_id,
-                                p_message        => C_PROC || ': Failed to download ESS output XML for request ' ||
-                                    p_import_ess_id || ': ' || SQLERRM,
-                                p_log_type       => DMT_UTIL_PKG.C_LOG_WARN,
-                                p_package        => C_PKG,
-                                p_procedure      => C_PROC);
-                            l_ir_xml := NULL;
-                    END;
-
-                    IF l_ir_xml IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir_xml) > 0 THEN
-                        l_ir_errors := DMT_IMPORT_REPORT_PKG.PARSE_ERRORS(l_ir_xml);
-
-                        -- Static single-key match on ORIG_TRANSACTION_REFERENCE.
-                        -- Message built by the shared ERROR_TEXT_FOR helper
-                        -- (backlog item 28); UPDATE stays static.
-                        FOR i IN 1..l_ir_errors.COUNT LOOP
-                            -- Only a real per-row Fusion message is a verdict. An
-                            -- import-report error row with no message is NOT stamped
-                            -- FAILED; the TFM row is left GENERATED for the honest
-                            -- unaccounted sweep (no fabricated verdict).
-                            IF l_ir_errors(i).row_identifier IS NOT NULL
-                               AND l_ir_errors(i).error_message IS NOT NULL THEN
-                                UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                                SET    TFM_STATUS           = 'FAILED',
-                                       ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                           DMT_IMPORT_REPORT_PKG.ERROR_TEXT_FOR(l_ir_errors(i).error_message)),
-                                       RESULTS_UPDATED_DATE = SYSDATE,
-                                       LAST_UPDATED_DATE    = SYSDATE
-                                WHERE  RUN_ID              = p_run_id
-                                AND    TFM_STATUS                   = 'GENERATED'
-                                AND    ORIG_TRANSACTION_REFERENCE   = l_ir_errors(i).row_identifier;
-                                l_ir_matched := l_ir_matched + SQL%ROWCOUNT;
-                            END IF;
-                        END LOOP;
-
-                        DMT_UTIL_PKG.LOG(
-                            p_run_id => p_run_id,
-                            p_message        => 'Import Report parsed: ' || l_ir_errors.COUNT ||
-                                ' errors matched to ' || l_ir_matched || ' unreconciled rows.',
-                            p_package        => C_PKG,
-                            p_procedure      => C_PROC);
-
-                        IF l_ir_xml IS NOT NULL AND DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
-                            DBMS_LOB.FREETEMPORARY(l_ir_xml);
-                        END IF;
-                    END IF;
-                END IF;
-            END;
+        IF DBMS_LOB.ISTEMPORARY(l_ir_xml) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(l_ir_xml);
         END IF;
 
-        -- (No absence-!=-LOADED sweep: a record neither confirmed LOADED nor
-        -- given a real Fusion error is left GENERATED (unaccounted). The
-        -- accounting gate then reports the object not-DONE and the funnel
-        -- surfaces it as UNRECONCILED — no fabricated FAILED.)
-        l_not_recon := 0;
-
-        -- Reached when the base BIP report was present but matched nothing (the
-        -- cost transactions did not post). Capture per-transaction rejections from
-        -- the Import and Process Cost Transactions report (LIST_G_STAG_ERR/G_STAG_ERR,
-        -- fields suffixed _10) so rejected rows get their real Fusion error instead
-        -- of being left UNACCOUNTED. Only touches rows not already resolved.
-        IF p_import_ess_id IS NOT NULL THEN
-            DECLARE l_ir2 CLOB; l_h NUMBER;
-            BEGIN
-                l_ir2 := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_XML(p_request_id => p_import_ess_id, p_cemli_code => C_CEMLI);
-                IF l_ir2 IS NOT NULL AND DBMS_LOB.GETLENGTH(l_ir2) > 0 THEN
-                    -- Only rows with a REAL Fusion message (MESSAGE_NAME_10) are a
-                    -- verdict. A G_STAG_ERR row with no message is NOT stamped FAILED;
-                    -- its TFM row is left GENERATED for the honest unaccounted sweep.
-                    FOR e IN (
-                        SELECT x.ref, x.msg
-                        FROM   XMLTABLE('//G_STAG_ERR' PASSING XMLTYPE(l_ir2)
-                                COLUMNS ref VARCHAR2(240) PATH 'TXN_INTERFACE_ID_10',
-                                        msg VARCHAR2(400)  PATH 'MESSAGE_NAME_10') x
-                        WHERE  x.ref IS NOT NULL
-                        AND    x.msg IS NOT NULL
-                    ) LOOP
-                        UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
-                        SET    TFM_STATUS           = 'FAILED',
-                               ERROR_TEXT           = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,
-                                   '[FUSION_ERROR] ' || e.msg),
-                               RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
-                        WHERE  RUN_ID = p_run_id
-                        AND    ORIG_TRANSACTION_REFERENCE = e.ref
-                        AND    TFM_STATUS NOT IN ('LOADED','FAILED');
-                    END LOOP;
-                    -- Cost-time rejections (project-date, project-status, etc.) are in
-                    -- other report groups than G_STAG_ERR — harvest them too, else they
-                    -- stay UNACCOUNTED (see HARVEST_PROCESSING_ERRORS + maintenance note).
-                    l_h := harvest_processing_errors(p_run_id, l_ir2);
-                END IF;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
-        END IF;
-
-        <<parse_done>>
-        -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
-        -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
-
-        -- NO COMMIT — orchestrator controls transaction boundaries
-
+        -- Outcomes stay on the TFM rows only (backlog #310). NO COMMIT: the
+        -- orchestrator controls transaction boundaries.
         DMT_UTIL_PKG.LOG(
-            p_run_id => p_run_id,
-            p_message        => C_PROC || ' complete. Expenditures LOADED: ' || l_loaded ||
-                                ', FAILED: ' || l_failed ||
-                                ', IMPORT_REPORT_MATCHED: ' || l_ir_matched ||
-                                ', NOT_RECONCILED: ' || l_not_recon || '.',
-            p_package        => C_PKG,
-            p_procedure      => C_PROC);
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ' complete. Import request ' || p_import_ess_id ||
+                           ' | open rows before: ' || l_open ||
+                           ' | FAILED from generic errors: ' || l_generic ||
+                           ' | from staging errors: ' || l_staging ||
+                           ' | from costing errors: ' || l_costing || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
 
     EXCEPTION
         WHEN OTHERS THEN
             DMT_UTIL_PKG.LOG_ERROR(
-                p_run_id => p_run_id,
-                p_message        => C_PROC || ' failed.',
-                p_sqlerrm        => SQLERRM,
-                p_package        => C_PKG,
-                p_procedure      => C_PROC);
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
             RAISE;
-    END PARSE_AND_UPDATE;
+    END HARVEST_IMPORT_REPORT;
 
     -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_EXPENDITURES (private)
@@ -559,12 +357,12 @@ AS
     --       FUSION_EXPENDITURE_ITEM_ID. The ONLY path to LOADED.
     --   * FUSION_STATUS = ERROR with a real message -> FAILED, message appended as
     --       '[FUSION_ERROR] ' || message (never composed).
-    --   * everything else left for the existing two-tier / import-report harvest
-    --       and the shared unaccounted sweep.
+    --   * everything else left for the import-report harvest
+    --       (HARVEST_IMPORT_REPORT) and the shared unaccounted sweep.
     -- Match is on RECON_KEY = the report's RECORD_KEY (both are the run-prefixed
     -- ORIG_TRANSACTION_REFERENCE — see the transform's RECON_KEY stamp). Rows
-    -- already terminal (LOADED/FAILED) are never touched, so this runs safely
-    -- alongside the existing PARSE_AND_UPDATE path without double-counting.
+    -- already terminal (LOADED/FAILED) are never touched, so the harvest that
+    -- follows never double-counts.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CONTRACT_V1_EXPENDITURES (
         p_run_id        IN NUMBER,
@@ -745,8 +543,6 @@ AS
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC CONSTANT VARCHAR2(30) := 'RECONCILE_BATCH';
-        l_xml      XMLTYPE;
-        l_err_code NUMBER;
     BEGIN
         DMT_UTIL_PKG.LOG(
             p_run_id => p_run_id,
@@ -768,23 +564,11 @@ AS
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id);
 
-        -- Shared transport: parsed XMLTYPE (NULL on zero rows). On transport/SOAP
-        -- failure it returns NULL with C_ERROR — raise so the failure is loud (as
-        -- the old FETCH_BIP_RESULTS raised).
-        DMT_UTIL_PKG.RUN_BIP_REPORT(
-            p_run_id     => p_run_id,
-            p_cemli_code => C_CEMLI,
-            p_params     => 'P_BATCH_ID|' || TO_CHAR(p_load_ess_id) ||
-                            DMT_UTIL_PKG.C_BIP_PARAM_SEP || 'P_IMPORT_ESS_ID|' || NVL(TO_CHAR(p_import_ess_id), ''),
-            x_report_xml => l_xml,
-            x_error_code => l_err_code);
-        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
-            RAISE_APPLICATION_ERROR(-20034,
-                C_PROC || ': BIP runReport fetch failed for ' || C_CEMLI ||
-                ' (detail in DMT_LOG_TBL).');
-        END IF;
-
-        PARSE_AND_UPDATE(p_run_id, l_xml, p_import_ess_id);
+        -- Rejected expenditures are purged from the interface, so the report
+        -- above cannot return them: read their real errors from this work
+        -- item's own import job output (backlog #606: no second report call,
+        -- no retired P_BATCH_ID).
+        HARVEST_IMPORT_REPORT(p_run_id, p_import_ess_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object

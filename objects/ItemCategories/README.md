@@ -29,7 +29,7 @@ FBDI — **bundled with Items** (not a standalone ESS job)
 - Transformer: `packages/transformers/dmt_egp_item_cat_transform_pkg`
 - FBDI Generator: `packages/generators/fbdi/inventory/dmt_egp_item_cat_fbdi_gen_pkg`
   - Called by the Items FBDI generator to produce the categories CSV for the combined ZIP
-- Results/Reconciliation: `packages/reconciliation/dmt_egp_item_cat_results_pkg`
+- Results/Reconciliation: `DMT_EGP_ITEM_RESULTS_PKG.APPLY_CONTRACT_V1_ITEMS` (record type ItemCategory). The separate `DMT_EGP_ITEM_CAT_RESULTS_PKG` was dropped (backlog #607).
 - Runner (standalone dev/test): `packages/runners/dmt_egp_item_cat_runner_pkg`
 - Loader wiring: Categories validation/transform runs as part of `RUN_ITEMS` — no separate `RUN_ITEM_CATEGORIES` ESS submission
 
@@ -41,10 +41,7 @@ FBDI — **bundled with Items** (not a standalone ESS job)
 - ParameterList: N/A — uses Items ParameterList
 
 ## Reconciliation
-BIP report at `/Custom/DMT/ItemCategories/ITEM_CAT_DM.xdm`.
-Queries `EGP_ITEM_CATEGORIES_INTERFACE` by BATCH_ID.
-Match key: ITEM_NUMBER + ORGANIZATION_CODE + CATEGORY_SET_NAME.
-PROCESS_FLAG null/0 = success, 7 = error.
+Item categories reconcile through the Items report V3 (`/Custom/DMT2/Items/DMT_ITEM_RECON_V3_DM.xdm`, record type ItemCategory), which finds rows by the work item's Fusion job ids. Registry row 100000026 names that report. The old `ITEM_CAT_DM` / `ITEM_CAT_RPT` pair is retired (backlog #480) and its repo copies were removed (backlog #607); the Fusion catalog copies are left in place.
 
 Reconciliation runs after the combined Items ESS job completes — Items reconciled first, then Categories.
 
