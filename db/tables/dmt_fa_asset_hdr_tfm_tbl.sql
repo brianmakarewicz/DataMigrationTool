@@ -6,7 +6,7 @@ begin
 	"STG_SEQUENCE_ID" NUMBER NOT NULL ENABLE, 
 	"FBDI_CSV_ID" NUMBER, 
 	"ASSET_NUMBER" VARCHAR2(30), 
-	"DESCRIPTION" VARCHAR2(240), 
+	"DESCRIPTION" VARCHAR2(80), 
 	"ASSET_CATEGORY_SEGMENT1" VARCHAR2(30), 
 	"ASSET_CATEGORY_SEGMENT2" VARCHAR2(30), 
 	"ASSET_CATEGORY_SEGMENT3" VARCHAR2(30), 
@@ -15,7 +15,7 @@ begin
 	"ASSET_CATEGORY_SEGMENT6" VARCHAR2(30), 
 	"ASSET_CATEGORY_SEGMENT7" VARCHAR2(30), 
 	"ASSET_TYPE" VARCHAR2(11), 
-	"MANUFACTURER_NAME" VARCHAR2(30), 
+	"MANUFACTURER_NAME" VARCHAR2(360), 
 	"SERIAL_NUMBER" VARCHAR2(35), 
 	"TAG_NUMBER" VARCHAR2(15), 
 	"MODEL_NUMBER" VARCHAR2(40), 
@@ -25,7 +25,7 @@ begin
 	"OWNED_LEASED" VARCHAR2(15), 
 	"NEW_USED" VARCHAR2(4), 
 	"DATE_PLACED_IN_SERVICE" DATE, 
-	"ATTRIBUTE_CATEGORY" VARCHAR2(210), 
+	"ATTRIBUTE_CATEGORY" VARCHAR2(30), 
 	"ATTRIBUTE1" VARCHAR2(150), 
 	"ATTRIBUTE2" VARCHAR2(150), 
 	"ATTRIBUTE3" VARCHAR2(150), 
@@ -164,3 +164,40 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_FA_ASSET_HDR_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- ---------------------------------------------------------------------------
+-- 2026-10-09 backlog #574 (owner rule: field width is constrained by the STG
+-- and TFM tables). These columns now match the Fusion FBDI interface column
+-- FA_MASS_ADDITIONS.DESCRIPTION (80) / MANUFACTURER_NAME (360) / ATTRIBUTE_CATEGORY_CODE (30), so a value too long for Fusion is
+-- rejected here, when it is staged, with a clear error naming the column,
+-- instead of by SQL*Loader (which rolls back the whole book). Re-runnable and
+-- non-destructive: widening is always applied; narrowing is applied only when
+-- no existing row is longer than the new width, otherwise the column is left as
+-- it is and a line says so. Data is never truncated. Fresh installs get these
+-- widths from the CREATE above.
+-- ---------------------------------------------------------------------------
+declare
+  procedure fit_width (p_col in varchar2, p_len in pls_integer) is
+    l_cur pls_integer;
+    l_max pls_integer;
+  begin
+    select char_length into l_cur from user_tab_columns
+     where table_name = 'DMT_FA_ASSET_HDR_TFM_TBL' and column_name = p_col;
+    if l_cur < p_len then
+      execute immediate 'ALTER TABLE "DMT_FA_ASSET_HDR_TFM_TBL" MODIFY ("' || p_col || '" VARCHAR2(' || p_len || '))';
+    elsif l_cur > p_len then
+      execute immediate 'SELECT NVL(MAX(LENGTH("' || p_col || '")), 0) FROM "DMT_FA_ASSET_HDR_TFM_TBL"' into l_max;
+      if l_max <= p_len then
+        execute immediate 'ALTER TABLE "DMT_FA_ASSET_HDR_TFM_TBL" MODIFY ("' || p_col || '" VARCHAR2(' || p_len || '))';
+      else
+        dbms_output.put_line('DMT_FA_ASSET_HDR_TFM_TBL.' || p_col || ' left at ' || l_cur
+          || ': existing rows hold values up to ' || l_max || ' characters (target ' || p_len || ').');
+      end if;
+    end if;
+  end fit_width;
+begin
+  fit_width('DESCRIPTION', 80);
+  fit_width('MANUFACTURER_NAME', 360);
+  fit_width('ATTRIBUTE_CATEGORY', 30);
+end;
+/

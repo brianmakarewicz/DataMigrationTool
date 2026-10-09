@@ -2601,14 +2601,17 @@ def main():
         ("RT-ASSET-BAD1", "BAD: invalid expense account"),
         # Cross-grain book batch (backlog #175 / #200), book SUPREMO US CORP
         # (same chart of accounts as US CORP; category EQUIPMENT/MANUFACTURING is
-        # set up for it). XG-BAD's prorate convention is 14 characters, longer
-        # than FA_MASS_ADDITIONS.PRORATE_CONVENTION_CODE (10), which the
-        # validator does not check: SQL*Loader rejects that row (ORA-12899) and
-        # commits nothing for the book, so XG-G1 and XG-G2 (valid data) are
-        # rolled back with it and must quote XG-BAD's real error. US CORP above
-        # is the separate good batch.
+        # set up for it). XG-BAD's description carries a line break (a pasted
+        # legacy value), so its FaMassAdditions record splits in two and
+        # SQL*Loader rejects it, committing nothing for the book: XG-G1 and XG-G2
+        # (valid data) are rolled back with it and must quote XG-BAD's real
+        # error. Backlog #650: the split shifts SQL*Loader's record numbers, so
+        # XG-G2 (after the break) proves the header mapping counts line breaks.
+        # Until 2026-10-09 XG-BAD carried a 14-character prorate convention; the
+        # STG/TFM columns now match the interface width (backlog #574), so such a
+        # value can no longer be staged. US CORP above is the separate good batch.
         ("RT-ASSET-XG-G1", "RT XG Equipment 1"),
-        ("RT-ASSET-XG-BAD", "BAD: prorate code too long for interface"),
+        ("RT-ASSET-XG-BAD", "BAD: line break\nin description"),
         ("RT-ASSET-XG-G2", "RT XG Equipment 2"),
         # Distribution-level cross-grain book batch (backlog #571), book
         # US FIN SVCS CORP. XD-BAD's assignment carries a line break inside
@@ -2674,8 +2677,7 @@ def main():
             )
         """, {"anum": asset_num, "book": book, "cost": cost,
               "life": life, "src": f"RT-FABK-{asset_num}",
-              # 14 characters: SQL*Loader rejects it (interface column is 10).
-              "prorate": "CAL MONTH LONG" if asset_num == "RT-ASSET-XG-BAD" else "CAL MONTH"},
+              "prorate": "CAL MONTH"},
         label=f"Asset Book: {asset_num}/{book}")
     tag_scenario(cur, "DMT_FA_ASSET_BOOK_STG_TBL", scenario_id)
 
@@ -2808,15 +2810,25 @@ def main():
     print("\n=== 32b. Item Categories ===")
     # Category BATCH_ID matches its item's batch so an item and its category land
     # in the same batch group (both transforms use NVL(s.BATCH_ID, run_id)).
-    for item_num, org, cat_set, cat_code, cat_name, batch, label in [
+    # BAD (backlog #154): a second Purchasing assignment for the GOOD plain item.
+    # Purchasing is single-assignment and Fusion gives every new item its default
+    # Purchasing category, so Fusion rejects this row with EGP-2775085
+    # (EGP_MULTIASSIGN_NOT_ALLOWED). It proves that real rejection text reaches
+    # the row ([FUSION_ERROR], from EGP_IMPORT_ERRORS via the Items report).
+    # 999.99 is the Purchasing code run 229 used. Its SOURCE_ID is set
+    # explicitly so it does not collide with the plain item's GOOD row.
+    for item_num, org, cat_set, cat_code, cat_name, batch, label, src in [
         ("DMT-RT-PLAIN-001",  MASTER_ORG, "eCommerce Catalog", "Canned_Fruit",  "Canned Fruit", 8101,
-         "GOOD: eCommerce Catalog (multi-assign) category for plain item"),
+         "GOOD: eCommerce Catalog (multi-assign) category for plain item", None),
         ("DMT-RT-SERIAL-001", MASTER_ORG, "eCommerce Catalog", "Industrial",    "Industrial", 8102,
-         "GOOD: eCommerce Catalog (multi-assign) category for serial item"),
+         "GOOD: eCommerce Catalog (multi-assign) category for serial item", None),
         ("DMT-RT-LOT-001",    MASTER_ORG, "eCommerce Catalog", "eCom_Gloves",   "Medical Gloves", 8102,
-         "GOOD: eCommerce Catalog (multi-assign) category for lot item"),
+         "GOOD: eCommerce Catalog (multi-assign) category for lot item", None),
         ("NONEXISTENT-DMT-ITEM", MASTER_ORG, "FAKE_SET", "ZZZ", "BAD Category", 8101,
-         "BAD: nonexistent item + fake category set [BAD-UPS]"),
+         "BAD: nonexistent item + fake category set [BAD-UPS]", None),
+        ("DMT-RT-PLAIN-001",  MASTER_ORG, "Purchasing", "999.99", "999.99", 8101,
+         "BAD: second Purchasing (single-assignment) category for plain item [EGP-2775085]",
+         "RT-ITEMCAT-PURCH-BAD-DMT-RT-PLAIN-001"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_EGP_ITEM_CAT_STG_TBL (
@@ -2832,7 +2844,7 @@ def main():
             )
         """, {"org": org, "item": item_num, "batch": batch, "cat_set": cat_set,
               "cat_code": cat_code, "cat_name": cat_name,
-              "src": f"RT-ITEMCAT-{item_num}"},
+              "src": src or f"RT-ITEMCAT-{item_num}"},
         label=f"{label}")
     tag_scenario(cur, "DMT_EGP_ITEM_CAT_STG_TBL", scenario_id)
 
@@ -3021,6 +3033,67 @@ def main():
                 )
             """, {"pseq": xg_seq},
             label="  -> Lot child: DMT-REG-LOT-XG, qty 3 (rejected with its transaction)")
+
+    # Child-grain-only cross-grain failures (backlog #551). The transaction is
+    # valid (real item, real subinventory 'Stores'); only its lot or serial
+    # detail is wrong:
+    #   * XL: a qty-3 receipt of the lot item whose one lot carries quantity 5;
+    #   * XS: a qty-2 receipt of the serial item whose serial range covers 3
+    #     serials (XS-001 to XS-003; the transform prefixes them per run).
+    # Expected: Fusion rejects the transaction; the transaction is FAILED with
+    # Fusion's real error and the lot / serial FAILED quoting it ("Rejected with
+    # document: transaction <SOURCE_LINE_ID>: ..."), never UNACCOUNTED.
+    for xc_item, xc_qty, xc_src, xc_label in [
+        ("RA-100-4935-LOT", 3, "RT-MR-XL-LOT-BAD",
+         "BAD XL: 3 Each of RA-100-4935-LOT whose only lot carries quantity 5"),
+        ("AS88000", 2, "RT-MR-XS-SER-BAD",
+         "BAD XS: 2 Each of AS88000 whose serial range covers 3 serials"),
+    ]:
+        xc_var = cur.var(oracledb.NUMBER)
+        cur.execute("""
+            INSERT INTO DMT_INV_TRX_STG_TBL (
+                ORGANIZATION_NAME, ITEM_NUMBER, SUBINVENTORY_CODE,
+                TRANSACTION_QUANTITY, TRANSACTION_UNIT_OF_MEASURE,
+                TRANSACTION_DATE, SOURCE_ID,
+                STAGE_DATE, STG_STATUS
+            ) VALUES (
+                'Seattle', :item, 'Stores',
+                :qty, 'Each',
+                SYSDATE, :src,
+                SYSDATE, 'NEW'
+            )
+            RETURNING STG_SEQUENCE_ID INTO :seq
+        """, {"item": xc_item, "qty": xc_qty, "src": xc_src, "seq": xc_var})
+        xc_seq = xc_var.getvalue()[0]
+        run_sql(cur, """
+            UPDATE DMT_INV_TRX_STG_TBL
+               SET INV_LOTSERIAL_INTERFACE_NUM = TO_CHAR(:seq)
+             WHERE STG_SEQUENCE_ID = :seq
+        """, {"seq": xc_seq}, label=xc_label)
+        if xc_item == "AS88000":
+            run_sql(cur, """
+                INSERT INTO DMT_INV_TRX_SERIALS_STG_TBL (
+                    FM_SERIAL_NUMBER, TO_SERIAL_NUMBER,
+                    SOURCE_ID, STAGE_DATE, STG_STATUS
+                ) VALUES (
+                    'DMT-SER-XS-001', 'DMT-SER-XS-003',
+                    TO_CHAR(:pseq), SYSDATE, 'NEW'
+                )
+            """, {"pseq": xc_seq},
+            label="  -> Serial child: DMT-SER-XS-001 to DMT-SER-XS-003 (3 serials for qty 2)")
+        else:
+            run_sql(cur, """
+                INSERT INTO DMT_INV_TRX_LOTS_STG_TBL (
+                    INVENTORY_LOT_INTERFACE_NUMBER, SOURCE_CODE, SOURCE_LINE_ID,
+                    LOT_NUMBER, TRANSACTION_QUANTITY,
+                    SOURCE_ID, STAGE_DATE, STG_STATUS
+                ) VALUES (
+                    TO_CHAR(:pseq), 'DMT', :pseq,
+                    'DMT-REG-LOT-XL', 5,
+                    TO_CHAR(:pseq), SYSDATE, 'NEW'
+                )
+            """, {"pseq": xc_seq},
+            label="  -> Lot child: DMT-REG-LOT-XL, qty 5 under a qty-3 receipt")
 
     tag_scenario(cur, "DMT_INV_TRX_STG_TBL", scenario_id)
     tag_scenario(cur, "DMT_INV_TRX_LOTS_STG_TBL", scenario_id)

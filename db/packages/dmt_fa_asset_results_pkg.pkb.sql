@@ -44,6 +44,10 @@
 --                   file now fails that distribution row with its real error
 --                   (record mapped to the row, line breaks counted) and is
 --                   quoted onto its own header and the rest of the book batch.
+--   2026-10-09  BM  Backlog #572: book and assignment rows of a failed asset
+--                   quote its error naming the asset ('Rejected with document:
+--                   asset <num>: ...'). Backlog #650: a header/book-file
+--                   rejection is mapped to its row counting line breaks.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
@@ -307,12 +311,16 @@
             AND    hdr.TFM_STATUS   = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
-        -- book row carries that same real parent error in the linked-record form.
+        -- book row quotes that same real error, naming the asset it came from
+        -- (backlog #572; design section 5, a header error is added to every
+        -- grain of its document): 'Rejected with document: asset <num>: <error>'.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
                bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
+                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
+                               DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
+                                   DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = bk.RUN_ID
                     AND    hdr.ASSET_NUMBER = bk.ASSET_NUMBER
                     AND    hdr.TFM_STATUS = 'FAILED'
@@ -347,12 +355,14 @@
             AND    hdr.TFM_STATUS   = 'LOADED');
 
         -- The parent header only reaches FAILED with a real Fusion error, so the
-        -- assignment row carries that same real parent error in the linked-record form.
+        -- assignment row quotes that same real error, naming the asset (backlog #572).
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS = 'FAILED',
                asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT hdr.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
+                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', hdr.ASSET_NUMBER,
+                               DBMS_LOB.SUBSTR(hdr.ERROR_TEXT, 3800,
+                                   DBMS_LOB.INSTR(hdr.ERROR_TEXT, '[FUSION_ERROR]')))
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL hdr
                     WHERE  hdr.RUN_ID = asn.RUN_ID
                     AND    hdr.ASSET_NUMBER = asn.ASSET_NUMBER
                     AND    hdr.TFM_STATUS = 'FAILED'
@@ -415,7 +425,9 @@
     -- included (design section 5: "When a distribution errors, its real Fusion
     -- error is added to its line and to the header"), named
     -- 'book batch <book> asset <num> distribution: <msg>'. An assignment row
-    -- that only carries its parent header's error is not a source. Static SQL;
+    -- that only carries its parent header's error is not a source: since backlog
+    -- #572 that error is a quote (it carries the marker); rows written before
+    -- then carry the older linked-record prefix C_PARENT_ERR. Static SQL;
     -- NO COMMIT.
     -- --------------------------------------------------------
     PROCEDURE PROPAGATE_DOCUMENT_ERRORS (
@@ -768,17 +780,53 @@
                         CONTINUE;
                     END IF;
 
-                    -- the asset at CSV position l_recno for this book
+                    -- The asset whose header/book CSV row holds record l_recno for
+                    -- this book (generator order: b.TFM_SEQUENCE_ID). Backlog #650,
+                    -- same approach as the distributions mapping above: SQL*Loader
+                    -- numbers PHYSICAL lines, so a value carrying a line break spans
+                    -- several records. Each row's first record is 1 + the records of
+                    -- the rows before it, and a record inside that span still belongs
+                    -- to the same row. NL counts the line breaks in every text value
+                    -- the generator writes to the row (DMT_FA_ASSET_FBDI_GEN_PKG
+                    -- .gen_mass_additions_csv), counted per column so no
+                    -- concatenation can overflow.
                     BEGIN
                         SELECT ASSET_NUMBER INTO l_asset FROM (
-                            SELECT h.ASSET_NUMBER,
-                                   ROW_NUMBER() OVER (ORDER BY b.TFM_SEQUENCE_ID) rn
-                            FROM   DMT_FA_ASSET_HDR_TFM_TBL h
-                            JOIN   DMT_FA_ASSET_BOOK_TFM_TBL b
-                              ON   b.ASSET_NUMBER = h.ASSET_NUMBER AND b.RUN_ID = h.RUN_ID
-                            WHERE  h.RUN_ID = p_run_id
-                            AND    (l_book IS NULL OR b.BOOK_TYPE_CODE = l_book))
-                        WHERE rn = l_recno;
+                            SELECT x.ASSET_NUMBER, x.NL,
+                                   1 + NVL(SUM(x.NL + 1) OVER (
+                                           ORDER BY x.BOOK_SEQ
+                                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) FIRST_REC
+                            FROM (
+                                SELECT h.ASSET_NUMBER, b.TFM_SEQUENCE_ID BOOK_SEQ,
+                                       NVL(REGEXP_COUNT(b.BOOK_TYPE_CODE, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ASSET_NUMBER, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.DESCRIPTION, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.TAG_NUMBER, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.MANUFACTURER_NAME, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.SERIAL_NUMBER, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.MODEL_NUMBER, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ASSET_TYPE, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(b.PRORATE_CONVENTION_CODE, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ASSET_CATEGORY_SEGMENT1 || h.ASSET_CATEGORY_SEGMENT2
+                                           || h.ASSET_CATEGORY_SEGMENT3 || h.ASSET_CATEGORY_SEGMENT4
+                                           || h.ASSET_CATEGORY_SEGMENT5 || h.ASSET_CATEGORY_SEGMENT6
+                                           || h.ASSET_CATEGORY_SEGMENT7, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.PARENT_ASSET_NUMBER || h.PROPERTY_TYPE_CODE
+                                           || h.PROPERTY_1245_1250_CODE || h.IN_USE_FLAG
+                                           || h.OWNED_LEASED || h.NEW_USED
+                                           || b.DEPRECIATION_METHOD || h.ATTRIBUTE_CATEGORY, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ATTRIBUTE1 || h.ATTRIBUTE2 || h.ATTRIBUTE3
+                                           || h.ATTRIBUTE4 || h.ATTRIBUTE5, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ATTRIBUTE6 || h.ATTRIBUTE7 || h.ATTRIBUTE8
+                                           || h.ATTRIBUTE9 || h.ATTRIBUTE10, CHR(10)), 0)
+                                     + NVL(REGEXP_COUNT(h.ATTRIBUTE11 || h.ATTRIBUTE12 || h.ATTRIBUTE13
+                                           || h.ATTRIBUTE14 || h.ATTRIBUTE15, CHR(10)), 0) NL
+                                FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+                                JOIN   DMT_FA_ASSET_BOOK_TFM_TBL b
+                                  ON   b.ASSET_NUMBER = h.ASSET_NUMBER AND b.RUN_ID = h.RUN_ID
+                                WHERE  h.RUN_ID = p_run_id
+                                AND    (l_book IS NULL OR b.BOOK_TYPE_CODE = l_book)) x)
+                        WHERE l_recno BETWEEN FIRST_REC AND FIRST_REC + NL;
                     EXCEPTION WHEN NO_DATA_FOUND THEN l_asset := NULL;
                     END;
 
@@ -812,13 +860,15 @@
                    WHERE b.RUN_ID = h.RUN_ID AND b.ASSET_NUMBER = h.ASSET_NUMBER
                    AND   b.BOOK_TYPE_CODE = l_book));
 
-        -- Cascade the new header FAILEDs to book + assignment, using
-        -- the same linked-record wording as APPLY_CONTRACT_V1_ASSETS.
+        -- Cascade the new header FAILEDs to book + assignment, quoting the
+        -- header's real error and naming its asset, as APPLY_CONTRACT_V1_ASSETS does.
         UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
         SET    bk.TFM_STATUS = 'FAILED',
                bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
+                               DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                   DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL h
                     WHERE h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
                bk.LAST_UPDATED_DATE = SYSDATE
@@ -830,8 +880,10 @@
         UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
         SET    asn.TFM_STATUS = 'FAILED',
                asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
-                   '[FUSION_ERROR]The parent record has the following Fusion error: ' ||
-                   (SELECT h.ERROR_TEXT FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                   (SELECT DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR('asset', h.ASSET_NUMBER,
+                               DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                   DBMS_LOB.INSTR(h.ERROR_TEXT, '[FUSION_ERROR]')))
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL h
                     WHERE h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
                     AND h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
                asn.LAST_UPDATED_DATE = SYSDATE
