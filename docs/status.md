@@ -1,5 +1,53 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-10 — after ATP regression: batch promoted
+
+**Bottom line.** Main at commit 78560c0, which carries the code from PRs #714 through #740, is now on ATP and has passed every gate on both instances. On local, regression run 402 passed with no new failures (only the 7 known HCM entries in `scripts/regression_known_issues.json`) and the click-through passed 63 of 63 pages. The ATP deploy went cleanly through the promotion gate with 0 invalid objects. The new baseline RegressionTest261010163656 was loaded onto ATP with 356 STG rows and 0 duplicates, matching local. ATP regression run 182 used prefix 93427, which is exactly one above the highest prefix used on either instance, and it passed with no new failures beyond the same 7 known entries. The ATP click-through also passed 63 of 63 pages.
+
+**Backlog.** All 60 items that were IN TEST are now RESOLVED, each with the note "verified by local run 402 / ATP run 182 (main 78560c0, baseline RegressionTest261010163656)". The counts table now reads 479 items: 355 resolved, none in test, 64 still open, 30 deferred, parked, future or declined, 28 superseded and 2 stale.
+
+**What is still open on ERP.** Leaving aside deferred, parked and future items, configuration objects and HCM, these are the open ERP and tool items:
+- Grants: the award reconciliation report still finds base awards by contract-number prefix, because the award tables have no populated job-id column (#240).
+- Grants: the award tier could instead be found by the import job's run window (#768, an owner question below).
+- Grants: child failures from the report are matched to TFM rows by business keys rather than a DMT-stamped id (#569).
+- Grants: the other eight award child types still carry no Fusion id of their own (#765).
+- Grants: Fusion copies the award template's terms and reference onto every award, so a source term that equals a template term is unproven (#766).
+- Grants: the six award child tiers still need registering with the Fusion-id auditor (#767).
+- Grants: record views show the award id rather than the child's own Fusion id (#769).
+- GL Budgets: the reconciliation report selects base cells by a time window anchored on the import job, because GL_BUDGET_BALANCES has no job column (#261).
+- Purchase Orders: FBDI generation and the load-failure path pick PO headers by business unit only, not by style, so they can take blanket or contract rows of the same run (#760).
+- The load-failure check should also confirm that each load-failure update is scoped to the failed zip by book, business unit and style (#761).
+- Suppliers: the five supplier transforms never stamp WORK_QUEUE_ID on their TFM tables (#711).
+- AR Invoices: lines loaded before 2026-10-09 have no FUSION_CUSTOMER_TRX_LINE_ID (#676).
+- Misc Receipts: runs from before #552 have no parent link on serial TFM rows (#702).
+- Assets: when PrepareMassAdditions ends in ERROR and its log does not name a particular asset, that asset is left UNACCOUNTED (#754).
+- Assets: older scenarios still expect the cross-grain rows XG-G1 and XG-G2 to end FAILED_WITH_DOCUMENT (#752).
+- Items: a FAILED-mode retry of only a category row sends the source item number when its item loaded in an earlier run (#726).
+- Items: a category whose same-scenario item failed before transform falls back to the source item number (#727).
+- Items: the regression seed needs a cross-batch category row so partition ordering is proven live (#728).
+- Other objects: rows sent beside a validation-failed row can end UNACCOUNTED when the import job fails at job level (#750).
+- Planning Budgets should move to the shared header-paged fetch once its report is wired (#732).
+- Reports without a PAGE_KEY can still drop a row when two rows share a RECORD_KEY at a page edge (#733).
+- A reconcile-only rerun of a spawn-per-partition object has no live proof with UNACCOUNTED rows in more than one child (#504).
+- JSON_OBJECT(t.*) and JSON_OBJECT_T must be confirmed on the ATP release before #651 is promoted (#747).
+- The queue engine needs a unit test for QUEUE_ID dependency tokens (#729).
+- The retired p_row_cap argument should be dropped from DMT_RECON_CONTRACT_PKG.FETCH_ROWS and its callers (#730).
+- The dormant DMT_RECON_ENGINE_PKG, which pages by row count with a fixed ceiling, should be retired (#731).
+- DMT_V_CEMLI_TFM_TABLES is still a hardcoded UNION and has drifted from the CEMLI catalog (#717).
+- Page 53 (ESS Job Detail) has a Back button that APEX 26.1 rejects, so it does not render (#720).
+- Cancelled runs do not show the cancel reason, and the CANCELLED badge is plain grey (#721).
+- Orphaned database sessions hold locks for days on the shared local database (#751).
+- An empty scenario RegressionTest261009074738 (id 663) was left behind by a mint whose connection dropped (#701).
+- The promotion gate compares the whole git tree, so a docs-only commit forces a full local re-run (#770, an owner question below).
+
+**What comes next.** The order is the remaining ERP follow-ups above first, then the configuration objects, then HCM.
+
+**Questions waiting on the owner.**
+- Should the cross-grain shapes (a) through (d) become standing rules?
+- Should agents ask before ending sessions or processes they did not start?
+- For Grants, should the award be selected by the import job's time window, or should that stay parked (#768 and #240)?
+- Should the promotion gate ignore docs-only changes (#770)?
+
 ## 2026-10-10 — after local regression / before ATP regression
 
 **Bottom line.** Main at commit 78560c0 passed the full local regression and the local click-through, and is now being promoted to ATP. Local regression run 402 passed with no new failures. The only failures are the 7 known pre-existing entries in `scripts/regression_known_issues.json`, which are unfinished HCM objects with no baseline rows. The local click-through passed 63 of 63 pages.
