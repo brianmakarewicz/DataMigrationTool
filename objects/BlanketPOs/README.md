@@ -154,3 +154,15 @@ the tenth column `PAGE_KEY`. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers,
 header key back as `P_AFTER_KEY`, has no page cap, and fails the fetch with an error if a page
 does not advance. Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text are the
 same as in `DMT_BLANKET_PO_RECON_V2_DM`.
+
+## A failed load fails the agreement lines too (2026-10-10, backlog #674)
+
+Each procurement BU gets its own blanket zip (agreement headers and lines) and its own load job.
+When the loader sees that load job fail, `po_mark_bu_failed` calls
+`DMT_BLANKET_PO_FBDI_GEN_PKG.FAIL_GENERATED_ROWS` with the BU, which sets every GENERATED blanket
+header of that BU, and every GENERATED line under those headers, FAILED with the same `[LOAD_ERROR]`
+text. Standard PO and contract rows of the shared PO tables are never touched. Before, only the
+headers were marked and the lines stayed GENERATED until the sweep made them UNACCOUNTED. A load failure cannot honestly be produced from data on this pod, so the proof is the rolled-back
+unit test `test/unit/test_load_failure_all_types.sql` (synthetic runs and rows only). This path runs
+only when the loader waits on the load itself; the queue-driven path leaves the rows GENERATED for
+reconciliation and the shared unaccounted sweep, which already covers every record type.
