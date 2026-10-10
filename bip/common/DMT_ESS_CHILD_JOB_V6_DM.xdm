@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_ESS_CHILD_JOB_V6_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_ESS_CHILD_JOB_DM. This version exists only because its report wrapper DMT_ESS_CHILD_JOB_V6_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_ESS_CHILD_JOB_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ess_child_job" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+SELECT r.requestid
+FROM   fusion.ess_request_history r
+LEFT JOIN fusion.ess_request_property pb
+       ON pb.requestid = r.requestid
+      AND pb.name = 'submit.argument1'
+WHERE  r.definition LIKE '%' || :P_JOB_DEF || '%'
+AND    r.requestid != TO_NUMBER(:P_LOAD_ESS_ID)
+AND    r.requestid  > TO_NUMBER(:P_LOAD_ESS_ID)
+AND    (
+          (:P_BATCH_ID IS NOT NULL AND pb.value = :P_BATCH_ID)
+       OR (:P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID))
+       OR (:P_BATCH_ID IS NULL)
+       )
+ORDER BY
+    CASE WHEN :P_BATCH_ID IS NULL AND r.absparentid = TO_NUMBER(:P_LOAD_ESS_ID)
+         THEN 0 ELSE 1 END,
+    r.requestid ASC
+FETCH FIRST 1 ROW ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ess_child_job">
+          <element name="REQUESTID" value="REQUESTID" dataType="xsd:string" tagName="REQUESTID"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_LOAD_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_JOB_DEF" dataType="character" rowPlacement="2"
+               labelID="P_JOB_DEF" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_BATCH_ID" dataType="character" rowPlacement="3"
+               labelID="P_BATCH_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

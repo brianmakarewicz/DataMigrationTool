@@ -371,7 +371,10 @@
     -- Queries ESS_REQUEST_HISTORY via pre-deployed BIP DM (AD#16)
     -- for the parent + all descendants. Inserts into DMT_ESS_JOB_TBL.
     --
-    -- Uses: /Custom/DMT2/common/DMT_ESS_HIERARCHY_RPT.xdo
+    -- Uses: /Custom/DMT2/common/DMT_ESS_HIERARCHY_V2_RPT.xdo (the original
+    -- DMT_ESS_HIERARCHY_DM SQL unchanged; its report wrapper runs with BIP
+    -- data caching off, backlog #734, so a repeat capture for the same
+    -- parent sees children submitted since the last one).
     -- Parameter: P_PARENT_REQUEST_ID
     -- ============================================================
     PROCEDURE CAPTURE_ESS_HIERARCHY (
@@ -380,7 +383,7 @@
         p_cemli_code        IN VARCHAR2 DEFAULT NULL
     ) IS
         C_PROC     CONSTANT VARCHAR2(30)  := 'CAPTURE_ESS_HIERARCHY';
-        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_HIERARCHY_RPT.xdo';
+        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_HIERARCHY_V2_RPT.xdo';
 
         l_base_url  VARCHAR2(500);
         l_bip_user  VARCHAR2(500);
@@ -1087,8 +1090,10 @@
     -- REPORT_JOB_DEF have report children (currently: BillingEvents,
     -- Projects). CEMLIs without one return NULL immediately.
     --
-    -- Uses DMT_ESS_CHILD_JOB_RPT.xdo with P_JOB_DEF bound to the
-    -- exact definition to query ESS_REQUEST_HISTORY.
+    -- Uses DMT_ESS_CHILD_JOB_V6_RPT.xdo with P_JOB_DEF bound to the
+    -- exact definition to query ESS_REQUEST_HISTORY. V6 is the original
+    -- DMT_ESS_CHILD_JOB_DM SQL unchanged, released under a new name only so
+    -- its report wrapper runs with BIP data caching off (backlog #734).
     --
     -- Fusion doesn't model the report job as a child (parentrequestid=0),
     -- but we store it with PARENT_REQUEST_ID = p_import_ess_id so the
@@ -1103,7 +1108,7 @@
         p_cemli_code     IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER IS
         C_PROC     CONSTANT VARCHAR2(30)  := 'CAPTURE_REPORT_ESS_JOB';
-        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_RPT.xdo';
+        C_RPT_PATH CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V6_RPT.xdo';
 
         l_report_job_def VARCHAR2(200);
         l_base_url  VARCHAR2(500);

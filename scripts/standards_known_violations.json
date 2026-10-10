@@ -3,14 +3,14 @@
   "violations": [
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|CashBanks|DMT_CEBANK_RECON_DM",
+      "key": "BIP-NINE-COLUMNS|CashBanks|DMT_CEBANK_RECON_V2_DM",
       "backlog": 130,
       "found": "2026-10-07",
       "detail": "DMT_CEBANK_RECON_DM returns [record_key, import_status, source_type, fusion_id, error_message], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-NINE-COLUMNS|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_DM",
+      "key": "BIP-NINE-COLUMNS|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_V2_DM",
       "backlog": 710,
       "found": "2026-10-07",
       "detail": "DMT_PAYROLLRELATIONSHIPS_RECON_DM returns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id], not the nine contract columns [object_type, record_key, source_type, fusion_status, fusion_id, error_message, load_request_id, source_ref, dmt_reference]"
@@ -66,63 +66,63 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|APPaymentTerms|DMT_APTERMS_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|APPaymentTerms|DMT_APTERMS_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/APPaymentTerms/query.sql is not the DMT_APTERMS_RECON_DM.xdm SQL character for character (first difference at line 2; regenerate with --write-mirror APPaymentTerms)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|Absences|DMT_ABSENCES_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|Absences|DMT_ABSENCES_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Absences/query.sql is not the DMT_ABSENCES_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror Absences)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|Assignments|DMT_ASSIGNMENTS_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|Assignments|DMT_ASSIGNMENTS_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Assignments/query.sql is not the DMT_ASSIGNMENTS_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror Assignments)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|BenBeneficiary|DMT_BENBENEFICIARY_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|BenBeneficiary|DMT_BENBENEFICIARY_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/BenBeneficiary/query.sql is not the DMT_BENBENEFICIARY_RECON_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror BenBeneficiary)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|BenDependent|DMT_BENDEPENDENT_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|BenDependent|DMT_BENDEPENDENT_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/BenDependent/query.sql is not the DMT_BENDEPENDENT_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror BenDependent)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|BenParticipant|DMT_BENPARTICIPANT_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|BenParticipant|DMT_BENPARTICIPANT_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/BenParticipant/query.sql is not the DMT_BENPARTICIPANT_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror BenParticipant)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|CashBanks|DMT_CEBANK_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|CashBanks|DMT_CEBANK_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/CashBanks/query.sql is not the DMT_CEBANK_RECON_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror CashBanks)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|Lookups|DMT_LOOKUP_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|Lookups|DMT_LOOKUP_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Lookups/query.sql is not the DMT_LOOKUP_RECON_DM.xdm SQL character for character (first difference at line 2; regenerate with --write-mirror Lookups)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|PayrollRelationships|DMT_PAYROLLRELATIONSHIPS_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/PayrollRelationships/query.sql is not the DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror PayrollRelationships)"
@@ -136,21 +136,21 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|Salaries|DMT_SALARIES_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|Salaries|DMT_SALARIES_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Salaries/query.sql is not the DMT_SALARIES_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror Salaries)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|SalaryBases|DMT_SALARYBASES_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|SalaryBases|DMT_SALARYBASES_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/SalaryBases/query.sql is not the DMT_SALARYBASES_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror SalaryBases)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|TalentProfiles|DMT_TALENTPROFILES_RECON_V3_DM",
+      "key": "BIP-MIRROR-EXACT|TalentProfiles|DMT_TALENTPROFILES_RECON_V4_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/TalentProfiles/query.sql is not the DMT_TALENTPROFILES_RECON_V3_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror TalentProfiles)"
@@ -171,7 +171,7 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|UnitsOfMeasure|DMT_UOM_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|UnitsOfMeasure|DMT_UOM_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/UnitsOfMeasure/query.sql is not the DMT_UOM_RECON_DM.xdm SQL character for character (first difference at line 2; regenerate with --write-mirror UnitsOfMeasure)"
@@ -185,21 +185,21 @@
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|W2Balances|DMT_W2_BAL_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|W2Balances|DMT_W2_BAL_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/W2Balances/query.sql is not the DMT_W2_BAL_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror W2Balances)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|WorkSchedules|DMT_WORKSCHEDULES_RECON_DM",
+      "key": "BIP-MIRROR-EXACT|WorkSchedules|DMT_WORKSCHEDULES_RECON_V2_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/WorkSchedules/query.sql is not the DMT_WORKSCHEDULES_RECON_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror WorkSchedules)"
     },
     {
       "checker": "check_bip_recon_reports",
-      "key": "BIP-MIRROR-EXACT|Workers|DMT_WORKERS_RECON_V2_DM",
+      "key": "BIP-MIRROR-EXACT|Workers|DMT_WORKERS_RECON_V3_DM",
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Workers/query.sql is not the DMT_WORKERS_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror Workers)"
@@ -224,6 +224,34 @@
       "backlog": 672,
       "found": "2026-10-09",
       "detail": "Projects load-failure path in fin_mark_generated_failed does not mark DMT_PJC_TXN_CONTROLS_TFM_TBL, DMT_PJF_TASKS_TFM_TBL, DMT_PJF_TEAM_MEMBERS_TFM_TBL"
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NO-CACHE|PerfEvaluations|DMT_PERFEVALUATIONS_RECON_DM",
+      "backlog": 756,
+      "found": "2026-10-10",
+      "detail": "The PerfEvaluations report is still deployed with BIP data caching on. Its repo DMT_PERFEVALUATIONS_RECON_DM.xdm differs from the copy deployed in Fusion, so a cache-off version cut from the repo would change what runs; the drift is resolved first (backlog #756)."
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NO-CACHE|Taxes|DMT_ZX_RECON_DM",
+      "backlog": 756,
+      "found": "2026-10-10",
+      "detail": "The Taxes report is still deployed with BIP data caching on. Its repo DMT_ZX_RECON_DM.xdm differs from the copy deployed in Fusion, so a cache-off version cut from the repo would change what runs; the drift is resolved first (backlog #756)."
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NO-CACHE|ValueSets|DMT_VS_RECON_DM",
+      "backlog": 756,
+      "found": "2026-10-10",
+      "detail": "The ValueSets report is still deployed with BIP data caching on. Its repo DMT_VS_RECON_DM.xdm differs from the copy deployed in Fusion, so a cache-off version cut from the repo would change what runs; the drift is resolved first (backlog #756)."
+    },
+    {
+      "checker": "check_bip_recon_reports",
+      "key": "BIP-NO-CACHE|TaxCards|DMT_TAX_CARD_RECON_DM",
+      "backlog": 756,
+      "found": "2026-10-10",
+      "detail": "TaxCards has no registry row (the object is not live), so its data model has no cache-off report wrapper yet; it gets one when it is registered (backlog #756)."
     }
   ]
 }

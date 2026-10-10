@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_GRANT_RECON_V3_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_GRANT_RECON_V2_DM. This version exists only because its report wrapper DMT_GRANT_RECON_V3_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_GRANT_RECON_V2_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="grant_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Grants reconciliation data model V2 -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination, the six standard
+-- parameters). Deployed ALONGSIDE V1 (DMT_GRANT_RECON_DM.xdm), never
+-- overwriting it. bip/Grants/query.sql is a byte-for-byte copy of this
+-- SQL text (section 7: repo query must exactly match the deployed query).
+--
+-- WHY V2 (docs/findings/known_good_Grants.md, 2026-10-07): an award
+-- created by FBDI import carries NO request id and NO sponsor award
+-- number. On every known-good and replay award GMS_AWARD_HEADERS_B
+-- DC_REQUEST_ID, SUMMARY_REQUEST_ID, SPONSOR_AWARD_NUMBER, ATTRIBUTE1
+-- and OKC_K_HEADERS_ALL_B.REQUEST_ID are all NULL. V1 scoped the BASE
+-- tier by DC_REQUEST_ID = :P_IMPORT_ESS_ID and keyed on
+-- SPONSOR_AWARD_NUMBER, so a successfully created award was never
+-- found and every good row stayed UNACCOUNTED.
+--
+-- V2 BASE tier: the award number IS the contract number. Join
+-- OKC_K_HEADERS_ALL_B on ID (current version, VERSION_TYPE = 'C'),
+-- key on CONTRACT_NUMBER (= the prefixed AWARD_NUMBER DMT stamps at
+-- transform and stores as RECON_KEY), and scope the run by the
+-- prefix: CONTRACT_NUMBER LIKE :P_PREFIX || '%' AND AWARD_SOURCE =
+-- 'FBDI'. Verified live 2026-10-07 against the prefix-77101 replay:
+-- five rows, one per award, ids 300000334921091 .. 300000334921234.
+-- An unrelated award whose number happens to start with the same
+-- digits can appear here; it matches no TFM RECON_KEY, so it is
+-- inert in the reconciler (never applied).
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--
+-- TWO tiers via SOURCE_TYPE, UNION ALL, ordered by RECORD_KEY:
+--   BASE      -- award in GMS_AWARD_HEADERS_B (positive proof).
+--                FUSION_ID = GMS_AWARD_HEADERS_B.ID.
+--   INTERFACE -- GMS_AWARD_HEADERS_INT rows left behind that Fusion
+--                did not mark successful, keyed on the same prefixed
+--                AWARD_NUMBER. Fusion purges the award interface
+--                tables right after AwardMassImportJob, so this tier
+--                is normally zero rows. The real per-award rejection
+--                messages come from Fusion's Award Batch Import Report
+--                (ImportAwardReportJob, LIST_G_4/G_4 PROCESSED_MESSAGE),
+--                read by DMT_GRANTS_RESULTS_PKG.apply_award_import_report.
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: BASE -- awards that reached GMS_AWARD_HEADERS_B, found by
+    -- their (prefixed) contract number.
+    SELECT
+        'Grants'                             AS object_type,
+        k.contract_number                    AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        b.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        b.award_source                       AS source_ref,
+        b.attribute1                         AS dmt_reference
+    FROM   gms_award_headers_b b
+    JOIN   okc_k_headers_all_b k
+           ON  k.id           = b.id
+           AND k.version_type = 'C'
+    WHERE  k.contract_number LIKE :P_PREFIX || '%'
+    AND    b.award_source    = 'FBDI'
+
+    UNION ALL
+
+    -- Tier: INTERFACE -- award-header rejections left behind (normally
+    -- zero rows; Fusion purges the interface table after import).
+    SELECT
+        'Grants'                             AS object_type,
+        h.award_number                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CASE WHEN NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                '') IS NOT NULL
+             THEN '[AWARD] ' || NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                '')
+        END                                  AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.award_number                       AS source_ref,
+        h.attribute1                         AS dmt_reference
+    FROM   gms_award_headers_int h
+    WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
+    AND    NVL(UPPER(h.processed_status),'X') NOT IN ('SUCCESS','S','PROCESSED')
+)
+-- Keyset predicate. Empty P_AFTER_KEY (first page) binds NULL => from
+-- the start. Later pages carry the previous page's last RECORD_KEY;
+-- only greater keys are returned.
+WHERE  (:P_AFTER_KEY IS NULL OR record_key > :P_AFTER_KEY)
+ORDER BY record_key
+FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="grant_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

@@ -88,6 +88,18 @@ BIP-ERROR-ROW  No row is reported as an error without a real error row behind it
     LOADED" and the [UNACCOUNTED] tag row ("if there is no specific Fusion error
     string, the record is [UNACCOUNTED], not [FUSION_ERROR]").
 
+BIP-NO-CACHE  Reports are deployed with BIP data caching off.
+    (a) The report wrapper DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT generates (the
+    db/packages/dmt_bip_deploy_pkg.pkb.sql template every deploy script uses) must
+    declare cache="false" on its <dataModel> element and never cache="true".
+    (b) For every registered data model, at least one .xdo in its folder must point at
+    it with cache="false", and none may point at it with cache="true". With caching
+    on, a runReport call that repeats an earlier call's parameters is served the
+    cached result instead of reading Fusion again (backlog #734, proven 2026-10-10;
+    the runReport byPassCache request flag does not bypass it). Design doc section 5,
+    "Artifacts & naming" (the .xdo is a trivial XML-output wrapper) and the proposed
+    section 7 rule "Every BIP report wrapper is deployed with data caching off".
+
 NOT CHECKED (declared, per the "Checker fidelity" standard in section 7):
   * NOT CHECKED: CRLF-vs-LF, leading-blank-line and trailing-whitespace differences between
     query.sql and the .xdm (everything else is checked by BIP-MIRROR-EXACT).
@@ -251,6 +263,37 @@ def check_xdm_comments():
                               "%s line %d: XML comment contains '--' (illegal in XML; BIP "
                               "rejects the data model)" % (rel, line)))
                 break
+    return found
+
+
+DEPLOY_PKG = os.path.join(REPO, "db", "packages", "dmt_bip_deploy_pkg.pkb.sql")
+DM_ELEM_RE = re.compile(r"<dataModel\b[^>]*\burl=\"[^\"]*/([^/\"]+)\.xdm\"[^>]*>", re.I)
+
+
+def check_no_cache():
+    """BIP-NO-CACHE: the generated wrapper and every registered model's wrapper."""
+    found = []
+    body = open(DEPLOY_PKG, encoding="utf-8").read()
+    tmpl = [ln for ln in body.splitlines()
+            if "<dataModel url=" in ln and not ln.lstrip().startswith("--")]
+    if not tmpl or any('cache="false"' not in ln for ln in tmpl):
+        found.append(("BIP-NO-CACHE|DMT_BIP_DEPLOY_PKG|wrapper",
+                      "db/packages/dmt_bip_deploy_pkg.pkb.sql: the DEPLOY_RECON_REPORT wrapper "
+                      "template does not declare <dataModel ... cache=\"false\"/>"))
+    for obj, dm, _path, _note in objects_to_check():
+        flags = []
+        for xdo in glob.glob(os.path.join(BIP_DIR, obj, "*.xdo")):
+            text = open(xdo, encoding="utf-8", errors="replace").read()
+            for m in DM_ELEM_RE.finditer(text):
+                if m.group(1) == dm:
+                    c = re.search(r'\bcache="(\w+)"', m.group(0))
+                    flags.append((os.path.basename(xdo), c.group(1).lower() if c else None))
+        on = [x for x, c in flags if c == "true"]
+        if on or not any(c == "false" for _x, c in flags):
+            found.append(("BIP-NO-CACHE|%s|%s" % (obj, dm),
+                          "bip/%s: the registered %s.xdm has no report wrapper deployed with "
+                          "cache=\"false\"%s" % (obj, dm, (" (cache=\"true\" in %s)" % ", ".join(on))
+                                                 if on else "")))
     return found
 
 
@@ -450,6 +493,7 @@ def main():
     print("=" * 72)
     found = check_xdm_comments()
     found += check_registry_files()
+    found += check_no_cache()
     for obj, dm, path, note in objects_to_check():
         f = check_mirror(obj, dm, path)
         f += check_mirror_exact(obj, dm, path)

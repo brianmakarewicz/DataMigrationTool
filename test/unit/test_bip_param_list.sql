@@ -31,6 +31,7 @@ declare
     l_items   clob;
     l_err     number;
     l_cnt     pls_integer;
+    l_missing varchar2(4000);
 
     type t_pair is record (pname varchar2(4000), pval varchar2(4000));
     type t_pairs is table of t_pair index by pls_integer;
@@ -155,12 +156,26 @@ begin
     and    instr(text, '''~P_') > 0;
     assert(l_cnt = 0, 10, 'no ERP non-paging caller builds a legacy ''~P_<NAME>|'' pair');
 
+    --        Tests 10 and 11 read the DEPLOYED package sources, so they fail
+    --        whenever the local database carries a body that is out of step
+    --        with this file (backlog #755: test 11 failed while the database
+    --        held other branches' bodies; the repo was consistent). On failure
+    --        test 11 names the body that lacks the separator, so the drift is
+    --        visible without a second query.
     select count(distinct name) into l_cnt
     from   user_source
     where  name in ('DMT_BILLING_EVENT_RESULTS_PKG', 'DMT_GL_COMPARE_PKG')
     and    type = 'PACKAGE BODY'
     and    instr(text, 'DMT_UTIL_PKG.C_BIP_PARAM_SEP') > 0;
-    assert(l_cnt = 2, 11, 'both remaining ERP multi-parameter callers use DMT_UTIL_PKG.C_BIP_PARAM_SEP');
+    select nvl(listagg(p.name, ', ') within group (order by p.name), 'none') into l_missing
+    from  (select 'DMT_BILLING_EVENT_RESULTS_PKG' name from dual union all
+           select 'DMT_GL_COMPARE_PKG' from dual) p
+    where not exists (select 1 from user_source s
+                      where  s.name = p.name
+                      and    s.type = 'PACKAGE BODY'
+                      and    instr(s.text, 'DMT_UTIL_PKG.C_BIP_PARAM_SEP') > 0);
+    assert(l_cnt = 2, 11, 'both remaining ERP multi-parameter callers use DMT_UTIL_PKG.C_BIP_PARAM_SEP'
+                          || case when l_cnt <> 2 then ' (deployed body without it: ' || l_missing || ')' end);
 
     dbms_output.put_line('TEST_BIP_PARAM_LIST: '||l_passed||' passed, 0 failed');
 end;
