@@ -299,3 +299,24 @@ book and assignment rows stayed GENERATED until the sweep made them UNACCOUNTED.
 unit test `test/unit/test_load_failure_all_types.sql` (synthetic runs and rows only). This path runs
 only when the loader waits on the load itself; the queue-driven path leaves the rows GENERATED for
 reconciliation and the shared unaccounted sweep, which already covers every record type.
+## PrepareMassAdditions errors come from its log (2026-10-10, backlog #745 / #748)
+
+Owner decision 2026-10-10: a row failed by validation stays FAILED on its own and the rest of its
+book is still sent. Run 378 showed the gap: book US FIN SVCS CORP was sent without XD-BAD's
+line-break distribution, its PrepareMassAdditions (10088195) ended ERROR, Post Mass Additions never
+ran, and the BIP report found nothing, so 8 rows ended UNACCOUNTED. The job's log named every asset
+with its real errors (category not assigned to the book, expense account segment too long), each
+block ending "The ADDITION transaction type for ID n couldn't be completed for asset number X."
+
+`DMT_FA_ASSET_RESULTS_PKG.APPLY_PREPARE_ERRORS` (called from `RECONCILE_BATCH` right after the
+Contract v1 apply) reads that log only when the import job ended ERROR or WARNING, gives each
+still-unaccounted header it names `[IMPORT_REPORT] <its messages>`, and its book and assignment
+rows quote it (`[IMPORT_REPORT] Rejected with document: asset X: ...`). A header the log does not
+name is left for the unaccounted sweep (a reconciler writes only real Fusion errors).
+
+Proof: local run 395, prefix 93424, FINANCIALS on RegressionTest261009080330: US FIN SVCS CORP
+item 2484 (load 10092989, PrepareMassAdditions 10093006 ERROR) - XD-BAD, XD-G1, XD-G2 headers
+FAILED with their own Prepare errors, books and assignments quoting them, XD-BAD's distribution
+keeps its line-break error; SUPREMO US CORP XG-G1/XG-G2 LOADED with XG-BAD failed by validation;
+US CORP G1/G2 LOADED, BAD1 FAILED. 27 Assets rows: 12 LOADED, 15 FAILED, 0 UNACCOUNTED; harness
+PASS on all 38 listed rows (one review item from another session's BIP deploy).

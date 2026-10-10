@@ -943,6 +943,180 @@
     END ACCOUNT_ALL_OR_NOTHING;
 
     -- --------------------------------------------------------
+    -- APPLY_PREPARE_ERRORS (private, backlog #748). When the book's import job
+    -- (PrepareMassAdditions, the load's chained import) ends ERROR or WARNING,
+    -- Fusion writes each rejected asset's real errors to that job's log, not to
+    -- the interface tables the BIP report reads, and Post Mass Additions never
+    -- runs. Run 378 (book US FIN SVCS CORP, PrepareMassAdditions 10088195) left
+    -- 8 rows UNACCOUNTED this way although the log named every asset, e.g.
+    --   This asset category isn't yet assigned to the selected book. ...
+    --   The ADDITION transaction type for ID 667325 couldn't be completed for
+    --   asset number 93421RT-ASSET-XD-G1.
+    -- The log lists each asset's messages and then one "couldn't be completed
+    -- for asset number <n>." line, so the lines since the previous such line
+    -- belong to <n> (an asset can appear more than once; its messages are
+    -- joined). Each still-unaccounted header of this work item named in the log
+    -- is set FAILED with '[IMPORT_REPORT] <its real messages>' (design section 5,
+    -- tag table: per-row error parsed out of the ESS import report).
+    -- A header the log does not name is left for the shared unaccounted sweep
+    -- (a reconciler writes only real Fusion errors). Book and assignment rows of
+    -- the named headers quote the header's error
+    -- ('[IMPORT_REPORT] Rejected with document: asset <n>: ...'). LOADED
+    -- and FAILED rows are never touched. Downloads the log only when the job
+    -- ended ERROR/WARNING (a reconcile-time read, like the SQL*Loader log in
+    -- ACCOUNT_ALL_OR_NOTHING). STATIC SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_PREPARE_ERRORS (
+        p_run_id        IN NUMBER,
+        p_load_ess_id   IN NUMBER,
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
+    ) IS
+        C_PROC   CONSTANT VARCHAR2(30) := 'APPLY_PREPARE_ERRORS';
+        C_DONE   CONSTANT VARCHAR2(60) := 'couldn''t be completed for asset number ';
+        TYPE t_msgs IS TABLE OF VARCHAR2(4000) INDEX BY VARCHAR2(100);
+        l_msgs    t_msgs;
+        l_req     NUMBER;
+        l_state   VARCHAR2(30);
+        l_log     CLOB;
+        l_len     PLS_INTEGER;
+        l_pos     PLS_INTEGER := 1;
+        l_eol     PLS_INTEGER;
+        l_line    VARCHAR2(4000);
+        l_buf     VARCHAR2(4000);
+        l_asset   VARCHAR2(100);
+        l_summary VARCHAR2(1000);
+        l_marker  VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
+        l_named   NUMBER := 0;
+    BEGIN
+        -- The import job: the recorded id, else the load's own PrepareMassAdditions child.
+        BEGIN
+            SELECT REQUEST_ID, UPPER(STATE_TEXT) INTO l_req, l_state FROM (
+                SELECT REQUEST_ID, STATE_TEXT
+                FROM   DMT_ESS_JOB_TBL
+                WHERE  RUN_ID = p_run_id
+                AND    ((p_import_ess_id IS NOT NULL AND REQUEST_ID = p_import_ess_id)
+                        OR (p_import_ess_id IS NULL AND PARENT_REQUEST_ID = p_load_ess_id
+                            AND UPPER(JOB_SHORT_NAME) = 'PREPAREMASSADDITIONS'))
+                ORDER BY REQUEST_ID DESC)
+            WHERE ROWNUM = 1;
+        EXCEPTION WHEN NO_DATA_FOUND THEN RETURN;
+        END;
+        IF l_state NOT IN ('ERROR', 'WARNING') THEN
+            RETURN;
+        END IF;
+
+        BEGIN
+            l_log := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(p_request_id => l_req, p_cemli_code => C_CEMLI);
+        EXCEPTION WHEN OTHERS THEN
+            l_log := NULL;
+            DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ': could not read the log of import job '
+                || l_req || ': ' || SUBSTR(SQLERRM, 1, 300), DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
+        END;
+
+        -- Parse: messages accumulate until a "couldn't be completed" line names the asset.
+        l_len := NVL(DBMS_LOB.GETLENGTH(l_log), 0);
+        WHILE l_pos <= l_len LOOP
+            l_eol := DBMS_LOB.INSTR(l_log, CHR(10), l_pos);
+            IF l_eol = 0 THEN l_eol := l_len + 1; END IF;
+            l_line := TRIM(REPLACE(DBMS_LOB.SUBSTR(l_log, LEAST(l_eol - l_pos, 3900), l_pos), CHR(13)));
+            l_pos  := l_eol + 1;
+            CONTINUE WHEN l_line IS NULL;
+            IF INSTR(l_line, C_DONE) > 0 THEN
+                l_asset := RTRIM(TRIM(SUBSTR(l_line, INSTR(l_line, C_DONE) + LENGTH(C_DONE))), '.');
+                l_buf   := SUBSTR(LTRIM(l_buf || ' ' || l_line), 1, 3800);
+                IF l_asset IS NOT NULL THEN
+                    IF NOT l_msgs.EXISTS(l_asset) THEN
+                        l_msgs(l_asset) := l_buf;
+                    ELSIF INSTR(l_msgs(l_asset), l_buf) = 0 THEN
+                        l_msgs(l_asset) := SUBSTR(l_msgs(l_asset) || ' | ' || l_buf, 1, 3800);
+                    END IF;
+                END IF;
+                l_buf := NULL;
+            ELSIF l_line LIKE 'The number of records%' THEN
+                l_summary := SUBSTR(LTRIM(l_summary || ' ' || l_line), 1, 900);
+            ELSE
+                l_buf := SUBSTR(LTRIM(l_buf || ' ' || l_line), 1, 3800);
+            END IF;
+        END LOOP;
+
+        -- Each named, still-unaccounted header of this work item gets its real errors.
+        l_asset := l_msgs.FIRST;
+        WHILE l_asset IS NOT NULL LOOP
+            UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+            SET    TFM_STATUS = 'FAILED',
+                   ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, '[IMPORT_REPORT] ' || l_msgs(l_asset)),
+                   RESULTS_UPDATED_DATE = SYSDATE, LAST_UPDATED_DATE = SYSDATE
+            WHERE  RUN_ID = p_run_id
+            AND    ASSET_NUMBER = l_asset
+            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
+            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+            l_named := l_named + SQL%ROWCOUNT;
+            l_asset := l_msgs.NEXT(l_asset);
+        END LOOP;
+
+        -- Book and assignment rows of this work item quote their FAILED header.
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL bk
+        SET    bk.TFM_STATUS = 'FAILED',
+               bk.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(bk.ERROR_TEXT,
+                   (SELECT SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1), '\[IMPORT_REPORT\]')
+                                  || ' ' || l_marker || 'asset ' || h.ASSET_NUMBER || ': '
+                                  || LTRIM(REGEXP_REPLACE(
+                                         DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                             REGEXP_INSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                                          '\[IMPORT_REPORT\]')),
+                                         '^\[[A-Z_]+\]')), 1, 4000)
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+                    WHERE  h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
+                    AND    h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
+               bk.LAST_UPDATED_DATE = SYSDATE
+        WHERE  bk.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR bk.WORK_QUEUE_ID = p_work_queue_id)
+        AND    bk.TFM_STATUS NOT IN ('LOADED', 'FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                       WHERE  h.RUN_ID = bk.RUN_ID AND h.ASSET_NUMBER = bk.ASSET_NUMBER
+                       AND    h.TFM_STATUS = 'FAILED'
+                       AND    REGEXP_INSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                           '\[IMPORT_REPORT\]') > 0);
+
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL asn
+        SET    asn.TFM_STATUS = 'FAILED',
+               asn.ERROR_TEXT = DMT_UTIL_PKG.APPEND_ERROR(asn.ERROR_TEXT,
+                   (SELECT SUBSTR(REGEXP_SUBSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1), '\[IMPORT_REPORT\]')
+                                  || ' ' || l_marker || 'asset ' || h.ASSET_NUMBER || ': '
+                                  || LTRIM(REGEXP_REPLACE(
+                                         DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800,
+                                             REGEXP_INSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                                          '\[IMPORT_REPORT\]')),
+                                         '^\[[A-Z_]+\]')), 1, 4000)
+                    FROM   DMT_FA_ASSET_HDR_TFM_TBL h
+                    WHERE  h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
+                    AND    h.TFM_STATUS = 'FAILED' AND ROWNUM = 1)),
+               asn.LAST_UPDATED_DATE = SYSDATE
+        WHERE  asn.RUN_ID = p_run_id
+        AND    (p_work_queue_id IS NULL OR asn.WORK_QUEUE_ID = p_work_queue_id)
+        AND    asn.TFM_STATUS NOT IN ('LOADED', 'FAILED')
+        AND    EXISTS (SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL h
+                       WHERE  h.RUN_ID = asn.RUN_ID AND h.ASSET_NUMBER = asn.ASSET_NUMBER
+                       AND    h.TFM_STATUS = 'FAILED'
+                       AND    REGEXP_INSTR(DBMS_LOB.SUBSTR(h.ERROR_TEXT, 3800, 1),
+                                           '\[IMPORT_REPORT\]') > 0);
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': import job ' || l_req || ' ended ' || l_state || '; '
+                           || l_msgs.COUNT || ' asset(s) named in its log, ' || l_named
+                           || ' header(s) given their own error'
+                           || CASE WHEN l_summary IS NOT NULL THEN ' (' || l_summary || ')' END || '.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id, C_PROC || ' failed.', SQLERRM, C_PKG, C_PROC);
+            RAISE;
+    END APPLY_PREPARE_ERRORS;
+
+    -- --------------------------------------------------------
     -- RECONCILE_BATCH — entry point (signature unchanged). Runs the shared
     -- Contract v1 apply once for ONE work item (one book = one load), then the
     -- Assets-only all-or-nothing SQL*Loader log path. The load ESS id is the
@@ -965,6 +1139,10 @@
             p_procedure      => C_PROC);
 
         APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
+
+        -- Backlog #748: PrepareMassAdditions ended ERROR/WARNING -- each asset's
+        -- real error is in that job's log, not in the interface tables.
+        APPLY_PREPARE_ERRORS(p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id);
 
         -- Assets-ONLY exception: Fixed Assets loads/posts a book atomically, so
         -- a single rejected asset leaves the whole book unposted and the BIP
