@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-10 — after local regression / before ATP regression
+
+**Bottom line.** Main at commit 78560c0 passed the full local regression and the local click-through, and is now being promoted to ATP. Local regression run 402 passed with no new failures. The only failures are the 7 known pre-existing entries in `scripts/regression_known_issues.json`, which are unfinished HCM objects with no baseline rows. The local click-through passed 63 of 63 pages.
+
+**A hiccup during the local deploy.** The first local deploy attempt hung while importing the APEX app, because an SQLcl client left open by an earlier agent was still holding a database session. That client was closed, and the rerun of the deploy was clean.
+
+**What happens next on ATP.** The ATP deploy of 78560c0 is under way. After it, the new baseline RegressionTest261010163656 is loaded onto ATP from the same committed seed, and then the ATP regression and the ATP click-through run.
+
+**Update: ATP deploy done.** The ATP deploy of 78560c0 completed through the promotion gate with 0 invalid objects, and the APEX app and runtime config checked out. Baseline RegressionTest261010163656 is loaded on ATP with 356 rows and 0 duplicates, matching local. The ATP regression and click-through are next.
+
+**Backlog.** The 60 IN TEST items now read "local run 402 PASS; ATP pending" and stay IN TEST until the ATP regression and click-through pass. New item #770 records that the promotion gate compares the whole git tree, so a docs-only commit made between the local regression and the ATP deploy forces the full local cycle to run again. Excluding `docs/` from that comparison is an owner decision; meanwhile this status update was held unmerged until the ATP deploy was done. The counts table now shows 479 items (478 before #770): 295 resolved, 60 in test and 64 still open.
+
 ## 2026-10-10 — before local regression
 
 **Bottom line.** Main at commit 07c19c9 carries PRs #714 through #739 and goes into a full local regression next, on the new combined baseline RegressionTest261010163656 (local scenario id 741). Nothing has been run on it yet and nothing new is on ATP. ATP is still on f49ec88.
