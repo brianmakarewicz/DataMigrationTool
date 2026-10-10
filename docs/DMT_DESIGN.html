@@ -598,6 +598,40 @@
       error under the rejected row's own key, e.g. <code>[FUSION_ERROR] Rejected with document: line 93301INV-100/2: &lt;real message&gt;</code>.
       LOADED rows are never touched. Implemented in <code>DMT_AR_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS</code>; message format shared through
       <code>DMT_UTIL_PKG.FORMAT_DOCUMENT_ERROR</code>.</span></div></li>
+    <li id="crossgrain-checklist" style="color:#b42318"><strong>Cross-grain failure shapes every object must handle &mdash; checklist.</strong>
+      <span style="font-weight:700">[ADDED 2026-10-09 at the owner's request, backlog #568 / #633 / #670; pending owner review]</span>
+      Every object with more than one record type (more than one TFM table registered to it in <code>DMT_CEMLI_CATALOG_TBL</code>) must handle
+      all four shapes below. Reviews and new objects check each one explicitly; handling (a) and (b) does not imply (c) or (d).
+      <ol type="a">
+        <li><strong>Parent rejected &rarr; children quote it.</strong> Fusion rejects a header (award, invoice, party, ...). The header keeps its
+          own <code>[FUSION_ERROR]</code>; every child of that document that Fusion received lands <code>FAILED</code> quoting it
+          (<code>Rejected with document: &lt;doc&gt; &lt;key&gt;: &lt;real message&gt;</code>).</li>
+        <li><strong>Child rejected &rarr; parent and siblings quote it.</strong> Fusion rejects one child and, because of it, the whole document.
+          The child keeps its own error; the parent and every sibling land <code>FAILED</code> quoting it, naming the child's grain and key.</li>
+        <li><strong>Child rejected under a LOADED parent &rarr; the child alone fails.</strong> Fusion creates the parent (base-table hit) but rejects
+          or drops one child. The child is <code>FAILED</code> with its <em>own</em> real Fusion error (or, with no error of its own, left for the
+          unaccounted sweep). The parent stays <code>LOADED</code>, and no sibling is given the child's error. The mirror rule also holds:
+          a child is <code>LOADED</code> only on its <em>own</em> Fusion evidence (its own base-table row, or its own success line in a report
+          scoped to this run's ESS job), never by inheritance from a LOADED parent. Grants: <code>DMT_GRANTS_RESULTS_PKG</code> sets a child LOADED
+          only on its success line in the Award Batch Import Report of the run's import job, under a base-confirmed award; the retired
+          <code>cascade_children</code> did it by inheritance (backlog #568). Fusion's Import Awards was probed with eleven child defects
+          (probes 77141 / 77142, 2026-10-09) and rejected the whole award every time, so on this pod Grants never produces shape (c); the
+          reconciler still handles it (unit test <code>test/unit/test_grants_child_accounting.sql</code>).</li>
+        <li><strong>Job-level load failure &rarr; every row of the load, all record types.</strong> One object = one zip = one load job, so when the
+          load itself fails every record type of that zip shares the outcome. Follow the two honest failure shapes (project <code>CLAUDE.md</code>,
+          "THE MISSION"): when the loader watches the load fail synchronously, every <code>GENERATED</code> row of the zip, in <em>every</em>
+          record type, gets the same <code>[LOAD_ERROR]</code> (ERROR_TEXT tag table above); when the job crashes with no per-row verdict and
+          no load error to quote, every row of every record type is left for reconciliation and the shared unaccounted sweep, so all of them
+          end <code>UNACCOUNTED</code> together. Marking only the header table, and leaving the other record types <code>GENERATED</code>, is a
+          defect. MiscReceipts (lots and serials, backlog #633) and Grants (14 award child tables, backlog #670) had it; Projects, Assets and
+          Blanket POs still do (backlog #672 / #673 / #674). Enforced by <code>scripts/check_load_failure_all_types.py</code>: every
+          <code>[LOAD_ERROR]</code> path in <code>DMT_LOADER_PKG</code> must mark every TFM table the catalog registers to its object.</li>
+      </ol>
+      <strong>Why the 2026-10-07 cross-grain conformance review missed (c) and (d):</strong> it checked only shapes (a) and (b), the two
+      directions in which a whole-document rejection spreads (<code>docs/findings/cross_grain_conformance_review.md</code>). <span style="color:#b42318">[PROPOSED 2026-10-09] Where it saw
+      Fusion keep a parent while rejecting a child (Blanket POs: headers accepted, one line rejected) it recorded only that the rejection did
+      not spread, and did not check how the kept parent and the rejected child were each accounted. It never looked at the load-failure path
+      at all. So the Grants inherit-LOADED cascade and the MiscReceipts header-only load failure both passed it.</span></li>
     <li><strong>absence ≠ LOADED.</strong> 0 BIP rows is never treated as success — it is investigated. A row that comes back with neither positive Fusion id nor an error is <em>UNRECONCILED</em> — a derived classification (<code>FAILED</code> + no <code>ERROR_TEXT</code>), not a stored status; see the status vocabulary in the Overview.</li>
     <li><strong>Object-status accounting.</strong> An object is DONE iff every record is accounted for (base-loaded OR interface-errored); FAILED only if any record is unaccounted. A Load ESS ERROR marks all GENERATED rows FAILED and routes to reconcile — it never short-circuits.</li>
   </ul>

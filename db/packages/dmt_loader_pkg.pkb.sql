@@ -2125,6 +2125,22 @@
             UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'Grants' THEN
             UPDATE DMT_GMS_AWD_HEADERS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            -- Backlog #670: one award zip = one load job, so a failed load fails every
+            -- award child too (cross-grain failure shape (d)), not only the headers.
+            UPDATE DMT_GMS_AWD_FUNDING_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_PROJECTS_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_PERSONNEL_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_TERMS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_FUND_SRC_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_CERTS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL        SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_FUND_ALLOC_TFM_TBL   SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_ORG_CREDITS_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_BDGT_PRDS_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL  SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL   SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'PlanningBudgets' THEN
             UPDATE DMT_PLAN_BUDGET_TFM_TBL     SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'ProjectBudgets' THEN
@@ -4494,7 +4510,9 @@
                      p_username => l_mr_user, p_password => l_mr_pass);
 
         -- Load failed → no rows reached the interface table. Mark all GENERATED rows
-        -- FAILED and return (no import job, no BIP).
+        -- FAILED and return (no import job, no BIP). Backlog #633: every record
+        -- type of the zip (transactions, lots, serials) gets the same load error;
+        -- before, only the transaction rows did and the lots/serials stayed GENERATED.
         IF l_load_status NOT IN (C_STATUS_SUCCEEDED, C_STATUS_WARNING) THEN
             DMT_UTIL_PKG.LOG(p_run_id,
                 'Load ESS ' || l_load_ess_id || ' returned ' || l_load_status ||
@@ -4502,8 +4520,18 @@
                 DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_OBJ || ' > ' || C_PROC);
             DECLARE
                 l_err_msg VARCHAR2(500) := '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job ' || l_load_ess_id || ' logs for details.';
+                l_rows    NUMBER;
+                l_code    NUMBER;
             BEGIN
-                UPDATE DMT_INV_TRX_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+                DMT_MISC_RECEIPT_FBDI_GEN_PKG.FAIL_GENERATED_ROWS(
+                    p_run_id      => p_run_id,
+                    p_error_text  => l_err_msg,
+                    x_rows_failed => l_rows,
+                    x_error_code  => l_code);
+                IF l_code != DMT_UTIL_PKG.C_SUCCESS THEN
+                    RAISE_APPLICATION_ERROR(-20051,
+                        'MiscReceipts: marking the failed load''s rows FAILED did not complete.');
+                END IF;
                 COMMIT;
             END;
             RETURN;

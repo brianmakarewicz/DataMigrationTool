@@ -565,5 +565,64 @@ AS
             RAISE;
     END GENERATE_FBDI;
 
+    -- --------------------------------------------------------
+    -- FAIL_GENERATED_ROWS (backlog #633)
+    -- One load job carries the whole zip, so a load that fails fails every
+    -- record type of it. Mark the GENERATED transaction, lot and serial rows
+    -- FAILED with the caller's load error (design section 5, [LOAD_ERROR]:
+    -- "every GENERATED row of that ZIP is marked FAILED"). Before #633 only
+    -- the transaction rows were marked, and the lot and serial rows of the same
+    -- zip were left GENERATED. NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE FAIL_GENERATED_ROWS (
+        p_run_id      IN  NUMBER,
+        p_error_text  IN  VARCHAR2,
+        x_rows_failed OUT NUMBER,
+        x_error_code  OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'FAIL_GENERATED_ROWS';
+        l_step VARCHAR2(200);
+    BEGIN
+        x_rows_failed := 0;
+        x_error_code  := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'failing generated transaction rows';
+        UPDATE DMT_INV_TRX_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        l_step := 'failing generated lot rows';
+        UPDATE DMT_INV_TRX_LOTS_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        l_step := 'failing generated serial rows';
+        UPDATE DMT_INV_TRX_SERIALS_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED';
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': ' || x_rows_failed || ' generated row(s) marked FAILED '
+            || '(transactions, lots and serials of the failed load).',
+            'INFO', C_PKG, C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed while ' || l_step || '.', SQLERRM, C_PKG, C_PROC);
+    END FAIL_GENERATED_ROWS;
+
 END DMT_MISC_RECEIPT_FBDI_GEN_PKG;
 /

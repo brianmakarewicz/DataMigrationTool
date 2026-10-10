@@ -107,6 +107,17 @@ MiscReceipts): the transactions FAILED with `INV_LOTSR_LOT_QTY` and
 `INV_MATRX_INVALID_SERIAL_RANGE`, the lot and serial FAILED quoting them, every GOOD row (lot and
 serial included) LOADED, all 14 listed rows met, 0 UNACCOUNTED, harness PASS.
 
+## A failed load fails every record type of the zip (2026-10-09, backlog #633)
+
+One MiscReceipts zip carries the transaction, lot and serial CSVs and goes through one load
+job. When `RUN_MISC_RECEIPTS` sees that load job fail, it calls
+`DMT_MISC_RECEIPT_FBDI_GEN_PKG.FAIL_GENERATED_ROWS`, which sets every GENERATED transaction,
+lot and serial row of the run FAILED with the same `[LOAD_ERROR]` text. Before, only the
+transaction rows were marked and the lots and serials stayed GENERATED until the sweep made
+them UNACCOUNTED. A load failure cannot honestly be produced from data on this pod (bad rows
+make the load end WARNING, not ERROR), so the proof is the rolled-back unit test
+`test/unit/test_misc_receipt_load_failure.sql` (synthetic runs and rows only).
+
 ## Status
 WIRED INTO PIPELINE. Code built. Now in P2P scheduler sequence (last position).
 Needs first E2E test with real data.

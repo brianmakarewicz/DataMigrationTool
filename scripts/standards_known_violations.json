@@ -203,6 +203,27 @@
       "backlog": 605,
       "found": "2026-10-08",
       "detail": "bip/Workers/query.sql is not the DMT_WORKERS_RECON_V2_DM.xdm SQL character for character (first difference at line 1; regenerate with --write-mirror Workers)"
+    },
+    {
+      "checker": "check_load_failure_all_types",
+      "key": "LOADFAIL-ALL-TYPES|Assets|fin_mark_generated_failed",
+      "backlog": 673,
+      "found": "2026-10-09",
+      "detail": "Assets load-failure path in fin_mark_generated_failed does not mark DMT_FA_ASSET_ASSIGN_TFM_TBL, DMT_FA_ASSET_BOOK_TFM_TBL"
+    },
+    {
+      "checker": "check_load_failure_all_types",
+      "key": "LOADFAIL-ALL-TYPES|BlanketPOs|po_mark_bu_failed",
+      "backlog": 674,
+      "found": "2026-10-09",
+      "detail": "BlanketPOs load-failure path in po_mark_bu_failed does not mark DMT_PO_LINES_INT_TFM_TBL"
+    },
+    {
+      "checker": "check_load_failure_all_types",
+      "key": "LOADFAIL-ALL-TYPES|Projects|fin_mark_generated_failed",
+      "backlog": 672,
+      "found": "2026-10-09",
+      "detail": "Projects load-failure path in fin_mark_generated_failed does not mark DMT_PJC_TXN_CONTROLS_TFM_TBL, DMT_PJF_TASKS_TFM_TBL, DMT_PJF_TEAM_MEMBERS_TFM_TBL"
     }
   ]
 }

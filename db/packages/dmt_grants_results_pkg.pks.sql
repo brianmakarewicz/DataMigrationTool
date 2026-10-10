@@ -10,10 +10,12 @@
 -- report (DMT_GRANT_RECON_DM.xdm / DMT_GRANT_RECON_RPT.xdo), exactly as the
 -- Requisitions and Workers readers do. The report reconciles the AWARD HEADER
 -- tier ONLY (GMS_AWARD_HEADERS_B for LOADED; GMS_AWARD_HEADERS_INT for the
--- structurally-empty interface tier); the 14 award children have no persistent
--- Fusion base/interface tables on this pod, so they are accounted by the
--- parent award's verdict (cascade by AWARD_NUMBER), unchanged from the prior
--- reader.
+-- structurally-empty interface tier). Each of the 14 award children is
+-- accounted on its OWN Fusion evidence (backlog #568): LOADED only when the
+-- Award Batch Import Report of this import job lists that child row as
+-- imported under a base-confirmed award; FAILED with its own error when the
+-- report lists it as rejected; otherwise left for the unaccounted sweep. A
+-- child is never LOADED by inheritance from its award.
 --
 -- The Award Batch Import Report fallback (ImportAwardReportJob /
 -- AwardBatchImportReportDm, parsed by apply_award_import_report) is RETAINED:
@@ -30,6 +32,22 @@
     -- the ESS-id args are ignored. NO dynamic SQL; NO COMMIT (caller owns the txn).
     PROCEDURE RESET_UNACCOUNTED (p_run_id IN NUMBER, p_load_ess_id IN NUMBER DEFAULT NULL,
         p_import_ess_id IN NUMBER DEFAULT NULL, p_work_queue_id IN NUMBER DEFAULT NULL);
+    -- APPLY_AWARD_REPORT_XML -- the report half of RECONCILE_BATCH on a payload
+    -- the caller supplies (backlog #568; transport and parse are separable,
+    -- design section 7). Applies an Award Batch Import Report XML to this run's
+    -- TFM rows exactly as the reconcile does after its base-table pass: child
+    -- and award rejections FAILED with their own error, children of LOADED
+    -- awards LOADED only on their own success line, then the whole-document
+    -- quote onto the other rows of each rejected award. Used by the unit test
+    -- test/unit/test_grants_child_accounting.sql. NO COMMIT.
+    -- x_error_code = DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure logged).
+    PROCEDURE APPLY_AWARD_REPORT_XML (
+        p_run_id      IN  NUMBER,
+        p_report_xml  IN  CLOB,
+        x_rows_failed OUT NUMBER,
+        x_rows_loaded OUT NUMBER,
+        x_error_code  OUT NUMBER
+    );
 
 END DMT_GRANTS_RESULTS_PKG;
 /
