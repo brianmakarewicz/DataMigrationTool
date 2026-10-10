@@ -27,5 +27,22 @@
         x_fbdi_csv_id     OUT NUMBER,
         p_book            IN  VARCHAR2 DEFAULT NULL  -- multi-book: one FBDI per BOOK_TYPE_CODE
     );
+
+    -- FAIL_GENERATED_ROWS -- the book zip's load failed (backlog #673).
+    -- Marks every GENERATED row of the run's Assets zip for p_book (NULL = all
+    -- books) FAILED with p_error_text, in ALL THREE record types (headers, books,
+    -- assignments), scoped exactly as GENERATE_FBDI scoped them. The caller
+    -- (DMT_LOADER_PKG.fin_mark_generated_failed, synchronous load-failure path)
+    -- passes the [LOAD_ERROR] text; this procedure never composes one. LOADED,
+    -- STAGED and FAILED rows are never touched. NO COMMIT (the caller commits).
+    -- x_rows_failed = rows changed across the three tables.
+    -- x_error_code  = DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure logged).
+    PROCEDURE FAIL_GENERATED_ROWS (
+        p_run_id      IN  NUMBER,
+        p_book        IN  VARCHAR2,
+        p_error_text  IN  VARCHAR2,
+        x_rows_failed OUT NUMBER,
+        x_error_code  OUT NUMBER
+    );
 END DMT_FA_ASSET_FBDI_GEN_PKG;
 /

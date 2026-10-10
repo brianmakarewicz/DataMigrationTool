@@ -261,3 +261,15 @@ the tenth column `PAGE_KEY`. `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` counts headers,
 header key back as `P_AFTER_KEY`, has no page cap, and fails the fetch with an error if a page
 does not advance. Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text are the
 same as in `DMT_PROJECT_RECON_V2_DM`.
+
+## A failed load fails every record type of the zip (2026-10-10, backlog #672)
+
+One Projects zip carries the project, task, team member and transaction control CSVs and goes
+through one load job. When the loader sees that load job fail, `fin_mark_generated_failed` calls
+`DMT_PROJECT_FBDI_GEN_PKG.FAIL_GENERATED_ROWS`, which sets every GENERATED row of the run in all
+four TFM tables FAILED with the same `[LOAD_ERROR]` text. Before, only the project rows were marked
+and the tasks, team members and transaction controls stayed GENERATED until the sweep made them
+UNACCOUNTED. A load failure cannot honestly be produced from data on this pod, so the proof is the rolled-back
+unit test `test/unit/test_load_failure_all_types.sql` (synthetic runs and rows only). This path runs
+only when the loader waits on the load itself; the queue-driven path leaves the rows GENERATED for
+reconciliation and the shared unaccounted sweep, which already covers every record type.

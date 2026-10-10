@@ -1769,6 +1769,8 @@
         l_err VARCHAR2(500) :=
             '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
             || p_load_ess_id || ' logs for details.';
+        l_rows NUMBER;
+        l_code NUMBER;
     BEGIN
         IF p_cemli_code = 'PurchaseOrders' THEN
             UPDATE DMT_PO_HEADERS_INT_TFM_TBL
@@ -1791,11 +1793,18 @@
                 AND INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID=p_run_id AND PRC_BU_NAME=p_prc_bu_name)));
             COMMIT;
         ELSIF p_cemli_code = 'BlanketPOs' THEN
-            UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-            SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err),
-                LAST_UPDATED_DATE=SYSDATE
-            WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED' AND PRC_BU_NAME=p_prc_bu_name
-            AND STYLE_DISPLAY_NAME='Blanket Purchase Agreement';
+            -- Backlog #674: one BU zip = one load job, so a failed load fails the
+            -- agreement lines too (cross-grain failure shape (d)), not only headers.
+            DMT_BLANKET_PO_FBDI_GEN_PKG.FAIL_GENERATED_ROWS(
+                p_run_id      => p_run_id,
+                p_prc_bu_name => p_prc_bu_name,
+                p_error_text  => l_err,
+                x_rows_failed => l_rows,
+                x_error_code  => l_code);
+            IF l_code != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20051,
+                    'BlanketPOs: marking the failed load''s rows FAILED did not complete.');
+            END IF;
             COMMIT;
         ELSIF p_cemli_code = 'Contracts' THEN
             UPDATE DMT_PO_HEADERS_INT_TFM_TBL
@@ -2122,9 +2131,22 @@
         l_err_msg VARCHAR2(500) :=
             '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job '
             || p_load_ess_id || ' logs for details.';
+        l_rows    NUMBER;
+        l_code    NUMBER;
     BEGIN
         IF    p_cemli_code = 'Projects' THEN
-            UPDATE DMT_PJF_PROJECTS_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            -- Backlog #672: one Projects zip = one load job, so a failed load fails
+            -- tasks, team members and transaction controls too (cross-grain
+            -- failure shape (d)), not only the project rows.
+            DMT_PROJECT_FBDI_GEN_PKG.FAIL_GENERATED_ROWS(
+                p_run_id      => p_run_id,
+                p_error_text  => l_err_msg,
+                x_rows_failed => l_rows,
+                x_error_code  => l_code);
+            IF l_code != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20051,
+                    'Projects: marking the failed load''s rows FAILED did not complete.');
+            END IF;
         ELSIF p_cemli_code = 'BillingEvents' THEN
             UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'Grants' THEN
@@ -2150,7 +2172,19 @@
         ELSIF p_cemli_code = 'ProjectBudgets' THEN
             UPDATE DMT_PRJ_BUDGET_TFM_TBL      SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'Assets' THEN
-            UPDATE DMT_FA_ASSET_HDR_TFM_TBL    SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
+            -- Backlog #673: one book zip = one load job, so a failed load fails the
+            -- book and assignment rows too (cross-grain failure shape (d)), scoped
+            -- to this child's book (NULL partition = all books, standalone path).
+            DMT_FA_ASSET_FBDI_GEN_PKG.FAIL_GENERATED_ROWS(
+                p_run_id      => p_run_id,
+                p_book        => DECODE_PARTITION_KEY(g_partition_key, 'BOOK_TYPE_CODE'),
+                p_error_text  => l_err_msg,
+                x_rows_failed => l_rows,
+                x_error_code  => l_code);
+            IF l_code != DMT_UTIL_PKG.C_SUCCESS THEN
+                RAISE_APPLICATION_ERROR(-20051,
+                    'Assets: marking the failed load''s rows FAILED did not complete.');
+            END IF;
         ELSIF p_cemli_code = 'Expenditures' THEN
             UPDATE DMT_PJC_EXPENDITURES_TFM_TBL SET TFM_STATUS='FAILED', ERROR_TEXT=DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT,l_err_msg) WHERE RUN_ID=p_run_id AND TFM_STATUS='GENERATED';
         ELSIF p_cemli_code = 'GLBudgets' THEN

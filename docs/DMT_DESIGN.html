@@ -623,8 +623,9 @@
           record type, gets the same <code>[LOAD_ERROR]</code> (ERROR_TEXT tag table above); when the job crashes with no per-row verdict and
           no load error to quote, every row of every record type is left for reconciliation and the shared unaccounted sweep, so all of them
           end <code>UNACCOUNTED</code> together. Marking only the header table, and leaving the other record types <code>GENERATED</code>, is a
-          defect. MiscReceipts (lots and serials, backlog #633) and Grants (14 award child tables, backlog #670) had it; Projects, Assets and
-          Blanket POs still do (backlog #672 / #673 / #674). Enforced by <code>scripts/check_load_failure_all_types.py</code>: every
+          defect. MiscReceipts (lots and serials, backlog #633) and Grants (14 award child tables, backlog #670) had it; Projects, Assets and Blanket POs had it too and were fixed
+          2026-10-10 (backlog #672 / #673 / #674, each object's FBDI generator package owns a
+          <code>FAIL_GENERATED_ROWS</code> that the loader calls, scoped to the failed book or BU). Enforced by <code>scripts/check_load_failure_all_types.py</code>: every
           <code>[LOAD_ERROR]</code> path in <code>DMT_LOADER_PKG</code> must mark every TFM table the catalog registers to its object.</li>
       </ol>
       <strong>Why the 2026-10-07 cross-grain conformance review missed (c) and (d):</strong> it checked only shapes (a) and (b), the two
