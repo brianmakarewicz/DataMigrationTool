@@ -13,9 +13,12 @@
 -- structurally-empty interface tier). Each of the 14 award children is
 -- accounted on its OWN Fusion evidence (backlog #568): LOADED only when the
 -- Award Batch Import Report of this import job lists that child row as
--- imported under a base-confirmed award; FAILED with its own error when the
--- report lists it as rejected; otherwise left for the unaccounted sweep. A
--- child is never LOADED by inheritance from its award.
+-- imported under a base-confirmed award, or (backlog #671, report V4) when
+-- the recon report returns the child's own base row under a confirmed award
+-- (keywords, terms, certifications, CFDAs, references, task burden
+-- schedules, each stored with its own Fusion id); FAILED with its own error
+-- when the report lists it as rejected; otherwise left for the unaccounted
+-- sweep. A child is never LOADED by inheritance from its award.
 --
 -- The Award Batch Import Report fallback (ImportAwardReportJob /
 -- AwardBatchImportReportDm, parsed by apply_award_import_report) is RETAINED:
@@ -45,6 +48,25 @@
         p_run_id      IN  NUMBER,
         p_report_xml  IN  CLOB,
         x_rows_failed OUT NUMBER,
+        x_rows_loaded OUT NUMBER,
+        x_error_code  OUT NUMBER
+    );
+    -- APPLY_AWARD_CHILD_ROWS -- the child-tier half of the reconcile (backlog
+    -- #671). Takes the parsed Grants recon report rows (V4) and, for every
+    -- BASE / SUCCESS row of the six child tiers (Grants.Keyword, Grants.Term,
+    -- Grants.Certification, Grants.Cfda, Grants.Reference, Grants.TaskBurden),
+    -- sets ONE child TFM row of this run LOADED and stores the row's own Fusion
+    -- id in its FUSION_*_ID column. The row is matched on the award number plus
+    -- the business key DMT sent (the same '~'-joined key the report builds), is
+    -- the lowest TFM_SEQUENCE_ID still awaiting a verdict, and only when its
+    -- award header is already LOADED. A Fusion id already stored on a row of
+    -- this run is never stored again. Other report rows are ignored. Called by
+    -- RECONCILE_BATCH after the award-header pass; public so the unit test
+    -- test/unit/test_grants_child_base_ids.sql can drive it. NO COMMIT.
+    -- x_error_code = DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure logged).
+    PROCEDURE APPLY_AWARD_CHILD_ROWS (
+        p_run_id      IN  NUMBER,
+        p_rows        IN  DMT_RECON_CONTRACT_PKG.T_RECON_TBL,
         x_rows_loaded OUT NUMBER,
         x_error_code  OUT NUMBER
     );

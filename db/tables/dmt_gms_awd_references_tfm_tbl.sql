@@ -17,6 +17,7 @@ begin
 	"RUN_ID" NUMBER, 
 	"RECON_KEY" VARCHAR2(1000), 
 	"FUSION_AWARD_ID" NUMBER, 
+	"FUSION_REFERENCE_ID" NUMBER, 
 	"WORK_QUEUE_ID" NUMBER, 
 	 CONSTRAINT "DMT_GMS_AWD_REF_TFM_PK" PRIMARY KEY ("TFM_SEQUENCE_ID")
   USING INDEX  ENABLE
@@ -124,3 +125,20 @@ begin
 end;
 /
 COMMENT ON COLUMN "DMT_GMS_AWD_REFERENCES_TFM_TBL"."WORK_QUEUE_ID" IS 'The work queue item (DMT_WORK_QUEUE_TBL.QUEUE_ID) that processed this record. FK in _foreign_keys.sql. Stamped at generation; unit of per-work-item processing (design section 7, accepted 2026-07-20).';
+
+-- FUSION_REFERENCE_ID (backlog #671, 2026-10-10): this reference row's own Fusion id,
+-- GMS_AWARD_REFERENCES_B.ID, stamped by reconciliation (DMT_GRANTS_RESULTS_PKG) when the Grants
+-- recon report (V4) finds the row in Fusion under an award this load created.
+-- Guarded in-file ALTER so an existing DB converges via db/install.sql (the CREATE
+-- above carries it for fresh installs). Additive only: no existing value is touched.
+declare
+  l_n pls_integer;
+begin
+  select count(*) into l_n from user_tab_columns
+  where table_name = 'DMT_GMS_AWD_REFERENCES_TFM_TBL' and column_name = 'FUSION_REFERENCE_ID';
+  if l_n = 0 then
+    execute immediate 'ALTER TABLE "DMT_GMS_AWD_REFERENCES_TFM_TBL" ADD ("FUSION_REFERENCE_ID" NUMBER)';
+  end if;
+end;
+/
+COMMENT ON COLUMN "DMT_GMS_AWD_REFERENCES_TFM_TBL"."FUSION_REFERENCE_ID" IS 'Fusion GMS_AWARD_REFERENCES_B.ID of this reference row - written only by BIP reconciliation (row-grain positive proof of load; the award id is FUSION_AWARD_ID).';

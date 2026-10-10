@@ -8,11 +8,12 @@ AS
 -- Award headers are reconciled through the ONE shared Contract v1 fetch
 -- (DMT_RECON_CONTRACT_PKG.FETCH_ROWS), the same multi-tier template proven on
 -- Requisitions (PR #364) and Workers. A single FETCH_ROWS call runs the
--- nine-column Grants recon report (DMT_GRANT_RECON_DM.xdm) over BIP and returns
+-- nine-column Grants recon report (DMT_GRANT_RECON_V4_DM.xdm) over BIP and returns
 -- the parsed rows; the APPLY is STATIC SQL against the compile-time-known award
 -- header TFM table (Option A, owner decision on PR #248 -- no dynamic SQL here).
 --
--- The Grants recon report reconciles the AWARD HEADER tier ONLY:
+-- The Grants recon report's award tier (OBJECT_TYPE 'Grants'); since V4 it also
+-- returns six child tiers 'Grants.<type>' (see APPLY_AWARD_CHILD_ROWS):
 --   OBJECT_TYPE literal : 'Grants'
 --   header TFM table    : DMT_GMS_AWD_HEADERS_TFM_TBL
 --   FUSION_ID column    : FUSION_AWARD_ID  (GMS_AWARD_HEADERS_B.ID)
@@ -39,6 +40,11 @@ AS
 --   * the report lists the child row as rejected -> FAILED with its own error,
 --     also under a LOADED award; the award and its siblings are then NOT quoted
 --     (Fusion created the award, so the document was not rejected).
+--   * award LOADED and the recon report (V4, backlog #671) returns the child's
+--     own base row (keyword, term, certification, CFDA, reference or task
+--     burden schedule, the six record types the award report never lists as
+--     imported) -> LOADED with that row's own Fusion id in its FUSION_*_ID
+--     column (APPLY_AWARD_CHILD_ROWS).
 --   * neither -> left GENERATED for the honest unaccounted sweep.
 --   * award rejected -> Fusion's Award Batch Import Report names the row it
 --     blamed: the award itself (G_4) or a child (the failure groups nested in
@@ -48,7 +54,8 @@ AS
 --     children): '[FUSION_ERROR] Rejected with document: award <AWARD_NUMBER>
 --     (<grain> <key>): <real msg>' (design section 5, "Whole-document rejection
 --     carries the real error to every grain").
--- Never fabricate a child base id (children carry no FUSION_*_ID yet).
+-- Never fabricate a child base id: only the six record types above store one,
+-- read from their own base row (the other eight are backlog #765).
 --
 -- AWARD BATCH IMPORT REPORT fallback (RETAINED): Fusion purges
 -- GMS_AWARD_HEADERS_INT immediately after every AwardMassImportJob, so the
@@ -76,6 +83,10 @@ AS
 --                   only on its own success line in the job's award report,
 --                   under a base-confirmed award. Document quotes skip awards
 --                   Fusion created. New APPLY_AWARD_REPORT_XML test seam.
+--   2026-10-10  BM  Backlog #671: report V4 also returns the keyword, term,
+--                   certification, CFDA, reference and task burden schedule
+--                   rows of the awards it confirms; APPLY_AWARD_CHILD_ROWS sets
+--                   each matching child LOADED with its own Fusion id.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_GRANTS_RESULTS_PKG';
@@ -548,8 +559,8 @@ AS
     -- rejected keeps its own [FUSION_ERROR] (APPLY_CHILD_REPORT_FAILURES runs
     -- first and FAILED rows are never touched). The other six child record types
     -- (terms, keywords, certifications, CFDAs, references, task burden schedules)
-    -- have no success group in Fusion's report, so they are never LOADED here
-    -- (backlog #671). Static SQL; NO COMMIT.
+    -- have no success group in Fusion's report; they are LOADED from their own
+    -- base row by APPLY_AWARD_CHILD_ROWS (backlog #671). Static SQL; NO COMMIT.
     -- --------------------------------------------------------
     PROCEDURE APPLY_CHILD_REPORT_SUCCESSES (
         p_run_id IN  NUMBER,
@@ -1477,6 +1488,227 @@ AS
     END APPLY_AWARD_REPORT_XML;
 
     -- --------------------------------------------------------
+    -- APPLY_AWARD_CHILD_ROWS (public, backlog #671) -- see spec.
+    -- The Grants recon report V4 returns, for each award it confirms, the base
+    -- rows of six child record types that Fusion's Award Batch Import Report
+    -- never lists as imported: GMS_AWARD_KEYWORDS, GMS_AWARD_TERMS_B,
+    -- GMS_AWARD_CERTS_B, GMS_AWARD_CFDAS, GMS_AWARD_REFERENCES_B and
+    -- GMS_AWD_PRJ_TSK_BRD_SCHEDULES (only rows Fusion created while the run's
+    -- import job ran). RECORD_KEY is the award number plus the child's business
+    -- key, '~'-joined, names upper-cased:
+    --   Grants.Keyword        award~KEYWORD_NAME~PROJECT_NUMBER
+    --   Grants.Term           award~TERM_CATEGORY_NAME~TERM_NAME
+    --   Grants.Certification  award~CERTIFICATION_NAME~PROJECT_NUMBER
+    --   Grants.Cfda           award~CFDA
+    --   Grants.Reference      award~REFERENCE_TYPE~PROJECT_NUMBER~VALUE
+    --   Grants.TaskBurden     award~PROJECT_NUMBER~TASK_NUMBER
+    -- Each line is matched to ONE child TFM row of this run whose same key is
+    -- equal (the lowest TFM_SEQUENCE_ID still waiting, so two identical rows
+    -- need two Fusion rows), that Fusion received (FBDI_CSV_ID stamped), and
+    -- whose award header is already LOADED; that row is set LOADED with the
+    -- line's FUSION_ID in its own FUSION_*_ID column. A Fusion id already on a
+    -- row of this run is never stored twice. Rows Fusion created from the award
+    -- template (for example the template's own terms) match no TFM row and are
+    -- ignored. One static FORALL UPDATE per table. NO dynamic SQL; NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE APPLY_AWARD_CHILD_ROWS (
+        p_run_id      IN  NUMBER,
+        p_rows        IN  DMT_RECON_CONTRACT_PKG.T_RECON_TBL,
+        x_rows_loaded OUT NUMBER,
+        x_error_code  OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'APPLY_AWARD_CHILD_ROWS';
+        TYPE T_HIT IS RECORD (
+            OBJECT_TYPE VARCHAR2(100),
+            RECORD_KEY  VARCHAR2(1000),
+            FUSION_ID   NUMBER
+        );
+        TYPE T_HIT_TBL IS TABLE OF T_HIT;
+        l_step VARCHAR2(200);
+        l_hits T_HIT_TBL := T_HIT_TBL();
+        l_idx  PLS_INTEGER;
+    BEGIN
+        x_error_code  := DMT_UTIL_PKG.C_SUCCESS;
+        x_rows_loaded := 0;
+
+        l_step := 'collecting the child base rows of the report';
+        l_idx := p_rows.FIRST;
+        WHILE l_idx IS NOT NULL LOOP
+            IF p_rows(l_idx).OBJECT_TYPE IN ('Grants.Keyword', 'Grants.Term', 'Grants.Certification',
+                                             'Grants.Cfda', 'Grants.Reference', 'Grants.TaskBurden')
+               AND p_rows(l_idx).SOURCE_TYPE   = 'BASE'
+               AND p_rows(l_idx).FUSION_STATUS = 'SUCCESS'
+               AND p_rows(l_idx).FUSION_ID     IS NOT NULL
+               AND p_rows(l_idx).RECORD_KEY    IS NOT NULL THEN
+                l_hits.EXTEND;
+                l_hits(l_hits.COUNT).OBJECT_TYPE := p_rows(l_idx).OBJECT_TYPE;
+                l_hits(l_hits.COUNT).RECORD_KEY  := p_rows(l_idx).RECORD_KEY;
+                l_hits(l_hits.COUNT).FUSION_ID   := TO_NUMBER(p_rows(l_idx).FUSION_ID);
+            END IF;
+            l_idx := p_rows.NEXT(l_idx);
+        END LOOP;
+
+        l_step := 'marking keyword rows found in GMS_AWARD_KEYWORDS';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_KEYWORDS_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_KEYWORD_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.Keyword'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_KEYWORDS_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || UPPER(c.KEYWORD_NAME) || '~' || c.PROJECT_NUMBER
+                              = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_KEYWORDS_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_KEYWORD_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        l_step := 'marking term rows found in GMS_AWARD_TERMS_B';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_TERMS_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_TERM_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.Term'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_TERMS_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || UPPER(c.TERM_CATEGORY_NAME) || '~' || UPPER(c.TERM_NAME)
+                              = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_TERMS_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_TERM_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        l_step := 'marking certification rows found in GMS_AWARD_CERTS_B';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_CERTS_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_CERT_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.Certification'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_CERTS_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || UPPER(c.CERTIFICATION_NAME) || '~' || c.PROJECT_NUMBER
+                              = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_CERTS_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_CERT_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        l_step := 'marking CFDA rows found in GMS_AWARD_CFDAS';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_CFDAS_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_CFDA_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.Cfda'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_CFDAS_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || UPPER(c.CFDA) = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_CFDAS_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_CFDA_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        l_step := 'marking reference rows found in GMS_AWARD_REFERENCES_B';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_REFERENCES_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_REFERENCE_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.Reference'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_REFERENCES_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || UPPER(c.REFERENCE_TYPE) || '~' || c.PROJECT_NUMBER
+                              || '~' || c.VALUE = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_REFERENCES_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_REFERENCE_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        l_step := 'marking task burden schedule rows found in GMS_AWD_PRJ_TSK_BRD_SCHEDULES';
+        FORALL i IN 1 .. l_hits.COUNT
+            UPDATE DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL t
+            SET    t.TFM_STATUS = 'LOADED', t.FUSION_TASK_BURDEN_ID = l_hits(i).FUSION_ID,
+                   t.RESULTS_UPDATED_DATE = SYSDATE, t.LAST_UPDATED_DATE = SYSDATE
+            WHERE  t.RUN_ID = p_run_id
+            AND    l_hits(i).OBJECT_TYPE = 'Grants.TaskBurden'
+            AND    t.TFM_SEQUENCE_ID = (
+                       SELECT MIN(c.TFM_SEQUENCE_ID)
+                       FROM   DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL c
+                       WHERE  c.RUN_ID = p_run_id
+                       AND    c.AWARD_NUMBER || '~' || c.PROJECT_NUMBER || '~' || c.TASK_NUMBER
+                              = l_hits(i).RECORD_KEY
+                       AND    c.FBDI_CSV_ID IS NOT NULL
+                       AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED', 'STAGED')
+                       AND    EXISTS (SELECT 1 FROM DMT_GMS_AWD_HEADERS_TFM_TBL h
+                                      WHERE  h.RUN_ID = p_run_id
+                                      AND    h.AWARD_NUMBER = c.AWARD_NUMBER
+                                      AND    h.TFM_STATUS = 'LOADED')
+                       AND    NOT EXISTS (SELECT 1 FROM DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL x
+                                          WHERE  x.RUN_ID = p_run_id
+                                          AND    x.FUSION_TASK_BURDEN_ID = l_hits(i).FUSION_ID));
+        x_rows_loaded := x_rows_loaded + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => p_run_id,
+            p_message   => C_PROC || ': ' || l_hits.COUNT || ' child base row(s) in the report; '
+                           || x_rows_loaded || ' child row(s) marked LOADED with their own Fusion id.',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_run_id    => p_run_id,
+                p_message   => C_PROC || ' failed while ' || l_step || '.',
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => C_PROC);
+    END APPLY_AWARD_CHILD_ROWS;
+
+    -- --------------------------------------------------------
     -- APPLY_CONTRACT_V1_GRANTS (private)
     -- The Contract v1 apply for the Grants award-header tier, Option A shape
     -- (owner decision on PR #248). The shared package DMT_RECON_CONTRACT_PKG.FETCH_ROWS
@@ -1503,6 +1735,7 @@ AS
         l_rc        NUMBER := 0;    -- backlog #65: rows matched by the current tier
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
+        l_child_loaded NUMBER := 0;  -- backlog #671: child rows LOADED from their own base row
     BEGIN
         -- Generated-row count on the award header tier drives the shared fetch's
         -- keyset page-count cap. Done statically here (not in the shared pkg).
@@ -1632,6 +1865,18 @@ AS
             END LOOP;
         END IF;
 
+        -- Backlog #671: the six child tiers of report V4 (keywords, terms,
+        -- certifications, CFDAs, references, task burden schedules). Each child
+        -- found in its own base table under an award this report confirmed is
+        -- LOADED with its own Fusion id. Runs after the header pass (a child is
+        -- only LOADED under a LOADED award).
+        APPLY_AWARD_CHILD_ROWS(p_run_id, l_rows, l_child_loaded, l_err_code);
+        IF l_err_code <> DMT_UTIL_PKG.C_SUCCESS THEN
+            RAISE_APPLICATION_ERROR(-20094,
+                C_PROC || ': applying the Grants child base rows failed '
+                || '(detail in DMT_LOG_TBL).');
+        END IF;
+
         -- Award Batch Import Report pass (RETAINED): the real per-award rejection
         -- messages survive only in Fusion's own Award Batch Import Report, because
         -- Fusion purges GMS_AWARD_HEADERS_INT right after import. Any award neither
@@ -1652,6 +1897,7 @@ AS
             p_run_id    => p_run_id,
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | award headers LOADED: ' || l_loaded
+                           || ' | children LOADED from their own base row: ' || l_child_loaded
                            || ' | FAILED: ' || l_failed
                            || ' (of which ' || l_rpt_failed || ' from the Award Batch Import Report)'
                            || ' | children LOADED only on their own report success line; rejected awards propagated.',
