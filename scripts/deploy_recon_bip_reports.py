@@ -7,9 +7,16 @@ DMT2).
 
 Dev/test shim only (no pipeline logic): each report pair is deployed by the
 DB's own DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT -- login via SecurityService,
-delete any prior versions, createObjectInSession for the .xdm, then a
-generated XML-output .xdo wrapper linked to it. The package enforces the
-/Custom/DMT2 folder guard (-20055) server-side.
+create the .xdm, then a generated XML-output .xdo wrapper linked to it. The
+package enforces the /Custom/DMT2 folder guard (-20055) server-side.
+
+Never overwrite, never delete (owner rule, backlog #757): the package first
+asks the catalog whether the .xdm or the .xdo already exists and REFUSES
+(ORA-20057) before creating anything if either does. A changed report is
+deployed alongside the old one under a new versioned name (add a new REPORTS
+row, e.g. ..._V3_DM / ..._V3_RPT) and the registry is pointed at it. So run
+this with a dm=... filter for the new pair; an unfiltered run reports every
+already-deployed pair as REFUSED (exists) and exits 1, touching nothing.
 
 The registry rows in DMT_BIP_REPORT_TBL are NOT touched here -- they are
 seeded by db/seed/dmt_bip_report_tbl.sql (supplier MERGE block).
@@ -389,7 +396,10 @@ def main():
         except Exception as e:
             for ln in get_dbms_output(cur):
                 print(f"  [PL/SQL] {ln}")
-            print(f"  ERR  {e}")
+            if "ORA-20057" in str(e):
+                print(f"  REFUSED (exists, left untouched -- deploy a new version name): {e}")
+            else:
+                print(f"  ERR  {e}")
             fail += 1
     conn.commit()  # DMT_UTIL_PKG.LOG rows
     cur.close()

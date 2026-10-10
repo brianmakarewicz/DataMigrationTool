@@ -275,6 +275,73 @@
     END GET_SESSION_TOKEN;
 
     -- --------------------------------------------------------
+    -- Private: catalog existence check + never-overwrite guard
+    -- (backlog #757, owner rule: a Fusion BIP catalog object is
+    -- NEVER overwritten or deleted -- deploy the next version
+    -- alongside under a new name). object_exists is a read-only
+    -- CatalogService objectExistInSession call that fails closed
+    -- (-20016 on a Fault or an unreadable answer). assert_absent
+    -- raises -20015 when the target exists. Scratch objects in
+    -- the caller's personal folder (/~user, used by
+    -- RUN_DATA_MODEL_EPHEMERAL) are exempt: they are created and
+    -- removed by the same call and are not shared catalog objects.
+    -- --------------------------------------------------------
+    FUNCTION is_personal_path (p_path IN VARCHAR2) RETURN BOOLEAN IS
+    BEGIN
+        RETURN SUBSTR(p_path, 1, 2) = '/~';
+    END is_personal_path;
+
+    FUNCTION object_exists (
+        p_session_token IN VARCHAR2,
+        p_base_url      IN VARCHAR2,
+        p_path          IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        l_action CONSTANT VARCHAR2(200) :=
+            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/objectExistInSessionRequest';
+        l_env    CLOB;
+        l_resp   CLOB;
+        l_answer VARCHAR2(10);
+    BEGIN
+        l_env :=
+            '<soapenv:Envelope'||
+            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
+            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
+            '  <soapenv:Header/>'||
+            '  <soapenv:Body>'||
+            '    <v2:objectExistInSession>'||
+            '      <v2:reportObjectAbsolutePath>'||p_path||'</v2:reportObjectAbsolutePath>'||
+            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
+            '    </v2:objectExistInSession>'||
+            '  </soapenv:Body>'||
+            '</soapenv:Envelope>';
+        l_resp := soap_post(RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService',
+                            l_action, l_env);
+        l_answer := LOWER(REGEXP_SUBSTR(l_resp,
+                        'objectExistInSessionReturn>\s*(true|false)\s*<', 1, 1, 'i', 1));
+        IF INSTR(l_resp, 'Fault>') > 0 OR l_answer IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20016,
+                'FBT_BIP_PKG: objectExistInSession gave no true/false answer for ' ||
+                p_path || ' | Response: ' || DBMS_LOB.SUBSTR(l_resp, 500, 1));
+        END IF;
+        RETURN l_answer = 'true';
+    END object_exists;
+
+    PROCEDURE assert_absent (
+        p_session_token IN VARCHAR2,
+        p_base_url      IN VARCHAR2,
+        p_path          IN VARCHAR2
+    ) IS
+    BEGIN
+        IF NOT is_personal_path(p_path)
+           AND object_exists(p_session_token, p_base_url, p_path) THEN
+            RAISE_APPLICATION_ERROR(-20015,
+                'FBT_BIP_PKG: catalog write refused: ' || p_path || ' already exists. ' ||
+                'A Fusion BIP object is never overwritten or deleted -- deploy the ' ||
+                'next version alongside under a new name.');
+        END IF;
+    END assert_absent;
+
+    -- --------------------------------------------------------
     -- DEPLOY_DATA_MODEL
     -- --------------------------------------------------------
     PROCEDURE DEPLOY_DATA_MODEL (
@@ -293,6 +360,7 @@
         l_resp   CLOB;
     BEGIN
         l_folder := get_folder(p_folder);
+        assert_absent(p_session_token, p_base_url, l_folder || '/' || p_name || '.xdm');
         l_url    := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
         l_b64    := clob_to_b64(p_xdm_xml);
 
@@ -391,6 +459,14 @@
         l_tmp    CLOB;
     BEGIN
         l_folder := get_folder(p_folder);
+        -- Backlog #757: only the caller's own scratch data model in its
+        -- personal folder (/~user) may be removed; never a catalog object.
+        IF NOT is_personal_path(l_folder) THEN
+            RAISE_APPLICATION_ERROR(-20015,
+                'FBT_BIP_PKG.DELETE_DATA_MODEL refused: ' || l_folder ||
+                ' is not a personal folder (/~user). A Fusion BIP catalog object ' ||
+                'is never deleted.');
+        END IF;
         l_url    := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
 
         l_env :=
@@ -462,6 +538,7 @@
         l_resp    CLOB;
     BEGIN
         l_folder := get_folder(p_folder);
+        assert_absent(p_session_token, p_base_url, l_folder || '/' || p_name || '.xdo');
         l_url    := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
 
         -- BIP report definition referencing the data model.
@@ -550,6 +627,8 @@
     BEGIN
         -- Strip file extension to derive the template sub-folder
         l_template_folder := REGEXP_REPLACE(p_report_path, '\.[^./]+$', '');
+        assert_absent(p_session_token, p_base_url,
+                      l_template_folder || '/' || p_template_name || '.' || p_template_type);
         l_url             := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
         l_b64             := clob_to_b64(p_template_data);
 
@@ -634,44 +713,6 @@
     END RUN_REPORT;
 
     -- --------------------------------------------------------
-    -- DELETE_REPORT
-    -- --------------------------------------------------------
-    PROCEDURE DELETE_REPORT (
-        p_session_token IN VARCHAR2,
-        p_base_url      IN VARCHAR2,
-        p_name          IN VARCHAR2,
-        p_folder        IN VARCHAR2 DEFAULT NULL
-    ) IS
-        l_url    VARCHAR2(500);
-        l_action CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/deleteObjectInSessionRequest';
-        l_folder VARCHAR2(500);
-        l_env    CLOB;
-        l_tmp    CLOB;
-    BEGIN
-        l_folder := get_folder(p_folder);
-        l_url    := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
-
-        l_env :=
-            '<soapenv:Envelope'||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
-            '  <soapenv:Header/>'||
-            '  <soapenv:Body>'||
-            '    <v2:deleteObjectInSession>'||
-            '      <v2:objectAbsolutePath>'||l_folder||'/'||p_name||'.xdo</v2:objectAbsolutePath>'||
-            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
-            '    </v2:deleteObjectInSession>'||
-            '  </soapenv:Body>'||
-            '</soapenv:Envelope>';
-
-        BEGIN
-            l_tmp := soap_post(l_url, l_action, l_env);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
-    END DELETE_REPORT;
-
-    -- --------------------------------------------------------
     -- GET_TEMPLATE
     -- --------------------------------------------------------
     FUNCTION GET_TEMPLATE (
@@ -745,6 +786,16 @@
         l_resp CLOB;
         l_path VARCHAR2(2000);
     BEGIN
+        -- Backlog #757: never overwrite. p_update_existing is kept in the
+        -- signature for compatibility but only 'false' is accepted, the
+        -- request always sends updateFlag=false, and an existing report
+        -- path is refused before the call.
+        IF NVL(LOWER(p_update_existing), 'false') != 'false' THEN
+            RAISE_APPLICATION_ERROR(-20015,
+                'FBT_BIP_PKG.CREATE_REPORT_WITH_TEMPLATE: p_update_existing must be ' ||
+                '''false'' -- a Fusion BIP report is never overwritten.');
+        END IF;
+        assert_absent(p_session_token, p_base_url, p_folder || '/' || p_name || '.xdo');
         l_url := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/ReportService';
         l_b64 := blob_to_b64(p_template_data);
 
@@ -766,7 +817,7 @@
             '</v2:templateData>'||
             '      <v2:XLIFFFileName/>'||
             '      <v2:XLIFFData/>'||
-            '      <v2:updateFlag>'||p_update_existing||'</v2:updateFlag>'||
+            '      <v2:updateFlag>false</v2:updateFlag>'||
             '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
             '    </v2:createReportInSession>'||
             '  </soapenv:Body>'||
@@ -790,60 +841,6 @@
 
         RETURN l_path;
     END CREATE_REPORT_WITH_TEMPLATE;
-
-    -- --------------------------------------------------------
-    -- UPLOAD_TEMPLATE_FOR_REPORT
-    -- --------------------------------------------------------
-    PROCEDURE UPLOAD_TEMPLATE_FOR_REPORT (
-        p_session_token IN VARCHAR2,
-        p_base_url      IN VARCHAR2,
-        p_report_path   IN VARCHAR2,
-        p_template_name IN VARCHAR2,
-        p_template_type IN VARCHAR2,
-        p_locale        IN VARCHAR2 DEFAULT 'en-US',
-        p_template_data IN BLOB
-    ) IS
-        l_url    VARCHAR2(500);
-        l_action CONSTANT VARCHAR2(200) :=
-            'http://xmlns.oracle.com/oxp/service/v2/ReportService/uploadTemplateForReportInSessionRequest';
-        l_b64  CLOB;
-        l_env  CLOB;
-        l_resp CLOB;
-    BEGIN
-        l_url := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/ReportService';
-        l_b64 := blob_to_b64(p_template_data);
-
-        DBMS_LOB.CREATETEMPORARY(l_env, TRUE);
-        DBMS_LOB.APPEND(l_env,
-            '<soapenv:Envelope'||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
-            '  <soapenv:Header/>'||
-            '  <soapenv:Body>'||
-            '    <v2:uploadTemplateForReportInSession>'||
-            '      <v2:reportAbsolutePath>'||p_report_path||'</v2:reportAbsolutePath>'||
-            '      <v2:templateName>'||p_template_name||'</v2:templateName>'||
-            '      <v2:templateType>'||p_template_type||'</v2:templateType>'||
-            '      <v2:locale>'||p_locale||'</v2:locale>'||
-            '      <v2:templateData>');
-        DBMS_LOB.APPEND(l_env, l_b64);
-        DBMS_LOB.APPEND(l_env,
-            '</v2:templateData>'||
-            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
-            '    </v2:uploadTemplateForReportInSession>'||
-            '  </soapenv:Body>'||
-            '</soapenv:Envelope>');
-
-        l_resp := soap_post(l_url, l_action, l_env);
-
-        IF INSTR(l_resp, 'soapenv:Fault') > 0 OR
-           INSTR(l_resp, 'soap:Fault')    > 0 THEN
-            RAISE_APPLICATION_ERROR(-20010,
-                'FBT_BIP_PKG.UPLOAD_TEMPLATE_FOR_REPORT: SOAP Fault. Report: ' || p_report_path ||
-                ' | Template: ' || p_template_name ||
-                ' | Response: ' || SUBSTR(l_resp, 1, 500));
-        END IF;
-    END UPLOAD_TEMPLATE_FOR_REPORT;
 
     -- --------------------------------------------------------
     -- DOWNLOAD_CATALOG
@@ -938,6 +935,7 @@
         l_env    CLOB;
         l_resp   CLOB;
     BEGIN
+        assert_absent(p_session_token, p_base_url, p_object_path);
         l_url := RTRIM(p_base_url, '/') || '/xmlpserver/services/v2/CatalogService';
         l_b64 := blob_to_b64(p_catalog_data);
 

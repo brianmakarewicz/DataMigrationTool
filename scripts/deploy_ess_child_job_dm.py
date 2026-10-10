@@ -67,9 +67,10 @@ def main():
     xdm = open(XDM_PATH, "r", encoding="utf-8").read()
     conn = connect(); cur = conn.cursor()
     # Deploy the DM + its XML-output report wrapper together (single sanctioned
-    # call; deletes prior versions, redeploys both so the report re-surfaces the
-    # DM's parameters including the new P_BATCH_ID). Report name matches the path
-    # get_import_ess_id calls: DMT_ESS_CHILD_JOB_V5_RPT.xdo.
+    # call). It never overwrites or deletes (backlog #757): if V5 already exists
+    # in the catalog the call is refused with ORA-20057 and nothing changes; a
+    # changed model ships as the next version (V6) alongside. Report name matches
+    # the path get_import_ess_id calls: DMT_ESS_CHILD_JOB_V5_RPT.xdo.
     cur.execute("""BEGIN DMT_BIP_DEPLOY_PKG.DEPLOY_RECON_REPORT(
                        p_folder=>:f, p_dm_name=>:dm, p_rpt_name=>:rpt, p_xdm_xml=>:d); END;""",
                 {"f": FOLDER, "dm": DM_NAME, "rpt": RPT_NAME, "d": xdm})

@@ -54,3 +54,7 @@ jobs:
       - name: Line breaks fail before FBDI generation (validators + loader)
         if: always()
         run: python scripts/check_line_break_validation.py
+
+      - name: BIP catalog objects are never overwritten or deleted (backlog 757)
+        if: always()
+        run: python scripts/check_bip_no_overwrite.py

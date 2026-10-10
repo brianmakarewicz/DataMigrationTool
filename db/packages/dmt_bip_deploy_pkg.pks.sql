@@ -80,19 +80,40 @@
     -- --------------------------------------------------------
     -- Persistent catalog deployment (Stage D, 2026-07-08).
     -- This stack's BIP catalog root is /Custom/DMT2 — every
-    -- DEPLOY_*/DELETE_* below raises -20055 if the target is not
+    -- DEPLOY_* below raises -20055 if the target is not
     -- under it, protecting the frozen stack's /Custom/DMT catalog
     -- (reading/running its reports is allowed; writing never is).
     -- --------------------------------------------------------
     C_CATALOG_ROOT CONSTANT VARCHAR2(20) := '/Custom/DMT2';
 
     -- --------------------------------------------------------
+    -- Owner rule (binding, backlog #757): a Fusion BIP catalog
+    -- object is NEVER overwritten or deleted. Every deploy below
+    -- refuses with -20057 when its target path already exists; a
+    -- changed report is deployed alongside under a new versioned
+    -- name. There is deliberately no catalog delete procedure.
+    -- (DELETE_DM above only removes this package's own scratch
+    -- data model from the BIP user's personal folder /~user.)
+    -- --------------------------------------------------------
+
+    -- --------------------------------------------------------
+    -- CATALOG_OBJECT_EXISTS
+    -- Read-only CatalogService objectExistInSession for an
+    -- absolute catalog path (incl. extension). Raises -20058 when
+    -- BIP returns a Fault or no true/false answer (fails closed).
+    -- --------------------------------------------------------
+    FUNCTION CATALOG_OBJECT_EXISTS (
+        p_session_token IN VARCHAR2,
+        p_object_path   IN VARCHAR2
+    ) RETURN BOOLEAN;
+
+    -- --------------------------------------------------------
     -- DEPLOY_CATALOG_OBJECT
-    -- Create (or overwrite) a persistent object in the BIP
-    -- catalog via CatalogService createObjectInSession.
+    -- Create a NEW persistent object in the BIP catalog via
+    -- CatalogService createObjectInSession. Never overwrites.
     -- p_object_type: 'xdm' (data model) or 'xdo' (report).
-    -- Raises -20053 on SOAP Fault, -20055 on a folder outside
-    -- C_CATALOG_ROOT.
+    -- Raises -20057 when the object already exists, -20053 on
+    -- SOAP Fault, -20055 on a folder outside C_CATALOG_ROOT.
     -- --------------------------------------------------------
     PROCEDURE DEPLOY_CATALOG_OBJECT (
         p_session_token IN VARCHAR2,
@@ -103,21 +124,11 @@
     );
 
     -- --------------------------------------------------------
-    -- DELETE_CATALOG_OBJECT
-    -- Delete a persistent catalog object (absolute path incl.
-    -- extension). SOAP errors are swallowed (object may not
-    -- exist) but the -20055 folder guard still applies.
-    -- --------------------------------------------------------
-    PROCEDURE DELETE_CATALOG_OBJECT (
-        p_session_token IN VARCHAR2,
-        p_object_path   IN VARCHAR2
-    );
-
-    -- --------------------------------------------------------
     -- DEPLOY_RECON_REPORT
     -- Convenience wrapper for one reconciliation report pair:
-    -- login, delete any existing DM + report in p_folder, deploy
-    -- the data model (p_xdm_xml), then deploy a generated
+    -- login, refuse (-20057) if the DM or the report already
+    -- exists in p_folder (checked before anything is created),
+    -- deploy the data model (p_xdm_xml), then deploy a generated
     -- XML-output report wrapper (.xdo) linked to it.
     -- p_folder e.g. '/Custom/DMT2/Suppliers' (folder guard
     -- applies); p_dm_name/p_rpt_name without extension.

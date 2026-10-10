@@ -498,6 +498,76 @@
     END assert_dmt2_path;
 
     -- --------------------------------------------------------
+    -- CATALOG_OBJECT_EXISTS (backlog #757)
+    -- Read-only CatalogService objectExistInSession. Fails closed:
+    -- a SOAP Fault, a non-2xx status (soap_post -20056) or a reply
+    -- with no true/false answer raises -- never reads as "absent".
+    -- --------------------------------------------------------
+    FUNCTION CATALOG_OBJECT_EXISTS (
+        p_session_token IN VARCHAR2,
+        p_object_path   IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        l_url    VARCHAR2(500);
+        l_action VARCHAR2(500) :=
+            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/objectExistInSessionRequest';
+        l_env    CLOB;
+        l_resp   CLOB;
+        l_answer VARCHAR2(10);
+    BEGIN
+        l_url := fusion_base || '/xmlpserver/services/v2/CatalogService';
+        l_env :=
+            '<soapenv:Envelope'||
+            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
+            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
+            '  <soapenv:Header/>'||
+            '  <soapenv:Body>'||
+            '    <v2:objectExistInSession>'||
+            '      <v2:reportObjectAbsolutePath>'||p_object_path||'</v2:reportObjectAbsolutePath>'||
+            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
+            '    </v2:objectExistInSession>'||
+            '  </soapenv:Body>'||
+            '</soapenv:Envelope>';
+
+        l_resp := soap_post(l_url, l_action, l_env);
+
+        IF INSTR(l_resp, 'soapenv:Fault') > 0 OR
+           INSTR(l_resp, 'soap:Fault')    > 0 THEN
+            RAISE_APPLICATION_ERROR(-20058,
+                'CATALOG_OBJECT_EXISTS: objectExistInSession returned a Fault. Path: ' ||
+                p_object_path || ' | Response: ' || DBMS_LOB.SUBSTR(l_resp, 500, 1));
+        END IF;
+
+        l_answer := LOWER(REGEXP_SUBSTR(l_resp,
+                        'objectExistInSessionReturn>\s*(true|false)\s*<', 1, 1, 'i', 1));
+        IF l_answer IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20058,
+                'CATALOG_OBJECT_EXISTS: no true/false answer for ' || p_object_path ||
+                ' | Response: ' || DBMS_LOB.SUBSTR(l_resp, 500, 1));
+        END IF;
+        RETURN l_answer = 'true';
+    END CATALOG_OBJECT_EXISTS;
+
+    -- --------------------------------------------------------
+    -- Private: -20057 guard (backlog #757, owner rule: never
+    -- overwrite or delete a Fusion BIP object -- deploy the next
+    -- version alongside under a new name). Raises when the target
+    -- path already exists, so a deploy never replaces anything.
+    -- --------------------------------------------------------
+    PROCEDURE assert_catalog_path_absent (
+        p_session_token IN VARCHAR2,
+        p_object_path   IN VARCHAR2
+    ) IS
+    BEGIN
+        IF CATALOG_OBJECT_EXISTS(p_session_token, p_object_path) THEN
+            RAISE_APPLICATION_ERROR(-20057,
+                'BIP catalog write refused: ' || p_object_path ||
+                ' already exists. A Fusion BIP object is never overwritten or ' ||
+                'deleted -- deploy the next version alongside under a new name ' ||
+                '(e.g. ..._V2_DM / ..._V2_RPT) and point the registry at it.');
+        END IF;
+    END assert_catalog_path_absent;
+
+    -- --------------------------------------------------------
     -- DEPLOY_CATALOG_OBJECT
     -- --------------------------------------------------------
     PROCEDURE DEPLOY_CATALOG_OBJECT (
@@ -521,6 +591,10 @@
                 C_PROC || ': p_object_type must be xdm or xdo, got "' ||
                 p_object_type || '"');
         END IF;
+
+        -- Never replace an existing object (backlog #757).
+        assert_catalog_path_absent(p_session_token,
+            p_folder || '/' || p_object_name || '.' || p_object_type);
 
         l_url := fusion_base || '/xmlpserver/services/v2/CatalogService';
         l_b64 := clob_to_b64(p_object_data);
@@ -567,42 +641,6 @@
     END DEPLOY_CATALOG_OBJECT;
 
     -- --------------------------------------------------------
-    -- DELETE_CATALOG_OBJECT
-    -- --------------------------------------------------------
-    PROCEDURE DELETE_CATALOG_OBJECT (
-        p_session_token IN VARCHAR2,
-        p_object_path   IN VARCHAR2
-    ) IS
-        l_url    VARCHAR2(500);
-        l_action VARCHAR2(500) :=
-            'http://xmlns.oracle.com/oxp/service/v2/CatalogService/deleteObjectInSessionRequest';
-        l_env    CLOB;
-        l_tmp    CLOB;
-    BEGIN
-        assert_dmt2_path(p_object_path);
-        l_url := fusion_base || '/xmlpserver/services/v2/CatalogService';
-
-        l_env :=
-            '<soapenv:Envelope'||
-            ' xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'||
-            ' xmlns:v2="http://xmlns.oracle.com/oxp/service/v2">'||
-            '  <soapenv:Header/>'||
-            '  <soapenv:Body>'||
-            '    <v2:deleteObjectInSession>'||
-            '      <v2:objectAbsolutePath>'||p_object_path||'</v2:objectAbsolutePath>'||
-            '      <v2:bipSessionToken>'||p_session_token||'</v2:bipSessionToken>'||
-            '    </v2:deleteObjectInSession>'||
-            '  </soapenv:Body>'||
-            '</soapenv:Envelope>';
-
-        -- Swallow SOAP errors — the object may simply not exist yet.
-        BEGIN
-            l_tmp := soap_post(l_url, l_action, l_env);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
-    END DELETE_CATALOG_OBJECT;
-
-    -- --------------------------------------------------------
     -- DEPLOY_RECON_REPORT
     -- --------------------------------------------------------
     PROCEDURE DEPLOY_RECON_REPORT (
@@ -626,9 +664,12 @@
 
         l_token := GET_SESSION_TOKEN;
 
-        -- Remove any prior versions (createObjectInSession does not overwrite)
-        DELETE_CATALOG_OBJECT(l_token, p_folder || '/' || p_rpt_name || '.xdo');
-        DELETE_CATALOG_OBJECT(l_token, p_folder || '/' || p_dm_name || '.xdm');
+        -- Backlog #757 (owner rule): never overwrite or delete a Fusion BIP
+        -- object. Refuse BEFORE creating anything when either target already
+        -- exists, so a refused deploy leaves the catalog exactly as it was.
+        -- A changed report is deployed alongside under a new versioned name.
+        assert_catalog_path_absent(l_token, p_folder || '/' || p_dm_name  || '.xdm');
+        assert_catalog_path_absent(l_token, p_folder || '/' || p_rpt_name || '.xdo');
 
         -- Data model
         DEPLOY_CATALOG_OBJECT(l_token, p_folder, p_dm_name, 'xdm', p_xdm_xml);
