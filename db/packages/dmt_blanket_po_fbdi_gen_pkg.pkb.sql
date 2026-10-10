@@ -650,5 +650,64 @@ AS
             RAISE;
     END GENERATE_FBDI;
 
+    -- --------------------------------------------------------
+    -- FAIL_GENERATED_ROWS (backlog #674)
+    -- One load job carries one procurement BU's blanket zip (agreement headers +
+    -- agreement lines), so a load that fails fails both record types of it
+    -- (design section 5, [LOAD_ERROR]; cross-grain failure shape (d)). Headers are
+    -- scoped by style + BU as GENERATE_FBDI scoped them; lines by belonging to
+    -- those headers (p_prc_bu_name NULL = all BUs). Before #674 only the headers
+    -- were marked and the agreement lines stayed GENERATED. NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE FAIL_GENERATED_ROWS (
+        p_run_id      IN  NUMBER,
+        p_prc_bu_name IN  VARCHAR2,
+        p_error_text  IN  VARCHAR2,
+        x_rows_failed OUT NUMBER,
+        x_error_code  OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'FAIL_GENERATED_ROWS';
+        l_step VARCHAR2(200);
+    BEGIN
+        x_rows_failed := 0;
+        x_error_code  := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'failing generated agreement line rows';
+        UPDATE DMT_PO_LINES_INT_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    INTERFACE_HEADER_KEY IN (
+            SELECT h.INTERFACE_HEADER_KEY
+            FROM   DMT_PO_HEADERS_INT_TFM_TBL h
+            WHERE  h.RUN_ID = p_run_id
+            AND    h.STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
+            AND    (p_prc_bu_name IS NULL OR h.PRC_BU_NAME = p_prc_bu_name));
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        l_step := 'failing generated agreement header rows';
+        UPDATE DMT_PO_HEADERS_INT_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'
+        AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': ' || x_rows_failed || ' generated row(s) marked FAILED '
+            || '(agreement headers and lines of the failed load).',
+            'INFO', C_PKG, C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed while ' || l_step || '.', SQLERRM, C_PKG, C_PROC);
+    END FAIL_GENERATED_ROWS;
+
 END DMT_BLANKET_PO_FBDI_GEN_PKG;
 /

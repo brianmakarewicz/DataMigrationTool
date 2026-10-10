@@ -714,5 +714,73 @@
         WHEN OTHERS THEN RAISE_APPLICATION_ERROR(-20100, 'Assets > GENERATE_FBDI: ' || SQLERRM, TRUE);
     END GENERATE_FBDI;
 
+    -- --------------------------------------------------------
+    -- FAIL_GENERATED_ROWS (backlog #673)
+    -- One load job carries one book's zip (headers + books in FaMassAdditions.csv,
+    -- assignments in FaMassaddDistributions.csv), so a load that fails fails every
+    -- record type of that book's zip (design section 5, [LOAD_ERROR]; cross-grain
+    -- failure shape (d)). Rows are scoped to the book exactly as GENERATE_FBDI
+    -- scoped them when it marked them GENERATED (p_book NULL = all books). Before
+    -- #673 only the header rows were marked (and of every book of the run), while
+    -- the book and assignment rows stayed GENERATED. NO COMMIT.
+    -- --------------------------------------------------------
+    PROCEDURE FAIL_GENERATED_ROWS (
+        p_run_id      IN  NUMBER,
+        p_book        IN  VARCHAR2,
+        p_error_text  IN  VARCHAR2,
+        x_rows_failed OUT NUMBER,
+        x_error_code  OUT NUMBER
+    ) IS
+        C_PROC CONSTANT VARCHAR2(30) := 'FAIL_GENERATED_ROWS';
+        l_step VARCHAR2(200);
+    BEGIN
+        x_rows_failed := 0;
+        x_error_code  := DMT_UTIL_PKG.C_SUCCESS;
+
+        l_step := 'failing generated asset book rows';
+        UPDATE DMT_FA_ASSET_BOOK_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    (p_book IS NULL OR BOOK_TYPE_CODE = p_book);
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        l_step := 'failing generated asset header rows';
+        UPDATE DMT_FA_ASSET_HDR_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    (p_book IS NULL OR ASSET_NUMBER IN (
+                  SELECT ASSET_NUMBER FROM DMT_FA_ASSET_BOOK_TFM_TBL
+                  WHERE RUN_ID = p_run_id AND BOOK_TYPE_CODE = p_book));
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        l_step := 'failing generated asset assignment rows';
+        UPDATE DMT_FA_ASSET_ASSIGN_TFM_TBL
+        SET    TFM_STATUS        = 'FAILED',
+               ERROR_TEXT        = DMT_UTIL_PKG.APPEND_ERROR(ERROR_TEXT, p_error_text),
+               LAST_UPDATED_DATE = SYSDATE
+        WHERE  RUN_ID     = p_run_id
+        AND    TFM_STATUS = 'GENERATED'
+        AND    (p_book IS NULL OR ASSET_NUMBER IN (
+                  SELECT ASSET_NUMBER FROM DMT_FA_ASSET_BOOK_TFM_TBL
+                  WHERE RUN_ID = p_run_id AND BOOK_TYPE_CODE = p_book));
+        x_rows_failed := x_rows_failed + SQL%ROWCOUNT;
+
+        DMT_UTIL_PKG.LOG(p_run_id,
+            C_PROC || ': ' || x_rows_failed || ' generated row(s) marked FAILED '
+            || '(asset headers, books and assignments of the failed load).',
+            'INFO', 'DMT_FA_ASSET_FBDI_GEN_PKG', C_PROC);
+    EXCEPTION
+        WHEN OTHERS THEN
+            x_error_code := DMT_UTIL_PKG.C_ERROR;
+            DMT_UTIL_PKG.LOG_ERROR(p_run_id,
+                C_PROC || ' failed while ' || l_step || '.', SQLERRM, 'DMT_FA_ASSET_FBDI_GEN_PKG', C_PROC);
+    END FAIL_GENERATED_ROWS;
+
 END DMT_FA_ASSET_FBDI_GEN_PKG;
 /
