@@ -1,5 +1,36 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-10 — before local regression
+
+**Bottom line.** Main at commit 07c19c9 carries PRs #714 through #739 and goes into a full local regression next, on the new combined baseline RegressionTest261010163656 (local scenario id 741). Nothing has been run on it yet and nothing new is on ATP. ATP is still on f49ec88.
+
+**What is being tested.**
+- Every ERP reconciliation report now fetches its pages on header boundaries, with no page cap, and fails loudly if paging stalls (#714, #731).
+- AR Invoices reports page by invoice, each line stores its own Fusion id, and Verify in Fusion finds a distribution through its invoice (#721).
+- Reconciliation reports are deployed with BIP data caching turned off, as new versions next to the old ones (#734).
+- Items categories link to the item created in the same run, and category batches wait for their item batch (#729).
+- Values containing line breaks fail validation before the FBDI file is built (#730).
+- A successful load records the import job it actually started instead of searching for the nearest later one (#730).
+- Assets reads its real errors from the PrepareMassAdditions log, names the asset in cascade text, and uses STG and TFM widths that match Fusion (#732, #738).
+- When a load fails, every record type is marked FAILED, not just the headers, for MiscReceipts, Grants, Projects, Assets and Blanket POs (#717, #736).
+- A Grants child rejected under an award that loaded is now FAILED, and the six award child types (terms, keywords, certifications, CFDAs, references and task burden schedules) come back from one combined report with their own Fusion ids (#717, #739).
+- Projects gives a task or transaction control that Fusion rejected on its own its own error (#727).
+- A Customers location whose party site failed is FAILED with the site's real error (#715).
+- The five Suppliers reports now return the standard nine-column layout (#723).
+- Item Categories gets its real Fusion error text, and MiscReceipts now has lot-only and serial-only failure tests and one way of linking children to their parent (#732).
+- Cancel run is on Run Detail and is for administrators only (#716, #720).
+- The deploy tools wait while scheduler jobs are running, run multi-block package files correctly, and never overwrite or delete a Fusion BIP object (#722, #724, #737).
+- A scenario is registered before its records are inserted (#722).
+- Prefix sync never moves the prefix sequence backwards (#719).
+- The Python unit tests run in CI on every PR (#725).
+- Small fixes: one ProjectBudgets label, Verify in Fusion hides fields Fusion does not return, unused Requisitions credentials dropped, GL Balances GROUP_ID recorded as an approved exception (#718), plus backlog and docs updates (#726, #728, #733, #735).
+
+**The baseline.** RegressionTest261010163656 was minted on local with `scripts/deploy_scenario.py` from the committed seed on main 07c19c9. It holds 356 STG rows with 0 duplicates. Its rows match, column for column, the newest proven scenario for each object (ignoring run status, SYSDATE dates and the lot and serial numbers the seed derives per scenario): AR from RegressionTest261009074409, Projects from RegressionTest261009073748, Assets from RegressionTest261009080330, MiscReceipts and Item Categories from RegressionTest261009113635, and Grants plus everything else from RegressionTest261010161342, whose seed is identical. Its expected outcomes merge the previous baseline's list with those per-object lists, using the corrected Assets outcomes from PR #738 and the Customers locations outcomes from PR #715. That gives 60 sub-objects and 301 rows, and each listed key maps to exactly one STG row. Three groups stay unlisted by design, as before: the Contract Agreement rows that share the PO tables, four MiscReceipts transactions with no SOURCE_ID, and the good serial, whose key the seed derives from the scenario id.
+
+**Known issues.** `scripts/regression_known_issues.json` is unchanged. Its seven entries are unfinished HCM objects that still have no rows in the baseline.
+
+**Backlog.** The 60 items this batch resolves are marked IN TEST (full regression pending) until the run passes with no new failures. Owner decisions and informational closures stay RESOLVED. The counts table was rebuilt from the item list: 478 items, of which 295 are resolved, 60 in test and 63 still open.
+
 ## 2026-10-09 — session close (work in flight)
 
 **Where the instances stand.** ATP is on main at commit f49ec88, which is verified: ATP regression run 181 passed and the ATP click-through passed 61 of 61 pages. The last full local regression was run 347, which also passed.
