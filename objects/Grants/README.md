@@ -134,8 +134,53 @@ schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
 - **Load failure.** `fin_mark_generated_failed` now fails all 15 Grants TFM tables with the
   load's `[LOAD_ERROR]`, not only the award headers (backlog #670).
 - Terms, keywords, certifications, CFDAs, references and task burden schedules have no success
-  group in Fusion's report, so a child of those types is never LOADED (backlog #671: give them,
-  and every child, a base-table proof with its own Fusion id).
+  group in Fusion's report. Since backlog #671 they are LOADED from their own base row instead
+  (next section).
+
+## Six child types from their own base rows (backlog #671, 2026-10-10)
+Owner direction: expand the existing Grants reconciliation report, one report, no second one.
+`bip/Grants/DMT_GRANT_RECON_V4_DM.xdm` (deployed alongside V1-V3, cache off, registry and
+`scripts/deploy_recon_bip_reports.py` repointed, `bip/Grants/query.sql` its exact mirror) keeps
+the V3 award tiers and UNIONs six child tiers into the same nine-column result:
+
+| OBJECT_TYPE | Base table . id | RECORD_KEY after the award number | TFM column |
+|---|---|---|---|
+| Grants.Keyword | GMS_AWARD_KEYWORDS.ID | KEYWORD NAME ~ project number | FUSION_KEYWORD_ID |
+| Grants.Term | GMS_AWARD_TERMS_B.ID | TERM CATEGORY NAME ~ TERM NAME | FUSION_TERM_ID |
+| Grants.Certification | GMS_AWARD_CERTS_B.ID | CERTIFICATION NAME ~ project number | FUSION_CERT_ID |
+| Grants.Cfda | GMS_AWARD_CFDAS.ID | CFDA | FUSION_CFDA_ID |
+| Grants.Reference | GMS_AWARD_REFERENCES_B.ID | REFERENCE TYPE NAME ~ project number ~ value | FUSION_REFERENCE_ID |
+| Grants.TaskBurden | GMS_AWD_PRJ_TSK_BRD_SCHEDULES.ID | project number ~ task number | FUSION_TASK_BURDEN_ID |
+
+- **Selection.** The child tables carry no job id. A child row is read only for an award the same
+  report confirms (its BASE award tier), and only when Fusion created it between the start and
+  end of the run's own import job (`FUSION_ORA_ESS.REQUEST_HISTORY` for `P_IMPORT_ESS_ID`). The
+  prefix never selects a child. (The award tier itself is still found by contract number,
+  backlog #240.)
+- **Paging.** PAGE_KEY = the award number; a page is the next BIP_CHUNK_SIZE awards plus every
+  row of them (design section 5, header paging).
+- **Apply.** `DMT_GRANTS_RESULTS_PKG.APPLY_AWARD_CHILD_ROWS` runs after the award-header pass:
+  each child base row sets ONE child TFM row LOADED (same key built from the TFM columns, names
+  compared upper-case, lowest TFM_SEQUENCE_ID still waiting, award header already LOADED) and
+  stores the base row's id in that row's own FUSION_*_ID column. A Fusion id is never stored on
+  two rows. Rejections still come from the Award Batch Import Report (G_18 term, G_8 keyword,
+  G_7 certification, G_21 CFDA, G_13 reference, G_14 task burden schedule) with the child's own
+  `[FUSION_ERROR]`; a child with neither stays GENERATED for the unaccounted sweep.
+- **Template rows.** Fusion copies the award template's terms and reference onto every award
+  ("1 Year Award": Equipment / Prior Approval, Transfers / Award Instituion, Travel / Foreign,
+  and a Proposal Number reference with no value). V4 returns them, but no TFM row has their key,
+  so they change nothing (backlog #766).
+- **Regression.** `RTAWD-G3` (Good-1's shape plus one keyword, term, certification, CFDA,
+  reference and task burden schedule) in a per-object scenario minted with
+  `deploy_scenario.py --keep-pointer`; every row expected LOADED. No BAD child row was added:
+  Fusion never rejects a child on its own (probes 77141 / 77142 rejected the whole award for an
+  invalid keyword and term), and the whole-award rejection is already covered by `RTAWD-XG1`.
+- Unit test: `test/unit/test_grants_child_base_ids.sql` (12 checks).
+- **Proof (local run 401, prefix 93425, scenario RegressionTest261010161342, load 10093061, import
+  10093088):** 93425RTAWD-G3 LOADED (award 300000335128455) with all 15 of its rows LOADED; keyword
+  300000335128458, term 300000335128463, certification 300000335128460, CFDA 300000335128464,
+  reference 300000335128459 and task burden schedule 300000335128471 stored on their own rows and read
+  back under that award. Grants 33 LOADED / 23 FAILED with real errors / 0 UNACCOUNTED; harness PASS.
 
 ## Award children in the record views (backlog #567, 2026-10-09)
 Every award child TFM table now has its own lane in `DMT_RECORD_DETAIL_V`,
@@ -159,11 +204,11 @@ child lane with a LOADED row.
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - ~~Per-award rejection errors were unreadable after import (interface purged) — object left UNACCOUNTED.~~ **RESOLVED (run-234 fix):** reconciler now reads the Award Batch Import Report child (see above).
 - **Live section-7 standard violations in Grants code (pre-existing; logged per the "README Known Issues" rule, 2026-10-07):**
-  - Award children are set LOADED on their own success line in the job's Award Batch Import Report
-    (backlog #568), but still without their own `FUSION_*_ID` (the "LOADED carries its Fusion id" rule),
-    and six child types can never be LOADED (no success group). The child base tables do exist
-    (`GMS_AWARD_PERSONNEL`, `GMS_AWARD_PROJECTS`, `GMS_AWARD_BUDGET_PERIODS`, `GMS_AWARD_KEYWORDS`, ...),
-    but carry no job id, so a child-tier base recon is not built yet (backlog #671).
+  - Eight award child types (personnel, funding, funding allocation, budget period, org credit,
+    project, funding source, project funding source) are set LOADED on their own success line in the
+    job's Award Batch Import Report (backlog #568), but still without their own `FUSION_*_ID` (the
+    "LOADED carries its Fusion id" rule). The other six types store their own id since backlog #671;
+    extending report V4 to the remaining eight base tables is backlog #765.
   - `bip/Grants/` holds more than one data model (V1 + V2 recon, `GRANTS_DM`, `GRANTS_CMP_DM`); the contract's
     "one data model per folder" conflicts with the never-overwrite BIP versioning rule (V2 deployed alongside V1).
   - `DMT_GRANTS_RESULTS_PKG.find_report_ess_id` / `apply_award_import_report` are functions with nested

@@ -35,7 +35,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -174,8 +174,8 @@ using (
            'FA_MASS_ADDITIONS',
            'Fixed asset mass additions import reconciliation' from dual
     union all select 100000007, 'Grants', 'Grant/Award',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_DM.xdm',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_RPT.xdo',
            'GMS_AWARD_HEADERS_INT',
            'Grants/awards import reconciliation (Contract v1, nine-column)' from dual
     union all select 100000008, 'MiscReceipts', 'Misc Receipt (Items on Hand)',
@@ -1697,9 +1697,12 @@ commit;
 -- converges the Contract v1 columns on the Grants row seeded earlier in this file
 -- (the base union-merge sets only the legacy 6 columns).
 --
--- The Grants recon report reconciles the AWARD HEADER tier ONLY: awards import
--- as ONE object, the header. The 14 award children are accounted by the parent
--- award's verdict (cascade by AWARD_NUMBER, DMT_GRANTS_RESULTS_PKG). Header tier:
+-- The registry row names the AWARD HEADER tier (one object = one zip). Since V4
+-- (2026-10-10, backlog #671) the same report also returns six award child tiers
+-- (Grants.Keyword / .Term / .Certification / .Cfda / .Reference / .TaskBurden),
+-- reached only through the awards it confirms; DMT_GRANTS_RESULTS_PKG stores each
+-- child's own Fusion id. The other children are LOADED on their own success line
+-- in the Award Batch Import Report (backlog #568), never by inheritance. Header tier:
 --   OBJECT_TYPE     'Grants'
 --   TFM_TABLE       DMT_GMS_AWD_HEADERS_TFM_TBL
 --   FUSION_ID       FUSION_AWARD_ID  (= GMS_AWARD_HEADERS_B.ID on the BASE tier)
@@ -1719,14 +1722,19 @@ using (
     select 100000007                                            bip_report_id,
            'Grants'                                             cemli_code,
            'Grant/Award'                                        object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
-             || 'Header tier only; 14 children accounted by parent-award verdict. '
+             || 'Award header tier plus six child tiers (V4); every child on its own evidence. '
              || 'Award Batch Import Report fallback for purged-interface rejections. '
              || 'V2 (2026-10-07): BASE tier keyed on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, '
-             || 'prefix-scoped (FBDI awards carry no request id / sponsor number).' notes,
+             || 'prefix-scoped (FBDI awards carry no request id / sponsor number). '
+             || 'V4 (2026-10-10, backlog #671): the same report also returns the award '
+             || 'keyword, term, certification, CFDA, reference and task burden schedule '
+             || 'rows of the awards it confirms (created during the run''s import job), '
+             || 'each with its own Fusion id; pages by award (PAGE_KEY). Deployed '
+             || 'alongside V1-V3, never overwriting them.' notes,
            1                                                    contract_version,
            'DMT_GMS_AWD_HEADERS_TFM_TBL'                        tfm_table,
            'FUSION_AWARD_ID'                                    fusion_id_column,

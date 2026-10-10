@@ -269,6 +269,12 @@ def main():
         "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
         "DMT_GMS_AWD_FUNDING_STG_TBL",
         "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
+        "DMT_GMS_AWD_KEYWORDS_STG_TBL",
+        "DMT_GMS_AWD_TERMS_STG_TBL",
+        "DMT_GMS_AWD_CERTS_STG_TBL",
+        "DMT_GMS_AWD_CFDAS_STG_TBL",
+        "DMT_GMS_AWD_REFERENCES_STG_TBL",
+        "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL",
         # Requisition dists → lines → headers
         "DMT_POR_REQ_DISTS_STG_TBL",
         "DMT_POR_REQ_LINES_STG_TBL",
@@ -2493,6 +2499,13 @@ def main():
         # quoting it ("Rejected with document: award <n> (personnel 99999999): ...").
         ("RTAWD-XG1",  "RT Award XG-1 Bad PI",   "1 Year Award", "State Government",
          "2027-09-01", "PRG10008", 500000, "XG-CHILD"),
+        # Good-1's shape plus one row of each child type Fusion's Award Batch
+        # Import Report never lists as imported (backlog #671): keyword, term,
+        # certification, CFDA, reference, task burden schedule (inserted below).
+        # Expected: the award and every child LOADED; each of the six children
+        # with its own Fusion id from its own base table (report V4).
+        ("RTAWD-G3",   "RT Award Good-3 Children", "1 Year Award", "State Government",
+         "2027-09-01", "PRG10008", 500000, "GOOD"),
     ]
     for anum, aname, tmpl, sponsor, end_dt, proj, amt, kind in gnt_awards:
         # Funding source used by every child row: the award's own sponsor for the
@@ -2581,6 +2594,51 @@ def main():
         """, {"anum": anum, "proj": proj, "amt": amt, "src": f"RT-GNT-FALLOC-{anum}",
               "sid": scenario_id},
         label=f"{kind} Award funding allocation: {anum}")
+
+    # RTAWD-G3's six extra children (backlog #671). Values are ones existing
+    # Fusion awards already carry (read 2026-10-10 from GMS_AWARD_KEYWORDS,
+    # GMS_AWARD_TERMS_B, GMS_AWARD_CERTS_B, GMS_AWARD_CFDAS, GMS_AWARD_REFERENCES_B
+    # and GMS_AWD_PRJ_TSK_BRD_SCHEDULES). The term and reference type are not
+    # the ones the "1 Year Award" template copies onto every award (Equipment /
+    # Prior Approval, Transfers / Award Instituion, Travel / Foreign, Proposal
+    # Number), so the row DMT sends is the only one of its key on the award.
+    g3 = {"anum": "RTAWD-G3", "sid": scenario_id}
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_KEYWORDS_STG_TBL (
+            AWARD_NUMBER, PROJECT_NUMBER, KEYWORD_NAME, SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, NULL, 'Genetics', 'RT-GNT-KW-RTAWD-G3', :sid)
+    """, g3, label="GOOD Award keyword: RTAWD-G3")
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_TERMS_STG_TBL (
+            AWARD_NUMBER, TERM_CATEGORY_NAME, TERM_NAME, TERM_DESCRIPTION,
+            TERM_OPERAND, TERM_VALUE, SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, 'Scholarship Restrictions', 'Graduate Scholarships', NULL,
+                  NULL, NULL, 'RT-GNT-TERM-RTAWD-G3', :sid)
+    """, g3, label="GOOD Award term: RTAWD-G3")
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_CERTS_STG_TBL (
+            AWARD_NUMBER, PROJECT_NUMBER, CERTIFICATION_NAME, CERTIFICATION_DATE,
+            CERT_STATUS, SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, NULL, 'Health Care Worker Certification', DATE '2026-09-01',
+                  'Yes', 'RT-GNT-CERT-RTAWD-G3', :sid)
+    """, g3, label="GOOD Award certification: RTAWD-G3")
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_CFDAS_STG_TBL (
+            AWARD_NUMBER, CFDA, SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, '93.395', 'RT-GNT-CFDA-RTAWD-G3', :sid)
+    """, g3, label="GOOD Award CFDA: RTAWD-G3")
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_REFERENCES_STG_TBL (
+            AWARD_NUMBER, PROJECT_NUMBER, REFERENCE_TYPE, VALUE, COMMENTS,
+            SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, NULL, 'InfoEd #', 'RT-INF-G3', NULL, 'RT-GNT-REF-RTAWD-G3', :sid)
+    """, g3, label="GOOD Award reference: RTAWD-G3")
+    run_sql(cur, """
+        INSERT INTO DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL (
+            AWARD_NUMBER, PROJECT_NUMBER, TASK_NUMBER, BURDEN_SCHEDULE, FIXED_DATE,
+            SOURCE_ID, SCENARIO_ID
+        ) VALUES (:anum, 'PRG10008', '1.0', :burden, NULL, 'RT-GNT-BRD-RTAWD-G3', :sid)
+    """, dict(g3, burden=GNT_BURDEN), label="GOOD Award task burden schedule: RTAWD-G3")
 
     # ====================================================================
     # 30. ASSETS (DMT_FA_ASSET_HDR_STG_TBL)
