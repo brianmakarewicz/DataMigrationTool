@@ -11,7 +11,15 @@
 --
 -- BIP v2 SOAP endpoints used:
 --   SecurityService  - login (session token)
---   CatalogService   - createObjectInSession / deleteObjectInSession
+--   CatalogService   - createObjectInSession / objectExistInSession /
+--                      deleteObjectInSession (personal-folder scratch only)
+--
+-- Owner rule (binding, backlog #757): a Fusion BIP catalog object is
+-- NEVER overwritten or deleted. Every create/upload refuses with -20015
+-- when its target path already exists (scratch objects in the caller's
+-- personal folder /~user are exempt), and only a personal-folder scratch
+-- data model can be deleted. There is no report delete and no template
+-- replace: deploy the next version alongside under a new name.
 --   ReportService    - runDataModelInSession / runReport
 --
 -- No Authorization header on any call. Credentials go in the
@@ -103,8 +111,11 @@
 
     -- --------------------------------------------------------
     -- DELETE_DATA_MODEL
-    -- Remove a data model (.xdm) from the BIP catalog.
-    -- All errors swallowed - safe to call in cleanup blocks.
+    -- Remove a scratch data model (.xdm) from a PERSONAL folder
+    -- (/~user) -- the cleanup step of RUN_DATA_MODEL_EPHEMERAL.
+    -- Raises -20015 for any other folder: a Fusion BIP catalog
+    -- object is never deleted (backlog #757). SOAP errors are
+    -- swallowed - safe to call in cleanup blocks.
     -- p_folder: BIP folder path. Required - raises -20009 if NULL.
     -- --------------------------------------------------------
     PROCEDURE DELETE_DATA_MODEL (
@@ -179,19 +190,6 @@
     ) RETURN CLOB;
 
     -- --------------------------------------------------------
-    -- DELETE_REPORT
-    -- Remove a report definition (.xdo) from the BIP catalog.
-    -- All errors swallowed - safe to call in cleanup blocks.
-    -- p_folder: BIP folder path. Required - raises -20009 if NULL.
-    -- --------------------------------------------------------
-    PROCEDURE DELETE_REPORT (
-        p_session_token IN VARCHAR2,
-        p_base_url      IN VARCHAR2,
-        p_name          IN VARCHAR2,
-        p_folder        IN VARCHAR2 DEFAULT NULL
-    );
-
-    -- --------------------------------------------------------
     -- GET_TEMPLATE
     -- Download a layout template from a deployed report via
     -- ReportService.getTemplateInSession.
@@ -219,7 +217,9 @@
     -- p_template_name:  template filename with extension
     --                   (e.g. 'default.rtf').
     -- p_template_data:  raw binary template (BLOB).
-    -- p_update_existing: 'true' to overwrite if report exists.
+    -- p_update_existing: must be 'false' (the default); any other
+    --                   value raises -20015 -- reports are never
+    --                   overwritten (backlog #757).
     -- Returns the full catalog path of the created report.
     -- Raises -20008 on SOAP fault.
     -- --------------------------------------------------------
@@ -233,27 +233,6 @@
         p_template_data   IN BLOB,
         p_update_existing IN VARCHAR2 DEFAULT 'false'
     ) RETURN VARCHAR2;
-
-    -- --------------------------------------------------------
-    -- UPLOAD_TEMPLATE_FOR_REPORT
-    -- Upload or replace a layout template on an existing report
-    -- via ReportService.uploadTemplateForReportInSession.
-    -- p_report_path:  full catalog path to the .xdo report.
-    -- p_template_name: template name (without extension).
-    -- p_template_type: 'rtf', 'xsl', etc.
-    -- p_locale:        locale string (default 'en-US').
-    -- p_template_data: raw binary template (BLOB).
-    -- Raises -20010 on SOAP fault.
-    -- --------------------------------------------------------
-    PROCEDURE UPLOAD_TEMPLATE_FOR_REPORT (
-        p_session_token IN VARCHAR2,
-        p_base_url      IN VARCHAR2,
-        p_report_path   IN VARCHAR2,
-        p_template_name IN VARCHAR2,
-        p_template_type IN VARCHAR2,
-        p_locale        IN VARCHAR2 DEFAULT 'en-US',
-        p_template_data IN BLOB
-    );
 
     -- --------------------------------------------------------
     -- GET_CATALOG_OBJECT (session-token overload)

@@ -9,6 +9,9 @@ Why two tracks: objects differ in how they change.
         RULE: deploy ONLY from a committed git file. Never hand-type DDL.
           python dmt_deploy.py code <file.sql> [<file2.sql> ...]
         (packages: pass the .pks spec first, then the .pkb body)
+        Each file is run as a SQL*Plus script, block by block: a PL/SQL unit
+        ends at a "/" line, a plain SQL statement at ";" or "/", so a body file
+        that carries a second block after its "/" runs both (backlog #758).
 
   TABLE (stateful: cannot CREATE OR REPLACE; changes are ALTERs)
         RULE: (1) the git create-table script must ALREADY reflect the change
@@ -70,33 +73,217 @@ def _strip(ddl):
     return ddl[:-1].strip() if ddl.endswith('/') else ddl
 
 
-def deploy_code(paths):
-    conn = connect(); cur = conn.cursor()
+# ---------------------------------------------------------------- script splitter
+# Backlog #758: a code file is a SQL*Plus script, not one statement. A package
+# body file may end its CREATE with a "/" line and then carry a second block (e.g.
+# db/packages/dmt_ess_util_pkg.pkb.sql recompiles itself with PLSQL_CCFLAGS in a
+# trailing anonymous block). Sending the whole file as one statement compiled the
+# body with PLS-00103 and left it INVALID. split_script() splits the way SQL*Plus
+# and SQLcl do:
+#   * a PL/SQL unit (CREATE [OR REPLACE] [EDITIONABLE|NONEDITIONABLE] PACKAGE,
+#     PACKAGE BODY, PROCEDURE, FUNCTION, TRIGGER, TYPE, TYPE BODY or LIBRARY, or an
+#     anonymous DECLARE / BEGIN block) runs to a line holding only "/". Semicolons
+#     inside it never end it, and it is sent with its final "END x;" intact;
+#   * any other SQL statement (CREATE VIEW, ALTER ..., GRANT ...) ends at a line
+#     ending in ";" (the ";" is dropped) or at a "/" line;
+#   * between statements, blank lines, "--" comment lines, REM lines and the
+#     SQL*Plus display/settings commands (SET, PROMPT, SHOW, WHENEVER, SPOOL,
+#     DEFINE/UNDEFINE, COLUMN, TTITLE/BTITLE, CLEAR, EXIT/QUIT) are skipped;
+#   * an "@" / "@@" / START include is refused (the included file would silently
+#     not run; deploy each committed file directly);
+#   * a PL/SQL unit still open at end of file is run anyway (some older files omit
+#     the final "/"), so single-block files behave exactly as before.
+# Chosen over shelling out to SQLcl: no Java/SQLcl install needed on the machine or
+# in CI, the per-object compile-error check and the deploy guard stay in-process,
+# and the splitter is unit-tested offline (test/unit/test_dmt_deploy_split.py).
+_PLSQL_START_RE = re.compile(
+    r'^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:EDITIONABLE|NONEDITIONABLE)\s+)?'
+    r'(?:PACKAGE|PROCEDURE|FUNCTION|TRIGGER|TYPE|LIBRARY)\b'
+    r'|DECLARE\b|BEGIN\b)', re.I)
+_SQLPLUS_CMD_RE = re.compile(
+    r'^\s*(?:REM(?:ARK)?|SET|PROMPT|PRO|SHOW|SHO|WHENEVER|SPOOL|SPO|DEFINE|DEF|'
+    r'UNDEFINE|UNDEF|COLUMN|COL|TTITLE|BTITLE|CLEAR|EXIT|QUIT)(?:\s|$)', re.I)
+_INCLUDE_RE = re.compile(r'^\s*(?:@|START\s)', re.I)
+_SLASH_RE = re.compile(r'^\s*/\s*$')
+
+
+class ScriptError(ValueError):
+    pass
+
+
+def _strip_leading_comments(text):
+    """text without its leading whitespace, '--' lines and /* */ comments. Used
+    only to classify a statement, never to change what is sent."""
+    t = text
+    while True:
+        t2 = t.lstrip()
+        if t2.startswith('--'):
+            nl = t2.find('\n')
+            t2 = '' if nl < 0 else t2[nl + 1:]
+        elif t2.startswith('/*'):
+            end = t2.find('*/')
+            t2 = '' if end < 0 else t2[end + 2:]
+        if t2 == t:
+            return t
+        t = t2
+
+
+def _sql_code(line):
+    """The code part of one line: the text before a trailing '--' comment that
+    sits outside a quoted literal."""
+    in_q = False
+    for i, ch in enumerate(line):
+        if ch == "'":
+            in_q = not in_q
+        elif not in_q and line.startswith('--', i):
+            return line[:i]
+    return line
+
+
+def _ends_sql(line):
+    """True when a line of a plain SQL statement ends it: its code part ends with
+    ';'. A comment line never ends a statement, even one that ends in ';' (a
+    view's comments often do)."""
+    return _sql_code(line).rstrip().endswith(';')
+
+
+def split_script(text):
+    """Split a SQL*Plus-style script into [(kind, statement)], kind 'plsql' or
+    'sql', each statement ready for cursor.execute(). Raises ScriptError on an
+    include, or on a non-PL/SQL statement left unterminated at end of file."""
+    stmts = []
+    buf = []            # lines of the current statement (leading comments included)
+    kind = None         # 'plsql' | 'sql' once the statement's first code line is seen
+    in_comment = False  # inside a /* */ comment that opened before any code
+
+    def has_code(lines):
+        return bool(_strip_leading_comments('\n'.join(lines)).strip())
+
+    def flush():
+        nonlocal buf, kind
+        if has_code(buf):
+            if kind == 'sql' and _ends_sql(buf[-1]):
+                # drop the terminating ';' and any comment after it
+                buf[-1] = _sql_code(buf[-1]).rstrip()[:-1]
+            stmts.append((kind, '\n'.join(buf).strip()))
+        buf, kind = [], None
+
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if in_comment:
+            buf.append(line)
+            if '*/' in line:
+                in_comment = False
+            continue
+        if kind is None:
+            # between statements: only comments (if anything) buffered so far
+            if _SLASH_RE.match(line):
+                buf = []       # "/" with no statement buffered: nothing to run
+                continue
+            if not stripped or stripped.startswith('--'):
+                if buf:
+                    buf.append(line)
+                continue
+            if _INCLUDE_RE.match(line):
+                raise ScriptError(f"line {lineno}: script include '{stripped}' is not "
+                                  f"supported -- deploy each committed file directly.")
+            if _SQLPLUS_CMD_RE.match(line):
+                continue
+            code = _strip_leading_comments(line).strip()
+            if not code:
+                buf.append(line)            # a /* */ comment line before the code
+                if line.count('/*') > line.count('*/'):
+                    in_comment = True
+                continue
+            kind = 'plsql' if _PLSQL_START_RE.match(code) else 'sql'
+            buf.append(line)
+            if kind == 'sql' and _ends_sql(line):
+                flush()
+            continue
+        # inside a statement
+        if _SLASH_RE.match(line):
+            flush()
+            continue
+        buf.append(line)
+        if kind == 'sql' and _ends_sql(line):
+            flush()
+    if has_code(buf):
+        if kind == 'plsql':
+            flush()            # final PL/SQL unit without "/": run it (legacy files)
+        else:
+            raise ScriptError("statement at end of file is not terminated by ';' or '/': "
+                              + _strip_leading_comments('\n'.join(buf)).strip()[:80])
+    return stmts
+
+
+_OBJ_RE = re.compile(r'CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?'
+                     r'(?:FORCE\s+)?'
+                     r'(PACKAGE\s+BODY|PACKAGE|VIEW|PROCEDURE|FUNCTION|TRIGGER|TYPE\s+BODY|TYPE)\s+'
+                     r'(?:"?\w+"?\.)?"?(\w+)"?', re.I)
+
+
+def created_object(stmt):
+    """(object type, OBJECT_NAME) a CREATE statement makes, or None."""
+    m = _OBJ_RE.match(_strip_leading_comments(stmt).strip())
+    if not m:
+        return None
+    return re.sub(r'\s+', ' ', m.group(1).upper()), m.group(2).upper()
+
+
+def _compile_errors(cur, oname):
+    cur.execute("""SELECT type, line, position, text FROM user_errors
+                   WHERE name=:1 ORDER BY type, sequence""", [oname])
+    return cur.fetchall()
+
+
+def _fail_with_errors(conn, label, errs):
+    print(f"  DEPLOYED WITH ERRORS: {label}")
+    for typ, ln, pos, txt in errs[:10]:
+        print(f"    {typ} {ln}:{pos} {str(txt).strip()}")
+    conn.rollback()
+    sys.exit(1)
+
+
+def deploy_code(paths, connect_fn=None):
+    """Run every statement of each committed code file in order (split_script),
+    then require 0 compile errors on every object the file created. The check runs
+    after each CREATE and again after the whole file, because a later block may
+    recompile an earlier object (backlog #758). connect_fn is injectable for the
+    offline unit test (test/unit/test_dmt_deploy_split.py)."""
+    import oracledb
+    conn = (connect_fn or connect)(); cur = conn.cursor()
     for p in paths:
         path, raw = _read(p)
-        # drop a leading snapshot comment line, then require CREATE OR REPLACE <object>
-        body = '\n'.join(l for l in raw.splitlines() if not l.lstrip().startswith('--') or 'CREATE' in l.upper())
         if not CODE_RE.search(raw):
             sys.exit(f"REFUSED: {p} is not a CREATE OR REPLACE code object. "
                      f"Tables/ALTERs go through `table --migration`, not `code`.")
         if re.search(r'\bALTER\s+TABLE\b|\bCREATE\s+TABLE\b|\bDROP\s+TABLE\b', raw, re.I):
             sys.exit(f"REFUSED: {p} contains table DDL. Code deploys must not alter tables.")
-        cur.execute(_strip(raw))
-        # report compile errors
-        m = re.search(r'CREATE\s+OR\s+REPLACE\s+(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?'
-                      r'(PACKAGE\s+BODY|PACKAGE|VIEW|PROCEDURE|FUNCTION|TRIGGER|TYPE\s+BODY|TYPE)\s+'
-                      r'(?:DMT_OWNER\.)?"?(\w+)"?', raw, re.I)
-        if m:
-            otype, oname = m.group(1).upper().replace(' ', ' '), m.group(2).upper()
-            cur.execute("""SELECT line, position, text FROM user_errors
-                           WHERE name=:1 ORDER BY sequence""", [oname])
-            errs = cur.fetchall()
-            if errs:
-                print(f"  DEPLOYED WITH ERRORS: {oname}")
-                for ln, pos, txt in errs[:10]:
-                    print(f"    {ln}:{pos} {txt.strip()}")
+        try:
+            stmts = split_script(raw)
+        except ScriptError as e:
+            sys.exit(f"REFUSED: {p}: {e}")
+        created = []
+        for i, (kind, stmt) in enumerate(stmts, 1):
+            try:
+                cur.execute(stmt)
+            except oracledb.DatabaseError as e:
+                print(f"  FAILED: {p} statement {i} of {len(stmts)} ({kind}): {e}")
                 conn.rollback(); sys.exit(1)
+            obj = created_object(stmt)
+            if obj:
+                created.append(obj)
+                errs = _compile_errors(cur, obj[1])
+                if errs:
+                    _fail_with_errors(conn, f"{obj[1]} ({p} statement {i} of {len(stmts)})", errs)
+        for otype, oname in created:
+            errs = _compile_errors(cur, oname)
+            if errs:
+                _fail_with_errors(conn, f"{oname} after the whole of {p} ran", errs)
             print(f"  deployed OK: {oname} ({otype})")
+        extra = len(stmts) - len(created)
+        if extra:
+            print(f"  ran {extra} further block(s)/statement(s) in {os.path.basename(path)} OK")
     conn.commit(); cur.close(); conn.close()
     print("Reminder: run `python scripts/dmt_db_git_sync.py --pull` and commit.")
 
