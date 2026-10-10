@@ -65,7 +65,7 @@ declare
         '[LOAD_ERROR] Loading data to the Fusion interface failed. Check ESS job 0 logs for details.';
     C_OWN    constant varchar2(100) := '[PRE_VALIDATION] unit-test own error';
     C_BPA    constant varchar2(60)  := 'Blanket Purchase Agreement';
-    C_SPO    constant varchar2(60)  := 'Standard Purchase Order';
+    C_SPO    constant varchar2(60)  := 'Purchase Order';  -- RUN_PURCHASE_ORDERS' doc type filter
     l_passed pls_integer := 0;
     l_run1   number;
     l_run2   number;
