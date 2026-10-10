@@ -8,7 +8,9 @@
 
 **What happens next on ATP.** The ATP deploy of 78560c0 is under way. After it, the new baseline RegressionTest261010163656 is loaded onto ATP from the same committed seed, and then the ATP regression and the ATP click-through run.
 
-**Backlog.** The 60 IN TEST items now read "local run 402 PASS; ATP pending" and stay IN TEST until the ATP regression and click-through pass. New item #770 records that the promotion gate compares the whole git tree, so a docs-only commit made between the local regression and the ATP deploy forces the full local cycle to run again. Excluding `docs/` from that comparison is an owner decision; until then this status update is held unmerged until the ATP deploy is done. The counts table now shows 479 items: 295 resolved, 60 in test and 64 still open.
+**Update: ATP deploy done.** The ATP deploy of 78560c0 completed through the promotion gate with 0 invalid objects, and the APEX app and runtime config checked out. Baseline RegressionTest261010163656 is loaded on ATP with 356 rows and 0 duplicates, matching local. The ATP regression and click-through are next.
+
+**Backlog.** The 60 IN TEST items now read "local run 402 PASS; ATP pending" and stay IN TEST until the ATP regression and click-through pass. New item #770 records that the promotion gate compares the whole git tree, so a docs-only commit made between the local regression and the ATP deploy forces the full local cycle to run again. Excluding `docs/` from that comparison is an owner decision; meanwhile this status update was held unmerged until the ATP deploy was done. The counts table now shows 479 items (478 before #770): 295 resolved, 60 in test and 64 still open.
 
 ## 2026-10-10 — before local regression
 
