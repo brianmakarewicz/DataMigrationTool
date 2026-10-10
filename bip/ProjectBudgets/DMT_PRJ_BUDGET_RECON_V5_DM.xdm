@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_PRJ_BUDGET_RECON_V5_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_PRJ_BUDGET_RECON_V4_DM. This version exists only because its report wrapper DMT_PRJ_BUDGET_RECON_V5_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_PRJ_BUDGET_RECON_V4_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="prj_budget_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- DMT_PRJ_BUDGET_RECON_V4_DM (2026-10-09), deployed ALONGSIDE V1,
+-- V2 and V3 (never overwritten). One change from V3: HEADER PAGING
+-- (owner decision 2026-10-09, design section 5 "Reconciliation
+-- fetches page on header boundaries", backlog #691). The header
+-- (document) is the plan version, keyed by project number || '::' ||
+-- plan version name on every row: base plan-version rows
+-- (PJF_PROJECTS_ALL_B.SEGMENT1 || '::' || PJO_PLAN_VERSIONS_TL
+-- .VERSION_NAME) and interface budget-line rows (PROJECT_NUMBER ||
+-- '::' || PLAN_VERSION_NAME). V3 cut pages at :P_CHUNK_SIZE ROWS by
+-- RECORD_KEY, so the lines of one version were not grouped with it,
+-- and interface lines with no reference (which share one RECORD_KEY)
+-- could be cut apart at a page edge. A page is the next
+-- :P_CHUNK_SIZE plan versions after :P_AFTER_KEY plus EVERY row of
+-- those versions. Each row carries a tenth column PAGE_KEY;
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS counts headers, not rows, and
+-- passes the last PAGE_KEY back as :P_AFTER_KEY. An interface row
+-- with no PROJECT_NUMBER is labeled with its project's number found
+-- by PROJECT_ID, else by PROJECT_NAME, else the name itself (labels
+-- only; selection unchanged). Row selection (job ids only),
+-- RECORD_KEYs, FUSION_IDs and error text are unchanged from V3.
+-- ============================================================
+-- (V3 history follows.)
+-- Project Budgets reconciliation data model V3 -- BIP
+-- reconciliation report contract v1 (nine columns, keyset
+-- pagination, the six standard parameters). Data source:
+-- ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/ProjectBudgets/query.sql; the .xdm is authoritative.
+-- V3 (2026-10-07) is deployed ALONGSIDE PRJ_BUDGET_DM (V1) and
+-- DMT_PRJ_BUDGET_RECON_V2_DM (V2); BIP objects are never
+-- overwritten.
+--
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
+--
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
+--
+-- OBJECT MODEL. ProjectBudgets is ONE object: one FBDI zip
+-- (PjoPlanVersionsXface.csv), one interface table
+-- (PJO_PLAN_VERSIONS_XFACE), one base table (PJO_PLAN_VERSIONS_B),
+-- loaded by the "Import Budgets" job. One work item = one load =
+-- one import; the reconciler calls this report once per work item
+-- with that item's own load and import ids.
+--
+-- Row selection (owner decision 2026-10-07): rows are FOUND only
+-- by the work item's Fusion job ids, never by the run prefix.
+--   BASE plan versions: PJO_PLAN_VERSIONS_B.REQUEST_ID =
+--     :P_IMPORT_ESS_ID (Fusion stamps the Import Budgets job id on
+--     the plan version; verified live: 93300RT-PJB-GOOD1 = 10073840,
+--     93297RT-PJB-GOOD1 = 10073776, the import ids those runs
+--     recorded). FUSION_ID = PLAN_VERSION_ID.
+--   INTERFACE rows: PJO_PLAN_VERSIONS_XFACE.LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID, rejections only. Fusion purges this
+--     interface after import on this pod, so this tier normally
+--     returns nothing; the real per-row message comes from the
+--     import report (below).
+-- No LIKE anywhere. P_RUN_ID and P_PREFIX are declared for
+-- contract symmetry only. The prefixed source budget line
+-- reference (= TFM RECON_KEY, persisted as PM_BUDGET_REFERENCE) is
+-- used only as RECORD_KEY, to match a row Fusion returned back to
+-- its TFM row.
+--
+-- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
+--   BASE (plan version present in PJO_PLAN_VERSIONS_B) => SUCCESS
+--   INTERFACE (unprocessed row still in the interface)  => ERROR
+--
+-- ERROR_MESSAGE: PJO_PLAN_VERSIONS_XFACE has no error-text column,
+-- so an INTERFACE/ERROR row carries the Contract v1 marker
+-- #IMPORT_REPORT#. The reconciler never writes the marker as an
+-- error; the real per-row Fusion message is harvested from the
+-- BudgetsXfaceBIP report output by DMT_PRJ_BUDGET_RESULTS_PKG.
+--
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- ============================================================
+WITH recon_rows AS (
+    -- BASE: plan versions -- found by the import job's REQUEST_ID.
+    -- RECORD_KEY = PM_BUDGET_REFERENCE; when it is null, a stable
+    -- synthetic key from the project number, version name and id.
+    SELECT
+        'ProjectBudgets'                                        AS object_type,
+        NVL(v.pm_budget_reference,
+            p.segment1 || '::' || vtl.version_name
+                       || '::' || v.plan_version_id)            AS record_key,
+        'BASE'                                                  AS source_type,
+        'SUCCESS'                                               AS fusion_status,
+        v.plan_version_id                                       AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))                            AS error_message,
+        v.request_id                                            AS load_request_id,
+        v.pm_budget_reference                                   AS source_ref,
+        v.pm_budget_reference                                   AS dmt_reference,
+        p.segment1 || '::' || vtl.version_name                  AS page_key
+    FROM   pjo_plan_versions_b   v,
+           pjo_plan_versions_tl  vtl,
+           pjf_projects_all_b    p
+    WHERE  vtl.plan_version_id = v.plan_version_id
+    AND    vtl.language        = 'US'
+    AND    p.project_id        = v.project_id
+    AND    v.request_id        = TO_NUMBER(:P_IMPORT_ESS_ID)
+
+    UNION ALL
+
+    -- INTERFACE: rejections left in the interface -- found by the load job's LOAD_REQUEST_ID
+    SELECT
+        'ProjectBudgets'                                        AS object_type,
+        NVL(x.src_budget_line_reference,
+            x.project_number || '::' || x.plan_version_name)    AS record_key,
+        'INTERFACE'                                             AS source_type,
+        'ERROR'                                                 AS fusion_status,
+        CAST(NULL AS NUMBER)                                    AS fusion_id,
+        -- No error-text column on this interface: Contract v1 marker; the
+        -- reconciler takes the real message from the import report.
+        '#IMPORT_REPORT#'                                       AS error_message,
+        x.load_request_id                                       AS load_request_id,
+        x.src_budget_line_reference                             AS source_ref,
+        x.src_budget_line_reference                             AS dmt_reference,
+        -- V4 header key: the plan version (project number :: version name).
+        COALESCE(x.project_number,
+                 (SELECT MAX(pp.segment1) FROM pjf_projects_all_b pp
+                  WHERE  pp.project_id = x.project_id),
+                 (SELECT MAX(pn.segment1) FROM pjf_projects_all_vl pn
+                  WHERE  pn.name = x.project_name),
+                 x.project_name)
+            || '::' || x.plan_version_name                      AS page_key
+    FROM   pjo_plan_versions_xface x
+    WHERE  x.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    NVL(UPPER(x.process_code),'X')
+               NOT IN ('COMPLETED','PROCESSED','SUCCESS','P')
+    AND    NVL(UPPER(x.load_status),'X')
+               NOT IN ('COMPLETED','PROCESSED','SUCCESS','P')
+),
+-- V4 header keyset (backlog #691). The page's headers are the next
+-- :P_CHUNK_SIZE distinct plan versions (project number :: version name)
+-- after :P_AFTER_KEY. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so NULL means "from the start"; later pages get the previous
+-- page's last PAGE_KEY. Compared and ordered as BINARY so the cursor and
+-- the order always agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page header, never a row cap.
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key
+FROM   recon_rows r
+JOIN   page_headers ph
+       ON ph.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="prj_budget_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header keyset pagination: P_CHUNK_SIZE is a number of
+         plan versions (headers). The shared fetch calls with an empty
+         P_AFTER_KEY first, then passes the last PAGE_KEY received on
+         each next call, until a page holds fewer headers than the
+         chunk size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

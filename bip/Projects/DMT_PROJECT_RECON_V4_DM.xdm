@@ -1,0 +1,402 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_PROJECT_RECON_V4_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_PROJECT_RECON_V3_DM. This version exists only because its report wrapper DMT_PROJECT_RECON_V4_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_PROJECT_RECON_V3_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="project_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- DMT_PROJECT_RECON_V3_DM (2026-10-09), deployed ALONGSIDE V1 and
+-- V2 (never overwritten). One change from V2: HEADER PAGING (owner
+-- decision 2026-10-09, design section 5 "Reconciliation fetches page
+-- on header boundaries", backlog #692). The header (document) is the
+-- project, and its key is the prefixed PROJECT NUMBER on every tier:
+-- projects, tasks, transaction controls and team members, base and
+-- interface. V2 keyed team members by the project NAME, so they
+-- sorted away from their project and a page could split a project.
+-- A page is the next :P_CHUNK_SIZE project numbers after
+-- :P_AFTER_KEY plus EVERY row of those projects. Each row carries a
+-- tenth column PAGE_KEY (its project number);
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS counts headers, not rows, and
+-- passes the last PAGE_KEY back as :P_AFTER_KEY.
+--   PAGE_KEY per branch:
+--     Projects / Tasks / TxnControls / TeamMembers BASE:
+--       PJF_PROJECTS_ALL_B.SEGMENT1 of the project.
+--     Projects / Tasks / TxnControls INTERFACE: the row's own
+--       PROJECT_NUMBER (falls back to its PROJECT_NAME only if the
+--       number is missing, so no row is ever dropped).
+--     TeamMembers INTERFACE: the interface carries only PROJECT_NAME
+--       (and PROJECT_ID), so the number is looked up: the project of
+--       the same name in the same load's project interface, else the
+--       base project by PROJECT_ID, else by name, else the name.
+--       These lookups only label the row; they never select rows.
+-- Row selection (job ids plus the owner-approved P_WQ_ID work-item
+-- reference), RECORD_KEYs, FUSION_IDs and error text are unchanged
+-- from V2. RECORD_KEY of team members is still project NAME || '/TM/'
+-- || member (the TFM RECON_KEY); only the page key changed.
+-- ============================================================
+-- (V2 history follows.)
+-- Projects reconciliation data model V2 -- BIP reconciliation
+-- report contract v1 (nine columns, keyset pagination) plus the
+-- owner-approved P_WQ_ID parameter. Data source:
+-- ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/Projects/query.sql; the .xdm is authoritative.
+-- V2 (2026-10-07) is deployed ALONGSIDE DMT_PROJECT_RECON_DM (V1);
+-- BIP objects are never overwritten.
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE (plus the debug-only DEBUG_DISPOSITION, not
+--   mapped into the report output).
+--
+-- PARAMETERS: the six Contract v1 parameters (P_RUN_ID,
+--   P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID, P_PREFIX, P_CHUNK_SIZE,
+--   P_AFTER_KEY) plus P_WQ_ID, the work item's queue id.
+--
+-- Projects is ONE object (one FBDI zip / one Import Projects job)
+-- with four record types; OBJECT_TYPE discriminates the tier:
+--   Projects, Tasks, TeamMembers, TxnControls.
+--
+-- ROW SELECTION -- owner-approved exception (DECIDED 2026-10-07,
+-- design section 5). Reports find rows by Fusion job id, but the
+-- project base tables carry none: PJF_PROJECTS_ALL_B.REQUEST_ID is
+-- NULL after import, the task, team-member and transaction-control
+-- base tables have no request-id column, and the interface is purged
+-- after a successful import. So, like Customers, the transform
+-- stamps the FBDI SOURCE_PROJECT_REFERENCE (stored by Fusion as
+-- PJF_PROJECTS_ALL_B.PM_PROJECT_REFERENCE) with
+-- '<run_id>:<work_queue_id>:<legacy reference>' when prefixing is
+-- on, and this report selects the work item's projects by
+--     PM_PROJECT_REFERENCE LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+-- That exact work-item scope is the only text-scoped row selection
+-- allowed, and only for Projects. Tasks, team members and
+-- transaction controls are reached through their project.
+--   INTERFACE rows (all four tiers) are selected by the load job's
+--   LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID (anything left behind after
+--   import is a rejection).
+-- No LIKE on the run prefix. RECORD_KEY stays the prefixed project
+-- number (and its task / team / control extensions); it is used
+-- only to match a row Fusion returned back to its TFM row.
+--
+-- FUSION_STATUS normalized to exactly SUCCESS / ERROR:
+--   BASE (row present in the Fusion base table)  => SUCCESS
+--   INTERFACE (rejection left behind by Import)  => ERROR
+-- FUSION_ID: Projects BASE = PROJECT_ID; Tasks BASE = PROJ_ELEMENT_ID;
+--   TxnControls BASE = TXN_CONTROL_ID (PJC_TRANSACTION_CONTROLS);
+--   TeamMembers BASE = PROJ_RESOURCE_ID (PJT_PROJECT_RESOURCE);
+--   INTERFACE rows have no Fusion id yet (NULL).
+-- ERROR_MESSAGE: the Projects interface tables carry no error-text
+--   column, so an ERROR row returns the Contract v1 marker
+--   '#IMPORT_REPORT#'; the reconciler takes the real per-row message
+--   from the Import Report XML (the child ImportProjectReportJob).
+--
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- ============================================================
+WITH recon_rows AS (
+    -- Projects tier : BASE -- the work item's projects, found by the reference
+    -- DMT stamps (<run_id>:<work_queue_id>:<legacy ref>), owner-approved exception.
+    SELECT
+        'Projects'                           AS object_type,
+        p.segment1                           AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        p.project_id                         AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        p.segment1                           AS source_ref,
+        p.segment1                           AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition,
+        p.segment1                           AS page_key
+    FROM   pjf_projects_all_b p
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+
+    UNION ALL
+
+    -- Projects tier : INTERFACE (rejections left behind).
+    SELECT
+        'Projects'                           AS object_type,
+        x.project_number                     AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        x.load_request_id                    AS load_request_id,
+        x.project_number                     AS source_ref,
+        x.project_number                     AS dmt_reference,
+        '[PROJECT] Left in interface after import (IMPORT_STATUS='
+             || NVL(x.import_status,'?') || ', LOAD_STATUS='
+             || NVL(x.load_status,'?')
+             || '). See Import Report for the row-level message.'
+                                             AS debug_disposition,
+        NVL(x.project_number, x.project_name) AS page_key
+    FROM   pjf_projects_all_xface x
+    WHERE  x.load_request_id = :P_LOAD_REQUEST_ID
+
+    UNION ALL
+
+    -- Tasks tier : BASE (PJF_TASKS rows only; join project for the key).
+    SELECT
+        'Tasks'                              AS object_type,
+        p.segment1 || '/' || e.element_number AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        e.proj_element_id                    AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        p.segment1 || '/' || e.element_number AS source_ref,
+        p.segment1 || '/' || e.element_number AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition,
+        p.segment1                           AS page_key
+    FROM   pjf_proj_elements_b e
+    JOIN   pjf_projects_all_b  p ON p.project_id = e.project_id
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+    AND    e.object_type = 'PJF_TASKS'
+
+    UNION ALL
+
+    -- Tasks tier : INTERFACE (rejections left behind).
+    SELECT
+        'Tasks'                              AS object_type,
+        t.project_number || '/' || t.task_number AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        t.load_request_id                    AS load_request_id,
+        t.project_number || '/' || t.task_number AS source_ref,
+        t.project_number || '/' || t.task_number AS dmt_reference,
+        '[TASK] Left in interface after import (IMPORT_STATUS='
+             || NVL(t.import_status,'?') || ', LOAD_STATUS='
+             || NVL(t.load_status,'?')
+             || '). See Import Report for the row-level message.'
+                                             AS debug_disposition,
+        NVL(t.project_number, t.project_name) AS page_key
+    FROM   pjf_proj_elements_xface t
+    WHERE  t.load_request_id = :P_LOAD_REQUEST_ID
+
+    UNION ALL
+
+    -- TeamMembers tier : BASE (positive LOADED confirmation).
+    -- Team members DO land in a queryable Fusion base table on this instance:
+    -- PJT_PROJECT_RESOURCE (Project Management team-member assignments), one row per
+    -- loaded member with a real id (PROJ_RESOURCE_ID), keyed to the project via
+    -- PROJECT_ID and to the person via RESOURCE_ID. The prior "no base table" claim
+    -- checked only the FINANCIAL project-parties view PJF_PROJECT_PARTIES, a
+    -- different representation that is empty for every DMT-migrated project;
+    -- PJT_PROJECT_RESOURCE is where Import Project actually persists accepted members.
+    -- Confirmed live 2026-09-21 (run 327 / prefix 10267): Alan Cook -> PROJ_RESOURCE_ID
+    -- 300000333829040, Mandy Steward -> 300000333829065. The base table carries no
+    -- project number, so join PJF_PROJECTS_ALL_VL for the prefix filter and the
+    -- descriptive project NAME, and PJT_PRJ_ENTERPRISE_RESOURCE_VL for the member
+    -- DISPLAY_NAME, so RECORD_KEY (project NAME || '/TM/' || display name) matches the
+    -- transform's RECON_KEY exactly (PROJECT_NAME || '/TM/' || TEAM_MEMBER_NAME).
+    -- FUSION_ID = PROJ_RESOURCE_ID so the reconciler marks the TFM row LOADED with a
+    -- real Fusion base id -- Rule #1 satisfied exactly like every other tier.
+    SELECT
+        'TeamMembers'                        AS object_type,
+        pv.name || '/TM/' || er.display_name AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        pr.proj_resource_id                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        pv.name || '/TM/' || er.display_name AS source_ref,
+        pv.name || '/TM/' || er.display_name AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition,
+        pb.segment1                          AS page_key
+    FROM   pjt_project_resource            pr
+    JOIN   pjf_projects_all_vl             pv ON pv.project_id  = pr.project_id
+    JOIN   pjt_prj_enterprise_resource_vl er ON er.resource_id = pr.resource_id
+    JOIN   pjf_projects_all_b             pb ON pb.project_id  = pr.project_id
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    pb.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+
+    UNION ALL
+
+    -- TeamMembers tier : INTERFACE (rejections left behind).
+    -- Anything still in the interface table after import is a rejection (Import
+    -- purges the accepted members). Keyed by project name + member name.
+    SELECT
+        'TeamMembers'                        AS object_type,
+        tm.project_name || '/TM/' || tm.team_member_name AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        tm.load_request_id                   AS load_request_id,
+        tm.project_name || '/TM/' || tm.team_member_name AS source_ref,
+        tm.project_name || '/TM/' || tm.team_member_name AS dmt_reference,
+        '[TEAMMEMBER] Left in interface after import (IMPORT_STATUS='
+             || NVL(tm.import_status,'?') || ', LOAD_STATUS='
+             || NVL(tm.load_status,'?')
+             || '). See Import Report for the row-level message.'
+                                             AS debug_disposition,
+        -- V3: the team-member interface has no project number. Label the
+        -- row with its project's number (same-load project interface row
+        -- of the same name, else the base project by id, else by name),
+        -- so it pages with its project. Labels only; selection unchanged.
+        COALESCE(
+            (SELECT MAX(px.project_number)
+             FROM   pjf_projects_all_xface px
+             WHERE  px.load_request_id = tm.load_request_id
+             AND    px.project_name    = tm.project_name),
+            (SELECT MAX(pp.segment1)
+             FROM   pjf_projects_all_b pp
+             WHERE  pp.project_id = tm.project_id),
+            (SELECT MAX(pn.segment1)
+             FROM   pjf_projects_all_vl pn
+             WHERE  pn.name = tm.project_name),
+            tm.project_name,
+            '#NO_PROJECT#')                  AS page_key
+    FROM   pjf_project_parties_int tm
+    WHERE  tm.load_request_id = :P_LOAD_REQUEST_ID
+
+    UNION ALL
+
+    -- TxnControls tier : BASE (positive LOADED confirmation).
+    -- Transaction controls DO land in a queryable Fusion base table on this
+    -- instance: PJC_TRANSACTION_CONTROLS, one row per loaded control with a real id
+    -- (TXN_CONTROL_ID) and the source TXN_CTRL_REFERENCE, keyed to the project via
+    -- PROJECT_ID. Confirmed live 2026-09-21 (run 325 / prefix 10265):
+    -- RT-TXC-RTPRJ001 -> TXN_CONTROL_ID 100002642117705, RT-TXC-RTPRJ002 ->
+    -- 100002642117706. The base table carries no project number, so join to
+    -- PJF_PROJECTS_ALL_B for the prefix filter and the RECORD_KEY (PROJECT_NUMBER ||
+    -- '/TC/' || TXN_CTRL_REFERENCE), which matches the transform's RECON_KEY exactly.
+    -- FUSION_ID = TXN_CONTROL_ID so the reconciler marks the TFM row LOADED with a
+    -- real Fusion base id -- Rule #1 satisfied the same way every other object is.
+    SELECT
+        'TxnControls'                        AS object_type,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        tc.txn_control_id                    AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS source_ref,
+        p.segment1 || '/TC/' || tc.txn_ctrl_reference AS dmt_reference,
+        CAST(NULL AS VARCHAR2(4000))         AS debug_disposition,
+        p.segment1                           AS page_key
+    FROM   pjc_transaction_controls tc
+    JOIN   pjf_projects_all_b        p ON p.project_id = tc.project_id
+    WHERE  :P_RUN_ID IS NOT NULL AND :P_WQ_ID IS NOT NULL
+    AND    p.pm_project_reference LIKE :P_RUN_ID || ':' || :P_WQ_ID || ':%'
+
+    UNION ALL
+
+    -- TxnControls tier : INTERFACE (rejections left in staging).
+    -- Anything still sitting in the staging table after import is a rejection (the
+    -- staging rows are emptied on success). The staging table carries no per-row
+    -- error text, so return the '#IMPORT_REPORT#' marker and let the reconciler
+    -- overlay the true Fusion message from the child report. Keyed by project number
+    -- + control reference.
+    SELECT
+        'TxnControls'                        AS object_type,
+        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        '#IMPORT_REPORT#'                    AS error_message,
+        tc.load_request_id                   AS load_request_id,
+        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS source_ref,
+        tc.project_number || '/TC/' || tc.txn_ctrl_reference AS dmt_reference,
+        '[TXNCONTROL] Left in staging after import (LOAD_STATUS='
+             || NVL(tc.load_status,'?')
+             || '). See Import Report for the row-level message.'
+                                             AS debug_disposition,
+        NVL(tc.project_number, tc.project_name) AS page_key
+    FROM   pjc_txn_controls_stage tc
+    WHERE  tc.load_request_id = :P_LOAD_REQUEST_ID
+),
+-- V3 header keyset (backlog #692). The page's headers are the next
+-- :P_CHUNK_SIZE distinct project numbers after :P_AFTER_KEY. An empty
+-- P_AFTER_KEY (first page) binds to NULL in BIP, so NULL means "from the
+-- start"; later pages get the previous page's last PAGE_KEY. Compared
+-- and ordered as BINARY so the cursor and the order always agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page header: whole projects (all four tiers), never
+-- a row cap. DEBUG_DISPOSITION stays debug-only (not in the output).
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key, r.debug_disposition
+FROM   recon_rows r
+JOIN   page_headers ph
+       ON ph.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="project_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header keyset pagination (V3): P_CHUNK_SIZE is a number of
+         projects (headers). The shared fetch calls with an empty
+         P_AFTER_KEY first, then passes the last PAGE_KEY received on
+         each next call, until a page holds fewer headers than the
+         chunk size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- P_WQ_ID: the work item's queue id. Owner-approved exception
+         2026-10-07: selects the work item's projects by the reference
+         DMT stamps. Sent only for Projects. -->
+    <parameter name="P_WQ_ID" dataType="character" rowPlacement="1"
+               labelID="P_WQ_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

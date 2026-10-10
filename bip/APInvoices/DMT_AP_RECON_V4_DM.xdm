@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_AP_RECON_V4_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_AP_RECON_V3_DM. This version exists only because its report wrapper DMT_AP_RECON_V4_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_AP_RECON_V3_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="ap_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- DMT_AP_RECON_V3_DM (2026-10-09), deployed ALONGSIDE V1 and V2
+-- (never overwritten). One change from V2: HEADER PAGING (owner
+-- decision 2026-10-09, design section 5 "Reconciliation fetches page
+-- on header boundaries", backlog #681). A page is the next
+-- :P_CHUNK_SIZE invoices (header key = the prefixed INVOICE_NUM)
+-- after :P_AFTER_KEY plus EVERY header and line row of those
+-- invoices, base and interface. Each row carries a tenth column
+-- PAGE_KEY (its invoice number); DMT_RECON_CONTRACT_PKG.FETCH_ROWS
+-- counts headers, not rows, and passes the last PAGE_KEY back as
+-- :P_AFTER_KEY. V2 cut pages at :P_CHUNK_SIZE ROWS, so a page could
+-- end inside an invoice. Row selection (job ids only), RECORD_KEYs,
+-- FUSION_IDs and error text are unchanged from V2.
+-- ============================================================
+-- (V2 history follows.)
+-- DMT_AP_RECON_V2_DM (2026-10-07), deployed ALONGSIDE V1
+-- DMT_AP_RECON_DM (never overwritten). APInvoices reconciliation
+-- data model, BIP reconciliation report contract v1 (nine columns,
+-- keyset pagination, the six standard parameters).
+--
+-- Changes from V1 (backlog #166):
+--   1. Rows are found by Fusion job id only, never by the run prefix:
+--      BASE rows by the Payables Import request id
+--      (AP_INVOICES_ALL.REQUEST_ID / AP_INVOICE_LINES_ALL.REQUEST_ID
+--      = :P_IMPORT_ESS_ID, verified live for run 238: request 10070887
+--      on both imported invoices and their imported lines; the tax
+--      lines Payables adds itself carry no request id and are not
+--      returned). INTERFACE rows and their rejections by
+--      LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID. The prefixed invoice
+--      number is used only as the RECORD_KEY that matches a returned
+--      row back to its TFM row.
+--   2. Rejections are scoped to this load. Fusion reuses interface
+--      INVOICE_IDs across loads, so AP_INTERFACE_REJECTIONS can hold an
+--      older load's rejection under the same PARENT_ID (live: interface
+--      invoice 100000346 carried NO INVOICE LINES from load 9989786 of
+--      2026-09-18 and the real line rejections from load 10070879 of
+--      run 238). V1 reported the stale rejection as the header's own
+--      error.
+--   3. Only real Fusion error text is returned. V1 composed
+--      "Rejected by Payables Import (status=...)" when a rejected
+--      header had no rejection row, and "[LINE] Parent invoice
+--      rejected: ..." on lines of a rejected header. Both are gone:
+--      a header or line is an ERROR row only when Payables wrote a
+--      rejection for it in this load. A row Payables rejected only
+--      because another row of the same invoice failed is not returned
+--      here; DMT_AP_RESULTS_PKG.PROPAGATE_DOCUMENT_ERRORS quotes the
+--      failing row's real error onto it (design section 5,
+--      whole-document rejection).
+--   4. Keyset ordering and comparison pinned to BINARY.
+--
+-- MULTI-TIER: OBJECT_TYPE 'APInvoices' (headers) and
+-- 'APInvoices.Line' (lines). RECORD_KEY: headers = prefixed
+-- INVOICE_NUM; lines = prefixed INVOICE_NUM || ':LINE:' || LINE_NUMBER.
+-- FUSION_ID: headers = base INVOICE_ID; lines = the line-grain
+-- composite INVOICE_ID~LINE_NUMBER.
+-- ERROR_MESSAGE: NVL(REJECTION_MESSAGE, REJECT_LOOKUP_CODE) from
+-- AP_INTERFACE_REJECTIONS (REJECTION_MESSAGE is empty on this
+-- instance, so the reject code is the real text), tagged [HDR]/[LINE].
+-- ============================================================
+WITH recon_rows AS (
+    -- BASE / headers imported by this Payables Import request.
+    SELECT
+        'APInvoices'                         AS object_type,
+        h.invoice_num                        AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        TO_CHAR(h.invoice_id)                AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        h.request_id                         AS load_request_id,
+        h.reference_key1                     AS source_ref,
+        h.attribute1                         AS dmt_reference,
+        h.invoice_num                        AS page_key
+    FROM   ap_invoices_all h
+    WHERE  h.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+
+    UNION ALL
+
+    -- BASE / lines imported by this Payables Import request.
+    SELECT
+        'APInvoices.Line'                    AS object_type,
+        h.invoice_num || ':LINE:' || l.line_number  AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        l.invoice_id || '~' || l.line_number AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        l.request_id                         AS load_request_id,
+        h.reference_key1                     AS source_ref,
+        l.attribute1                         AS dmt_reference,
+        h.invoice_num                        AS page_key
+    FROM   ap_invoice_lines_all l
+    JOIN   ap_invoices_all h
+           ON h.invoice_id = l.invoice_id
+    WHERE  l.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+
+    UNION ALL
+
+    -- INTERFACE / headers of this load that were not imported and carry
+    -- their own rejection(s) from this load.
+    SELECT
+        'APInvoices'                         AS object_type,
+        h.invoice_num                        AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
+        '[HDR] ' || rj.reject_text           AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.invoice_num                        AS source_ref,
+        h.attribute1                         AS dmt_reference,
+        h.invoice_num                        AS page_key
+    FROM   ap_invoices_interface h
+    JOIN   (SELECT r.parent_id,
+                   LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
+                       WITHIN GROUP (ORDER BY r.reject_lookup_code) AS reject_text
+            FROM   ap_interface_rejections r
+            WHERE  r.parent_table    = 'AP_INVOICES_INTERFACE'
+            AND    r.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+            GROUP BY r.parent_id) rj
+           ON rj.parent_id = h.invoice_id
+    WHERE  h.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    NVL(h.status, 'X') <> 'PROCESSED'
+
+    UNION ALL
+
+    -- INTERFACE / lines of this load that carry their own rejection(s)
+    -- from this load. The line interface has no INVOICE_NUM, so the key
+    -- comes from its interface header (same load).
+    SELECT
+        'APInvoices.Line'                    AS object_type,
+        h.invoice_num || ':LINE:' || l.line_number  AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
+        '[LINE] ' || rj.reject_text          AS error_message,
+        l.load_request_id                    AS load_request_id,
+        h.invoice_num                        AS source_ref,
+        l.attribute1                         AS dmt_reference,
+        h.invoice_num                        AS page_key
+    FROM   ap_invoice_lines_interface l
+    JOIN   ap_invoices_interface h
+           ON  h.invoice_id      = l.invoice_id
+           AND h.load_request_id = l.load_request_id
+    JOIN   (SELECT r.parent_id,
+                   LISTAGG(NVL(r.rejection_message, r.reject_lookup_code), ' | ')
+                       WITHIN GROUP (ORDER BY r.reject_lookup_code) AS reject_text
+            FROM   ap_interface_rejections r
+            WHERE  r.parent_table    = 'AP_INVOICE_LINES_INTERFACE'
+            AND    r.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+            GROUP BY r.parent_id) rj
+           ON rj.parent_id = l.invoice_line_id
+    WHERE  l.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+),
+-- V3 header keyset (backlog #681). The page's headers are the next
+-- :P_CHUNK_SIZE distinct invoice numbers after :P_AFTER_KEY. An empty
+-- P_AFTER_KEY (first page) binds to NULL in BIP, so NULL means "from the
+-- start"; later pages get the previous page's last PAGE_KEY. Compared
+-- and ordered as BINARY so the cursor and the order always agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page header: whole invoices, never a row cap.
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key
+FROM   recon_rows r
+JOIN   page_headers ph
+       ON ph.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="ap_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header keyset pagination (V3): P_CHUNK_SIZE is a number of
+         invoices (headers). The shared fetch calls with an empty
+         P_AFTER_KEY first, then passes the last PAGE_KEY received on
+         each next call, until a page holds fewer headers than the
+         chunk size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

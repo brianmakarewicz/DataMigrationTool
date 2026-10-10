@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_LOOKUP_RECON_V2_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_LOOKUP_RECON_DM. This version exists only because its report wrapper DMT_LOOKUP_RECON_V2_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_LOOKUP_RECON_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="lookup_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Lookups reconciliation data model -- base-table recon report
+-- (nine response columns, OBJECT_TYPE..DMT_REFERENCE).
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+--
+-- SPECIAL CASE -- Lookups has NO numeric surrogate id. The base
+-- tables are FND_LOOKUP_TYPES (key LOOKUP_TYPE) and
+-- FND_LOOKUP_VALUES_B (key LOOKUP_TYPE + LOOKUP_CODE); neither
+-- exposes a numeric id for a loaded row. Existence-by-key IS the
+-- honest base-table proof, so on every returned row:
+--   FUSION_STATUS = 'SUCCESS'
+--   FUSION_ID     = NULL    (no surrogate exists; NULL by design)
+--   ERROR_MESSAGE = NULL    (a base-table hit is never an error)
+-- A record that never reached the base table simply does not appear
+-- here; the reconciler treats a run key absent from this report as
+-- unaccounted and carries the REST load error separately.
+--
+-- SOURCE_TYPE carries the TIER so the reconciler can route each row to
+-- the right TFM table (DMT_FND_LOOKUP_RESULTS_PKG.PARSE_AND_UPDATE keys
+-- on SOURCE_TYPE IN ('TYPE','VALUE')):
+--   TYPE  rows from FND_LOOKUP_TYPES
+--   VALUE rows from FND_LOOKUP_VALUES_B
+--
+-- Keys:
+--   RECORD_KEY / SOURCE_REF:
+--       TYPE  = FND_LOOKUP_TYPES.LOOKUP_TYPE
+--       VALUE = FND_LOOKUP_VALUES_B.LOOKUP_TYPE || '^' || LOOKUP_CODE
+--   DMT_REFERENCE:
+--       TYPE  = NULL (types base has no ATTRIBUTE1)
+--       VALUE = FND_LOOKUP_VALUES_B.ATTRIBUTE1 (context only)
+--   FUSION_ID = NULL for both tiers (no numeric surrogate).
+-- DISTINCT collapses the date-tracked / translation rows the base
+-- tables expand a single logical lookup into.
+--
+-- ROW SELECTION (natural key -- backlog #135). Rows are found by
+-- matching the base-table natural keys against the run's own
+-- comma-delimited key lists, exactly the way CashBanks' recon matches
+-- bank/branch/account names (bip/CashBanks/DMT_CEBANK_RECON_DM.xdm):
+--   TYPE  : INSTR(',' || :P_TYPE_CODES || ',',
+--                 ',' || t.lookup_type || ',') > 0
+--   VALUE : INSTR(',' || :P_VALUE_KEYS || ',',
+--                 ',' || v.lookup_type || '^' || v.lookup_code || ',') > 0
+-- The reconciler DMT_FND_LOOKUP_RESULTS_PKG.FETCH_BIP_RESULTS already
+-- sends these two lists as P_TYPE_CODES (LISTAGG of the run's
+-- LOOKUP_TYPE values) and P_VALUE_KEYS (LISTAGG of the run's
+-- LOOKUP_TYPE^LOOKUP_CODE composite keys). Config codes are NOT
+-- run-prefixed.
+--
+-- This REPLACES the former ATTRIBUTE1 LIKE 'DMT:<run>:%' DFF filter
+-- (and the EXISTS-on-child-ATTRIBUTE1 scoping of the TYPE tier), which
+-- returned zero rows because the REST create never persists that
+-- descriptive-flexfield marker -- so a lookup type/value Fusion really
+-- created could never be confirmed LOADED (proven zero in runs
+-- 143/146). The natural-key match confirms the exact codes this run
+-- sent, which is the honest base-table proof. DMT_REFERENCE still
+-- returns ATTRIBUTE1 for VALUE rows as context, but it no longer gates
+-- row selection.
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    -- Tier: TYPE -- one row per LOOKUP_TYPE this run sent that exists in
+    -- FND_LOOKUP_TYPES. No surrogate id and no ATTRIBUTE column on the
+    -- types base, so FUSION_ID and DMT_REFERENCE are NULL by design.
+    SELECT DISTINCT
+        'LookupType'                          AS object_type,
+        t.lookup_type                         AS record_key,
+        'TYPE'                                AS source_type,
+        'SUCCESS'                             AS fusion_status,
+        CAST(NULL AS NUMBER)                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))          AS error_message,
+        CAST(NULL AS NUMBER)                  AS load_request_id,
+        t.lookup_type                         AS source_ref,
+        CAST(NULL AS VARCHAR2(4000))          AS dmt_reference
+    FROM   fnd_lookup_types t
+    WHERE  INSTR(',' || :P_TYPE_CODES || ',',
+                 ',' || t.lookup_type || ',') > 0
+
+    UNION ALL
+
+    -- Tier: VALUE -- one row per LOOKUP_TYPE^LOOKUP_CODE this run sent
+    -- that exists in FND_LOOKUP_VALUES_B. DMT_REFERENCE carries that
+    -- row's ATTRIBUTE1 as context; FUSION_ID is NULL (no id).
+    SELECT DISTINCT
+        'LookupValue'                         AS object_type,
+        v.lookup_type || '^' || v.lookup_code AS record_key,
+        'VALUE'                               AS source_type,
+        'SUCCESS'                             AS fusion_status,
+        CAST(NULL AS NUMBER)                  AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))          AS error_message,
+        CAST(NULL AS NUMBER)                  AS load_request_id,
+        v.lookup_type || '^' || v.lookup_code AS source_ref,
+        v.attribute1                          AS dmt_reference
+    FROM   fnd_lookup_values_b v
+    WHERE  INSTR(',' || :P_VALUE_KEYS || ',',
+                 ',' || v.lookup_type || '^' || v.lookup_code || ',') > 0
+)
+ORDER BY record_key
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="lookup_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <!-- Row selection parameters (backlog #135): comma-delimited lists of
+         this run's lookup-type codes and type^code value keys, sent by
+         DMT_FND_LOOKUP_RESULTS_PKG.FETCH_BIP_RESULTS as P_TYPE_CODES and
+         P_VALUE_KEYS. These are the only parameters the reconciler sends. -->
+    <parameter name="P_TYPE_CODES" dataType="character" rowPlacement="1"
+               labelID="P_TYPE_CODES" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_VALUE_KEYS" dataType="character" rowPlacement="1"
+               labelID="P_VALUE_KEYS" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

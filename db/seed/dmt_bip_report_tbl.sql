@@ -15,7 +15,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000003,'PurchaseOrders','Purchase Order','/Custom/DMT2/PurchaseOrders/PO_DM.xdm','/Custom/DMT2/PurchaseOrders/PO_RPT.xdo','PO_HEADERS_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Purchase order header import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000003,'PurchaseOrders','Purchase Order','/Custom/DMT2/PurchaseOrders/PO_V2_DM.xdm','/Custom/DMT2/PurchaseOrders/PO_V2_RPT.xdo','PO_HEADERS_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Purchase order header import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -35,7 +35,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -65,7 +65,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V5_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V5_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000016,'GLBalances','GL Balance','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V6_DM.xdm','/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V6_RPT.xdo','GL_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL journal import reconciliation (Contract v1)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -85,22 +85,22 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000023,'GLBudgets','GL Budget Balance','/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V2_DM.xdm','/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V2_RPT.xdo','GL_BUDGET_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL budget import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000023,'GLBudgets','GL Budget Balance','/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V3_DM.xdm','/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V3_RPT.xdo','GL_BUDGET_INTERFACE',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'GL budget import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000024,'COMMON_LOOKUPS','Business Unit Lookups','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo','FUN_ALL_BUSINESS_UNITS_V',to_date('2026-04-24 17:22:31','YYYY-MM-DD HH24:MI:SS'),'Auto-refresh BU IDs at pipeline start',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000024,'COMMON_LOOKUPS','Business Unit Lookups','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_V2_DM.xdm','/Custom/DMT2/common/DMT_FBDI_LOOKUPS_V2_RPT.xdo','FUN_ALL_BUSINESS_UNITS_V',to_date('2026-04-24 17:22:31','YYYY-MM-DD HH24:MI:SS'),'Auto-refresh BU IDs at pipeline start',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000025,'Items','EGP_ITEM','/Custom/DMT2/Items/DMT_ITEM_RECON_V4_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V4_RPT.xdo','EGP_SYSTEM_ITEMS_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item Import reconciliation',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000025,'Items','EGP_ITEM','/Custom/DMT2/Items/DMT_ITEM_RECON_V5_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V5_RPT.xdo','EGP_SYSTEM_ITEMS_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item Import reconciliation',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000026,'ItemCategories','EGP_ITEM_CATEGORY','/Custom/DMT2/Items/DMT_ITEM_RECON_V4_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V4_RPT.xdo','EGP_ITEM_CATEGORIES_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item categories reconcile through the Items report V3 (record type ItemCategory); the ItemCategories ITEM_CAT_DM / ITEM_CAT_RPT pair is retired (backlog #480).',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000026,'ItemCategories','EGP_ITEM_CATEGORY','/Custom/DMT2/Items/DMT_ITEM_RECON_V5_DM.xdm','/Custom/DMT2/Items/DMT_ITEM_RECON_V5_RPT.xdo','EGP_ITEM_CATEGORIES_INTERFACE',to_date('2026-05-23 23:44:58','YYYY-MM-DD HH24:MI:SS'),'Item categories reconcile through the Items report V3 (record type ItemCategory); the ItemCategories ITEM_CAT_DM / ITEM_CAT_RPT pair is retired (backlog #480).',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -123,38 +123,38 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 100000020 bip_report_id, 'Suppliers' cemli_code, 'Supplier' object_type,
-           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Suppliers/DMT_SUP_RECON_V3_RPT.xdo' report_catalog_path,
            'POZ_SUPPLIERS_INT' interface_table,
            'Supplier header import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~SEGMENT1. Deployed alongside V1 (SUP_DM), never overwriting it.' notes from dual
     union all select 100000012, 'Customers', 'Customer',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm',
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm',
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo',
            'HZ_IMP_PARTIES_T',
            'Customer party import reconciliation (Contract v1). V6: base rows are selected by REQUEST_ID equal to the Fusion import batch id the load sent (P_FUSION_BATCH_ID: run prefix followed by the source batch id), never by a prefix match. An interface row is returned as ERROR only with its OWN HZ_IMP_ERRORS text; a row with no error of its own is not returned. Deployed alongside V5, V4, V3, V2 and v1, never overwriting them.' from dual
     union all select 100000014, 'SupplierAddresses', 'Supplier Address',
-           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V2_DM.xdm',
-           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V3_DM.xdm',
+           '/Custom/DMT2/SupplierAddresses/DMT_SUP_ADDR_RECON_V3_RPT.xdo',
            'POZ_SUP_ADDRESSES_INT',
            'Supplier address import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~PARTY_SITE_NAME. Deployed alongside V1 (SUP_ADDR_DM), never overwriting it.' from dual
     union all select 100000021, 'SupplierSites', 'Supplier Site',
-           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V2_DM.xdm',
-           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V3_DM.xdm',
+           '/Custom/DMT2/SupplierSites/DMT_SUP_SITE_RECON_V3_RPT.xdo',
            'POZ_SUPPLIER_SITES_INT',
            'Supplier site import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~VENDOR_SITE_CODE. Deployed alongside V1 (SUP_SITE_DM), never overwriting it.' from dual
     union all select 100000010, 'SupplierSiteAssignments', 'Supplier Site Assignment',
-           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V2_DM.xdm',
-           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V3_DM.xdm',
+           '/Custom/DMT2/SupplierSiteAssignments/DMT_SUP_SITE_ASSN_RECON_V3_RPT.xdo',
            'POZ_SITE_ASSIGNMENTS_INT',
            'Supplier site assignment import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~VENDOR_SITE_CODE~BUSINESS_UNIT_NAME. Deployed alongside V1 (SUP_SITE_ASSN_DM), never overwriting it.' from dual
     union all select 100000015, 'SupplierContacts', 'Supplier Contact',
-           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V2_DM.xdm',
-           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V3_DM.xdm',
+           '/Custom/DMT2/SupplierContacts/DMT_SUP_CONT_RECON_V3_RPT.xdo',
            'POZ_SUP_CONTACTS_INT',
            'Supplier contact import reconciliation (Contract v1, nine-column, keyset). V2 (2026-10-09, backlog #217): rows found only by the load job id (interface LOAD_REQUEST_ID; base row reached from the interface row); RECORD_KEY = SOURCE_REF = the business key VENDOR_NAME~FIRST_NAME~LAST_NAME. Deployed alongside V1 (SUP_CONT_DM), never overwriting it.' from dual
     union all select 100000016, 'GLBalances', 'GL Balance',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V5_DM.xdm',
-           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V5_RPT.xdo',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V6_DM.xdm',
+           '/Custom/DMT2/GLBalances/DMT_GL_BAL_RECON_V6_RPT.xdo',
            'GL_INTERFACE',
            'GL journal import reconciliation (Contract v1 -- nine columns, keyset). V4 (backlog #173): GROUP_ID = work queue id, Import Journals submitted with that exact group (never ALL); ERROR_MESSAGE is only Journal Import''s own error (GL_INTERFACE.STATUS, plus '': '' STATUS_DESCRIPTION when Fusion wrote one); no REFERENCE10, no composed unbalanced sentence. Rows selected by job id (import job''s GroupID/LedgerID arguments; LOAD_REQUEST_ID). Deployed alongside V1 and V3, never overwriting them.' from dual
     -- Issue 8 (2026-07-20): repoint the remaining reconciliation reports from the
@@ -174,8 +174,8 @@ using (
            'FA_MASS_ADDITIONS',
            'Fixed asset mass additions import reconciliation' from dual
     union all select 100000007, 'Grants', 'Grant/Award',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm',
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm',
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo',
            'GMS_AWARD_HEADERS_INT',
            'Grants/awards import reconciliation (Contract v1, nine-column)' from dual
     union all select 100000008, 'MiscReceipts', 'Misc Receipt (Items on Hand)',
@@ -199,16 +199,16 @@ using (
            'N/A (EPBCS internal)',
            'Planning budget import reconciliation - no BIP-accessible interface table; uses absence=LOADED pattern (EPBCS - dormant)' from dual
     union all select 100000018, 'Expenditures', 'Expenditure',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V3_DM.xdm',
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V3_RPT.xdo',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V4_DM.xdm',
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V4_RPT.xdo',
            'PJC_TXN_XFACE_STAGE_ALL',
            'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
            || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
            || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
            || 'prefix; called once per work item. Deployed alongside V1, never overwriting it.' from dual
     union all select 100000024, 'COMMON_LOOKUPS', 'Business Unit Lookups',
-           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_DM.xdm',
-           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_RPT.xdo',
+           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_V2_DM.xdm',
+           '/Custom/DMT2/common/DMT_FBDI_LOOKUPS_V2_RPT.xdo',
            'FUN_ALL_BUSINESS_UNITS_V',
            'Auto-refresh BU IDs at pipeline start' from dual
 ) s
@@ -308,8 +308,8 @@ using (
     select 100000012                                                    bip_report_id,
            'Customers'                                                  cemli_code,
            'Customer'                                                   object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'          report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'          report_catalog_path,
            'HZ_IMP_PARTIES_T'                                           interface_table,
            'Customer party import reconciliation (Contract v1). V6: base rows are '
               || 'selected by REQUEST_ID equal to the Fusion import batch id the load '
@@ -379,8 +379,8 @@ using (
     select 100000019                                                    bip_report_id,
            'ProjectBudgets'                                             cemli_code,
            'Project Budget'                                             object_type,
-           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V4_DM.xdm'           dm_catalog_path,
-           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V4_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V5_DM.xdm'           dm_catalog_path,
+           '/Custom/DMT2/ProjectBudgets/DMT_PRJ_BUDGET_RECON_V5_RPT.xdo'         report_catalog_path,
            'PJO_PLAN_VERSIONS_XFACE'                                    interface_table,
            'Project budget import reconciliation (Contract v1) - '
               || 'PjoPlanVersionsXface.csv via prj/projectControl/import. V3 '
@@ -432,8 +432,8 @@ using (
     select 100000027                                            bip_report_id,
            'Workers'                                            cemli_code,
            'Worker'                                             object_type,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_DM.xdm'   dm_catalog_path,
-           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V2_RPT.xdo'  report_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V3_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Workers/DMT_WORKERS_RECON_V3_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                          interface_table,
            'Worker HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #289): '
              || 'rows selected by the HDL request id; every person component (name, email, '
@@ -484,8 +484,8 @@ using (
     select 100000029                                                  bip_report_id,
            'SalaryBases'                                              cemli_code,
            'Salary Basis'                                             object_type,
-           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/SalaryBases/DMT_SALARYBASES_RECON_V3_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                interface_table,
            'Salary basis HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #292): '
              || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
@@ -530,8 +530,8 @@ using (
     select 100000028                                            bip_report_id,
            'Salaries'                                           cemli_code,
            'Salary'                                             object_type,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Salaries/DMT_SALARIES_RECON_V3_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                          interface_table,
            'Salary HDL base-table reconciliation (Contract v1). V2 (2026-10-07, backlog #291): '
              || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
@@ -576,8 +576,8 @@ using (
     select 100000030                                            bip_report_id,
            'Absences'                                           cemli_code,
            'Absence Entry'                                      object_type,
-           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/Absences/DMT_ABSENCES_RECON_V3_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                          interface_table,
            'Absence HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #293): '
              || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
@@ -621,8 +621,8 @@ using (
     select 100000031                                                   bip_report_id,
            'WorkSchedules'                                             cemli_code,
            'Work Schedule'                                             object_type,
-           '/Custom/DMT2/WorkSchedules/DMT_WORKSCHEDULES_RECON_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/WorkSchedules/DMT_WORKSCHEDULES_RECON_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/WorkSchedules/DMT_WORKSCHEDULES_RECON_V2_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/WorkSchedules/DMT_WORKSCHEDULES_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                 interface_table,
            'Work Schedule HDL base-table reconciliation (Contract v1)' notes,
            1                                                           contract_version,
@@ -669,8 +669,8 @@ using (
     select 100000033                                                                  bip_report_id,
            'PayrollRelationships'                                                     cemli_code,
            'Payroll Relationship'                                                     object_type,
-           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_DM.xdm'  dm_catalog_path,
-           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_V2_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/PayrollRelationships/DMT_PAYROLLRELATIONSHIPS_RECON_V2_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                                interface_table,
            'Payroll Relationship base-table VERIFIER (Contract v1). 2026-09-17: '
              || 'PayrollRelationships retired as a standalone HDL load (the payroll '
@@ -738,8 +738,8 @@ using (
     select 100000032                                                    bip_report_id,
            'Assignments'                                                cemli_code,
            'Assignment'                                                 object_type,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_DM.xdm'   dm_catalog_path,
-           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V2_RPT.xdo'  report_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V3_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Assignments/DMT_ASSIGNMENTS_RECON_V3_RPT.xdo'  report_catalog_path,
            'N/A (HDL)'                                                  interface_table,
            'Assignment HDL base-table reconciliation (Contract v1). ONE report, '
              || 'two base tiers via OBJECT_TYPE: WorkRelationship '
@@ -797,8 +797,8 @@ using (
     select 100000038                                                        bip_report_id,
            'BenParticipant'                                                 cemli_code,
            'Participant Enrollment'                                         object_type,
-           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V2_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V3_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/BenParticipant/DMT_BENPARTICIPANT_RECON_V3_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                      interface_table,
            'BenParticipant HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #214): '
              || 'V1 header comment held an illegal double hyphen (runReport HTTP 500); SQL unchanged. '
@@ -857,8 +857,8 @@ using (
     select 100000039                                                       bip_report_id,
            'BenDependent'                                                  cemli_code,
            'Dependent Enrollment'                                          object_type,
-           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V2_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V2_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V3_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/BenDependent/DMT_BENDEPENDENT_RECON_V3_RPT.xdo'   report_catalog_path,
            'N/A (HDL)'                                                     interface_table,
            'BenDependent HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #214): '
              || 'V1 header comment held an illegal double hyphen (runReport HTTP 500); SQL unchanged. '
@@ -913,8 +913,8 @@ using (
     select 100000040                                                        bip_report_id,
            'BenBeneficiary'                                                 cemli_code,
            'Beneficiary Enrollment'                                         object_type,
-           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_V2_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/BenBeneficiary/DMT_BENBENEFICIARY_RECON_V2_RPT.xdo'   report_catalog_path,
            'N/A (HDL)'                                                      interface_table,
            'BenBeneficiary HDL base-table reconciliation (Contract v1)'     notes,
            1                                                                contract_version,
@@ -958,8 +958,8 @@ using (
     select 100000035                                                    bip_report_id,
            'W2Balances'                                                 cemli_code,
            'Balance Initialization'                                     object_type,
-           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V2_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V2_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V3_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/W2Balances/DMT_W2_BAL_RECON_V3_RPT.xdo'        report_catalog_path,
            'N/A (HDL)'                                                  interface_table,
            'W2Balances HDL base-table reconciliation (Contract v1). V2: the batch is '
               || 'selected by the exact BatchName the run wrote (P_FUSION_BATCH_ID: run '
@@ -1018,8 +1018,8 @@ using (
     select 100000036                                                        bip_report_id,
            'TalentProfiles'                                                 cemli_code,
            'Talent Profile'                                                 object_type,
-           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V3_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V3_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V4_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/TalentProfiles/DMT_TALENTPROFILES_RECON_V4_RPT.xdo' report_catalog_path,
            'N/A (HDL)'                                                      interface_table,
            'Talent profile HDL base-table reconciliation (Contract v1). V2 (2026-10-08, backlog #451): '
              || 'rows selected by the HDL request id, key map joined on each row''s own owner, '
@@ -1129,8 +1129,8 @@ using (
     select 100000041                                                     bip_report_id,
            'UnitsOfMeasure'                                              cemli_code,
            'Unit of Measure'                                             object_type,
-           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_RPT.xdo'           report_catalog_path,
+           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_V2_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/UnitsOfMeasure/DMT_UOM_RECON_V2_RPT.xdo'           report_catalog_path,
            'N/A (REST)'                                                  interface_table,
            'Units of Measure base-table reconciliation (new recon standard). '
              || 'REST POST loads the UOM; LOADED is confirmed by a hit in '
@@ -1233,8 +1233,8 @@ using (
     select 100000046                                                     bip_report_id,
            'CashBanks'                                                   cemli_code,
            'Cash Management Banks'                                       object_type,
-           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_DM.xdm'             dm_catalog_path,
-           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_RPT.xdo'            report_catalog_path,
+           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_V2_DM.xdm'             dm_catalog_path,
+           '/Custom/DMT2/CashBanks/DMT_CEBANK_RECON_V2_RPT.xdo'            report_catalog_path,
            'N/A (REST)'                                                  interface_table,
            'Cash Management banks/branches/accounts base-table reconciliation '
              || '(new recon standard). REST POST loads each tier; LOADED is '
@@ -1285,8 +1285,8 @@ using (
     select 100000043                                                     bip_report_id,
            'PaymentTerms'                                                cemli_code,
            'AP Payment Terms'                                            object_type,
-           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_RPT.xdo'       report_catalog_path,
+           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_V2_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/APPaymentTerms/DMT_APTERMS_RECON_V2_RPT.xdo'       report_catalog_path,
            'N/A (REST)'                                                  interface_table,
            'AP Payment Terms base-table reconciliation (new recon standard). '
              || 'REST POST loads the term then its installment lines; LOADED is '
@@ -1339,8 +1339,8 @@ using (
     select 100000044                                                     bip_report_id,
            'Lookups'                                                     cemli_code,
            'Lookup'                                                      object_type,
-           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_DM.xdm'               dm_catalog_path,
-           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_RPT.xdo'              report_catalog_path,
+           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_V2_DM.xdm'               dm_catalog_path,
+           '/Custom/DMT2/Lookups/DMT_LOOKUP_RECON_V2_RPT.xdo'              report_catalog_path,
            'N/A (REST)'                                                  interface_table,
            'Lookups base-table reconciliation (new recon standard). REST POST '
              || 'loads each lookup type then its child codes; LOADED is confirmed '
@@ -1487,8 +1487,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Requisitions'                                       cemli_code,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_RPT.xdo'       report_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_RPT.xdo'       report_catalog_path,
            'Requisition import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
            || 'rows found only by the work item''s Fusion job ids (base by the import '
            || 'REQUEST_ID, interface and errors by LOAD_REQUEST_ID + REQUEST_ID), never by '
@@ -1539,8 +1539,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BillingEvents'                                        cemli_code,
-           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_DM.xdm'  dm_catalog_path,
-           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V2_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V3_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BillingEvents/DMT_BILLING_EVENT_RECON_V3_RPT.xdo' report_catalog_path,
            'Project billing event import reconciliation (Contract v1 -- nine columns, keyset; interface tier is the #IMPORT_REPORT# no-carrier special case). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
            || 'interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
@@ -1594,8 +1594,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Projects'                                             cemli_code,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_RPT.xdo'   report_catalog_path,
            'Project import reconciliation (Contract v1, multi-tier, 4 tiers). V2 (2026-10-07, '
            || 'owner-approved exception): base projects found by PM_PROJECT_REFERENCE LIKE '
            || '''<run_id>:<work_queue_id>:%'' (Fusion stamps no job id on the project base '
@@ -1661,8 +1661,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'ARInvoices'                                             cemli_code,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V5_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V5_RPT.xdo'       report_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V6_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/ARInvoices/DMT_AR_RECON_V6_RPT.xdo'       report_catalog_path,
            'AR AutoInvoice import reconciliation (Contract v1, multi-tier). V5 (2026-10-09): '
            || 'pages by header: each page is the next BIP_CHUNK_SIZE DMT invoices plus every '
            || 'line and distribution of them (PAGE_KEY = invoice key, backlog #224); a loaded '
@@ -1719,8 +1719,8 @@ using (
     select 100000007                                            bip_report_id,
            'Grants'                                             cemli_code,
            'Grant/Award'                                        object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V2_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V3_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
              || 'Header tier only; 14 children accounted by parent-award verdict. '
@@ -1783,8 +1783,8 @@ using (
     select 100000023                                            bip_report_id,
            'GLBudgets'                                          cemli_code,
            'GL Budget Balance'                                  object_type,
-           '/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V2_DM.xdm'            dm_catalog_path,
-           '/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V2_RPT.xdo'           report_catalog_path,
+           '/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V3_DM.xdm'            dm_catalog_path,
+           '/Custom/DMT2/GLBudgets/DMT_GL_BUDGET_RECON_V3_RPT.xdo'           report_catalog_path,
            'GL_BUDGET_INTERFACE'                                interface_table,
            'GL budget cell reconciliation (Contract v1, nine-column keyset report)' notes,
            1                                                    contract_version,
@@ -1843,8 +1843,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'MiscReceipts'                                          cemli_code,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V3_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V3_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V4_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V4_RPT.xdo' report_catalog_path,
            'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion load job id '
            || '(LOAD_REQUEST_ID on the posted transaction and the rejected interface row), never by '
@@ -1909,8 +1909,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'PurchaseOrders'                                        cemli_code,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V3_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V3_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V4_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/DMT_PO_RECON_V4_RPT.xdo'   report_catalog_path,
            'Purchase order import reconciliation (Contract v1, multi-tier: headers/lines/line-locations/distributions). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
            || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
@@ -2048,8 +2048,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Assets'                                              cemli_code,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_DM.xdm'    dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_RPT.xdo'   report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_DM.xdm'    dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_RPT.xdo'   report_catalog_path,
            'Fixed asset mass additions reconciliation (Contract v1, single ASSET tier; book/assignment cascade; SQL*Loader all-or-nothing preserved). '
            || 'V2 (2026-10-07): rows found only by the work item''s load job id (base assets through their POSTED '
            || 'FA_MASS_ADDITIONS row, interface by LOAD_REQUEST_ID), never by the run prefix; deployed alongside V1.' notes,
@@ -2083,8 +2083,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'BlanketPOs'                                            cemli_code,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V3_DM.xdm'  dm_catalog_path,
-           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V3_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V4_DM.xdm'  dm_catalog_path,
+           '/Custom/DMT2/BlanketPOs/DMT_BLANKET_PO_RECON_V4_RPT.xdo' report_catalog_path,
            'Blanket purchase agreement import reconciliation (Contract v1, multi-tier: headers/lines). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
            || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID on the header) and the '
@@ -2114,8 +2114,8 @@ when matched then update set
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Contracts'                                             cemli_code,
-           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V2_DM.xdm'   dm_catalog_path,
-           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V2_RPT.xdo'  report_catalog_path,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V3_DM.xdm'   dm_catalog_path,
+           '/Custom/DMT2/Contracts/DMT_CONTRACT_RECON_V3_RPT.xdo'  report_catalog_path,
            'Contract purchase agreement import reconciliation (Contract v1, headers only). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion job ids (base by the import '
            || 'REQUEST_ID, interface by LOAD_REQUEST_ID + the import REQUEST_ID) and the Contract '
@@ -2165,8 +2165,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Expenditures'                                          cemli_code,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V3_DM.xdm'     dm_catalog_path,
-           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V3_RPT.xdo'    report_catalog_path,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V4_DM.xdm'     dm_catalog_path,
+           '/Custom/DMT2/Expenditures/DMT_EXP_RECON_V4_RPT.xdo'    report_catalog_path,
            'Project expenditure cost import reconciliation (Contract v1, nine-column). V2 (2026-10-07): '
            || 'rows found only by the work item''s Fusion job ids (base by the import REQUEST_ID, '
            || 'interface by the import REQUEST_ID and the load LOAD_REQUEST_ID), never by the run '
@@ -2214,8 +2214,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'APInvoices'                                            cemli_code,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V3_DM.xdm'        dm_catalog_path,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V3_RPT.xdo'       report_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V4_DM.xdm'        dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V4_RPT.xdo'       report_catalog_path,
            'AP invoice import reconciliation (Contract v1, multi-tier). V2 (2026-10-07): '
            || 'rows found by Fusion job id only (base by import REQUEST_ID, interface and '
            || 'rejections by LOAD_REQUEST_ID); only real AP_INTERFACE_REJECTIONS text; '
@@ -2271,8 +2271,8 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'Items'                                             cemli_code,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V4_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Items/DMT_ITEM_RECON_V4_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Items/DMT_ITEM_RECON_V5_RPT.xdo'      report_catalog_path,
            'Item Import base-table reconciliation (Contract v1 -- nine columns, '
              || 'keyset). ONE report, two record types via OBJECT_TYPE: Item '
              || '(DMT_EGP_ITEM_TFM_TBL <- EGP_SYSTEM_ITEMS_B) and ItemCategory '
@@ -2310,8 +2310,8 @@ commit;
 -- (mirrored by db/migrations/2026-10-08_itemcategories_registry_repoint.sql).
 -- ---------------------------------------------------------------------------
 update "DMT_BIP_REPORT_TBL"
-set    "DM_CATALOG_PATH"     = '/Custom/DMT2/Items/DMT_ITEM_RECON_V4_DM.xdm',
-       "REPORT_CATALOG_PATH" = '/Custom/DMT2/Items/DMT_ITEM_RECON_V4_RPT.xdo',
+set    "DM_CATALOG_PATH"     = '/Custom/DMT2/Items/DMT_ITEM_RECON_V5_DM.xdm',
+       "REPORT_CATALOG_PATH" = '/Custom/DMT2/Items/DMT_ITEM_RECON_V5_RPT.xdo',
        "NOTES"               = 'Item categories reconcile through the Items report V3 '
                             || '(record type ItemCategory); the ItemCategories ITEM_CAT_DM / '
                             || 'ITEM_CAT_RPT pair is retired (backlog #480).'
@@ -2353,8 +2353,8 @@ using (
     select 100000047                                            bip_report_id,
            'APInvoices.Line'                                    cemli_code,
            'AP Invoice Line'                                    object_type,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V3_DM.xdm'     dm_catalog_path,
-           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V3_RPT.xdo'    report_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V4_DM.xdm'     dm_catalog_path,
+           '/Custom/DMT2/APInvoices/DMT_AP_RECON_V4_RPT.xdo'    report_catalog_path,
            'AP_INVOICE_LINES_INTERFACE'                         interface_table,
            'AP invoice LINE tier -- AUDITOR registration only (backlog #91, '
              || 'Option A first slice). Not a pipeline/reconcile object; the '
@@ -2429,8 +2429,8 @@ using (
     select 100000048                                            bip_report_id,
            'PurchaseOrders.Line'                                        cemli_code,
            'Purchase Order Line'                                        object_type,
-           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_RPT.xdo'         report_catalog_path,
            'PO_LINES_INTERFACE'                                        interface_table,
            'PurchaseOrders PO line tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
@@ -2479,8 +2479,8 @@ using (
     select 100000049                                            bip_report_id,
            'PurchaseOrders.LineLocation'                                        cemli_code,
            'Purchase Order Line Location'                                        object_type,
-           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_RPT.xdo'         report_catalog_path,
            'PO_LINE_LOCATIONS_INTERFACE'                                        interface_table,
            'PurchaseOrders PO line-location tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
@@ -2529,8 +2529,8 @@ using (
     select 100000050                                            bip_report_id,
            'PurchaseOrders.Distribution'                                        cemli_code,
            'Purchase Order Distribution'                                        object_type,
-           '/Custom/DMT2/PurchaseOrders/PO_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/PurchaseOrders/PO_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/PurchaseOrders/PO_V2_RPT.xdo'         report_catalog_path,
            'PO_DISTRIBUTIONS_INTERFACE'                                        interface_table,
            'PurchaseOrders PO distribution tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PO_RESULTS_PKG applies all '
@@ -2579,8 +2579,8 @@ using (
     select 100000051                                            bip_report_id,
            'Requisitions.Line'                                        cemli_code,
            'Requisition Line'                                        object_type,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_RPT.xdo'         report_catalog_path,
            'POR_REQ_LINES_INTERFACE_ALL'                                        interface_table,
            'Requisitions requisition line tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '
@@ -2629,8 +2629,8 @@ using (
     select 100000052                                            bip_report_id,
            'Requisitions.Distribution'                                        cemli_code,
            'Requisition Distribution'                                        object_type,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V4_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Requisitions/DMT_REQ_RECON_V5_RPT.xdo'         report_catalog_path,
            'POR_REQ_DISTRIBUTIONS_INT_ALL'                                        interface_table,
            'Requisitions requisition distribution tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_REQ_RESULTS_PKG applies all '
@@ -2679,8 +2679,8 @@ using (
     select 100000053                                            bip_report_id,
            'Customers.Parties'                                        cemli_code,
            'Customer Party'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTIES_T'                                        interface_table,
            'Customers customer party tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2729,8 +2729,8 @@ using (
     select 100000054                                            bip_report_id,
            'Customers.Locations'                                        cemli_code,
            'Customer Location'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_LOCATIONS_T'                                        interface_table,
            'Customers customer location tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2779,8 +2779,8 @@ using (
     select 100000055                                            bip_report_id,
            'Customers.PartySites'                                        cemli_code,
            'Customer Party Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITES_T'                                        interface_table,
            'Customers customer party site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2829,8 +2829,8 @@ using (
     select 100000056                                            bip_report_id,
            'Customers.PartySiteUses'                                        cemli_code,
            'Customer Party Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_PARTYSITEUSES_T'                                        interface_table,
            'Customers customer party site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2879,8 +2879,8 @@ using (
     select 100000057                                            bip_report_id,
            'Customers.Accounts'                                        cemli_code,
            'Customer Account'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCOUNTS_T'                                        interface_table,
            'Customers customer account tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2929,8 +2929,8 @@ using (
     select 100000058                                            bip_report_id,
            'Customers.AccountSites'                                        cemli_code,
            'Customer Account Site'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCT_SITES_T'                                        interface_table,
            'Customers customer account site tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -2979,8 +2979,8 @@ using (
     select 100000059                                            bip_report_id,
            'Customers.AccountSiteUses'                                        cemli_code,
            'Customer Account Site Use'                                        object_type,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Customers/DMT_CUST_RECON_V7_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Customers/DMT_CUST_RECON_V8_RPT.xdo'         report_catalog_path,
            'HZ_IMP_ACCTSITE_USES_T'                                        interface_table,
            'Customers customer account site use tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_CUST_RESULTS_PKG applies all '
@@ -3299,8 +3299,8 @@ using (
     select 100000060                                            bip_report_id,
            'Assets.Book'                                        cemli_code,
            'Asset Book'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-book tier -- AUDITOR registration only (backlog #91/#139). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
@@ -3357,8 +3357,8 @@ using (
     select 100000061                                            bip_report_id,
            'Assets.Assignment'                                        cemli_code,
            'Asset Assignment'                                        object_type,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_DM.xdm'          dm_catalog_path,
-           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V3_RPT.xdo'         report_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_DM.xdm'          dm_catalog_path,
+           '/Custom/DMT2/Assets/DMT_FA_ASSET_RECON_V4_RPT.xdo'         report_catalog_path,
            'FA_MASS_ADDITIONS'                                        interface_table,
            'Assets asset-assignment tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_FA_ASSET_RESULTS_PKG applies all '
@@ -3409,8 +3409,8 @@ using (
     select 100000062                                            bip_report_id,
            'Projects.Task'                                        cemli_code,
            'Project Task'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_RPT.xdo'      report_catalog_path,
            'PJF_TASKS_XFACE'                                        interface_table,
            'Projects project-task tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3460,8 +3460,8 @@ using (
     select 100000063                                            bip_report_id,
            'Projects.TeamMember'                                        cemli_code,
            'Project Team Member'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_RPT.xdo'      report_catalog_path,
            'PJF_PROJ_TEAM_MEMBERS_XFACE'                                        interface_table,
            'Projects project-team-member tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '
@@ -3511,8 +3511,8 @@ using (
     select 100000064                                            bip_report_id,
            'Projects.TxnControl'                                        cemli_code,
            'Project Transaction Control'                                        object_type,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V3_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Projects/DMT_PROJECT_RECON_V4_RPT.xdo'      report_catalog_path,
            'PJC_TXN_CONTROLS_XFACE'                                        interface_table,
            'Projects project-txn-control tier -- AUDITOR registration only (backlog #91). '
              || 'Not a pipeline/reconcile object; DMT_PROJECT_RESULTS_PKG applies all '

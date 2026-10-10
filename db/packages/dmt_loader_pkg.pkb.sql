@@ -1007,6 +1007,10 @@
     --   match and the MATCH_TYPE column; V3 added P_MATCH2_ARG_POS /
     --   P_MATCH2_VALUE, V2 P_BATCH_ARG_POS; deployed alongside V1-V3, which are
     --   never overwritten). Its NEAREST rows are exactly what V3 returns.
+    --   Now DMT_ESS_CHILD_JOB_V5_RPT.xdo: the V4 SQL unchanged, its report
+    --   wrapper deployed with BIP data caching off (backlog #734). Every retry
+    --   below repeats the same parameters, so with caching on a retry could be
+    --   served the first (empty) answer instead of reading ESS again.
     -- Called via runReport with P_LOAD_ESS_ID, P_JOB_DEF, P_BATCH_ID,
     -- P_BATCH_ARG_POS, P_MATCH2_ARG_POS and P_MATCH2_VALUE bound parameters.
     -- find_import_ess_id is the private worker; the public GET_IMPORT_ESS_ID
@@ -1025,7 +1029,7 @@
         p_match2_value   IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2 IS
         C_PROC        CONSTANT VARCHAR2(50)  := 'GET_IMPORT_ESS_ID';
-        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V4_RPT.xdo';
+        C_RPT_PATH    CONSTANT VARCHAR2(200) := '/Custom/DMT2/common/DMT_ESS_CHILD_JOB_V5_RPT.xdo';
         C_MAX_TRIES   CONSTANT INTEGER       := 60;
         C_SLEEP_SEC   CONSTANT NUMBER        := 15;
         C_OWN_TRIES   CONSTANT INTEGER       := 4;   -- attempts that wait for the load's own import

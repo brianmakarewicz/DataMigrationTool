@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_SUP_SITE_RECON_V3_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_SUP_SITE_RECON_V2_DM. This version exists only because its report wrapper DMT_SUP_SITE_RECON_V3_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_SUP_SITE_RECON_V2_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="sup_site_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- SupplierSites BIP reconciliation query -- BIP reconciliation report
+-- contract v1 (nine columns, keyset pagination), V2.
+-- Data source: ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/SupplierSites/query.sql.
+-- V2 (2026-10-09, backlog #217) is deployed ALONGSIDE SUP_SITE_DM (V1);
+-- BIP objects are never overwritten. V2 returns the same rows and the
+-- same verdicts as V1, reshaped into the nine contract columns.
+--
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
+--
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--
+-- Row selection (owner decision 2026-10-07): rows are FOUND only by
+-- the load job id. Every row starts from the interface table
+-- POZ_SUPPLIER_SITES_INT filtered by LOAD_REQUEST_ID = :P_LOAD_REQUEST_ID; the base
+-- row is reached from that interface row (POZ_SUPPLIER_SITES_ALL_M on the interface row's VENDOR_ID and VENDOR_SITE_CODE;
+-- the interface leaves VENDOR_SITE_ID NULL even for processed rows).
+-- The run prefix and run id are never used to select rows (no LIKE
+-- anywhere). P_RUN_ID, P_IMPORT_ESS_ID and P_PREFIX are declared for
+-- contract symmetry only.
+--
+-- Verdict per interface row (Rule #1, positive base confirmation):
+--   base row found     -> BASE / SUCCESS, FUSION_ID = POZ_SUPPLIER_SITES_ALL_M.VENDOR_SITE_ID.
+--   no base row        -> INTERFACE / ERROR, ERROR_MESSAGE = the real
+--                         rejection text from POZ_SUPPLIER_INT_REJECTIONS
+--                         (POZ_SUPPLIER_SITES_INT), or NULL when Fusion recorded none
+--                         (the reconciler then leaves the row for the
+--                         UNACCOUNTED sweep).
+--
+-- RECORD_KEY = SOURCE_REF = the object's business key as sent in the
+-- FBDI, parts joined with '~': VENDOR_NAME~VENDOR_SITE_CODE.
+-- The supplier family has no DFF carrier for the DMT reference, so
+-- DMT_REFERENCE is NULL. The reconciler matches RECORD_KEY to the same
+-- '~'-joined expression over its TFM row (DMT_BIP_REPORT_TBL.RECON_KEY_SQL).
+-- Keyset pages are tie-safe (FETCH FIRST ... WITH TIES).
+-- ============================================================
+SELECT
+    object_type, record_key, source_type, fusion_status,
+    fusion_id, error_message, load_request_id, source_ref, dmt_reference
+FROM (
+    SELECT
+        'SupplierSites'                                  AS object_type,
+        i.vendor_name || '~' || i.vendor_site_code       AS record_key,
+        CASE WHEN b.vendor_site_id IS NOT NULL THEN 'BASE' ELSE 'INTERFACE' END
+                                                         AS source_type,
+        CASE WHEN b.vendor_site_id IS NOT NULL THEN 'SUCCESS' ELSE 'ERROR' END
+                                                         AS fusion_status,
+        b.vendor_site_id                                 AS fusion_id,
+        CASE WHEN b.vendor_site_id IS NULL THEN (
+            SELECT LISTAGG(
+                       CASE
+                           WHEN r.attribute IS NOT NULL
+                           THEN r.reject_lookup_code || ' [' || r.attribute || ']'
+                           ELSE r.reject_lookup_code
+                       END, '; ')
+                   WITHIN GROUP (ORDER BY r.rejection_id)
+            FROM   poz_supplier_int_rejections r
+            WHERE  r.parent_table = 'POZ_SUPPLIER_SITES_INT'
+            AND    r.parent_id    = i.vendor_site_interface_id
+        ) END
+                                                         AS error_message,
+        i.load_request_id                                AS load_request_id,
+        i.vendor_name || '~' || i.vendor_site_code       AS source_ref,
+        CAST(NULL AS VARCHAR2(1000))                     AS dmt_reference
+    FROM   poz_supplier_sites_int i
+    LEFT JOIN poz_supplier_sites_all_m b
+           ON b.vendor_id = i.vendor_id AND b.vendor_site_code = i.vendor_site_code
+    WHERE  i.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+)
+-- Keyset predicate. An empty P_AFTER_KEY (first page) binds to NULL in
+-- BIP, so treat NULL as "from the start". On later pages it carries the
+-- previous page's last RECORD_KEY; only greater keys are returned. The
+-- ordering and the comparison are both pinned to BINARY so they agree.
+-- WITH TIES keeps every row equal to the page's last RECORD_KEY on this
+-- page, so the strict > on the next page cannot drop one of them.
+WHERE  (:P_AFTER_KEY IS NULL
+        OR NLSSORT(record_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY'))
+ORDER BY NLSSORT(record_key, 'NLS_SORT=BINARY')
+FETCH FIRST :P_CHUNK_SIZE ROWS WITH TIES
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="sup_site_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Keyset pagination: page size + cursor. The reconciler calls
+         with an empty P_AFTER_KEY first, then passes the last RECORD_KEY
+         received on each next call, until a short page returns. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

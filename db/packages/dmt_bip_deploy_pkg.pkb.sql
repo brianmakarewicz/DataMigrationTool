@@ -638,11 +638,17 @@
         -- stack's deploy tooling used): dataModel="true" on the root,
         -- <parameters> so BIP surfaces the DM parameters, and a <templates>
         -- block with defaultFormat="xml" so runReport returns raw data.
+        -- Data caching is OFF (backlog #734): with cache="true" BIP serves
+        -- a runReport call whose parameters repeat an earlier call from its
+        -- cache instead of reading Fusion again, so a re-reconcile of the
+        -- same work item (or a poll that repeats its parameters) read stale
+        -- rows. The runReport byPassCache request flag does not bypass this
+        -- cache (proven 2026-10-10), so the wrapper itself must turn it off.
         l_xdo_xml :=
             '<?xml version="1.0" encoding="UTF-8"?>'||CHR(10)||
             '<report xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.0"'||CHR(10)||
             '        dataModel="true" useBipParameters="true">'||CHR(10)||
-            '  <dataModel url="'||p_folder||'/'||p_dm_name||'.xdm" cache="true"/>'||CHR(10)||
+            '  <dataModel url="'||p_folder||'/'||p_dm_name||'.xdm" cache="false"/>'||CHR(10)||
             '  <description/>'||CHR(10)||
             '  <property name="showControls" value="true"/>'||CHR(10)||
             '  <property name="online" value="true"/>'||CHR(10)||

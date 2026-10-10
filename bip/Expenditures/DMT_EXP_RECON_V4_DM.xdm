@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_EXP_RECON_V4_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_EXP_RECON_V3_DM. This version exists only because its report wrapper DMT_EXP_RECON_V4_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_EXP_RECON_V3_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="exp_recon_v2_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- DMT_EXP_RECON_V3_DM (2026-10-09), deployed ALONGSIDE V1 and V2
+-- (never overwritten). One change from V2: HEADER PAGING (owner
+-- decision 2026-10-09, design section 5 "Reconciliation fetches page
+-- on header boundaries", backlog #685). Expenditures is single
+-- grain: the record is its own header, so PAGE_KEY = the prefixed
+-- ORIG_TRANSACTION_REFERENCE (the RECORD_KEY) on all three branches.
+-- The two interface branches (rows the import rejected, and rows left
+-- in staging) can both return the same transaction; V2 cut pages at
+-- :P_CHUNK_SIZE ROWS, so the second row of such a key could fall on
+-- the next page and be skipped by the > cursor. A page is now the next
+-- :P_CHUNK_SIZE distinct references after :P_AFTER_KEY plus EVERY row
+-- carrying them. Each row carries a tenth column PAGE_KEY;
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS counts headers, not rows, and
+-- passes the last PAGE_KEY back as :P_AFTER_KEY. A row with no
+-- reference (never expected; V2 returned it only on the first page)
+-- is paged under the literal '#NO_REFERENCE#' so it is never dropped.
+-- Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error text
+-- are unchanged from V2.
+-- ============================================================
+-- (V2 history follows.)
+-- Expenditures (project costs) reconciliation data model V2 --
+-- BIP reconciliation report contract v1 (nine columns, keyset
+-- pagination, the six standard parameters). Data source:
+-- ApplicationDB_FSCM. The repo mirror of this SQL is
+-- bip/Expenditures/query.sql; the .xdm is authoritative.
+-- V2 (2026-10-07) is deployed ALONGSIDE DMT_EXP_RECON_DM (V1);
+-- BIP objects are never overwritten.
+--
+-- NINE columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE
+--
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY. No P_OFFSET / P_LIMIT.
+--
+-- OBJECT MODEL. Expenditures is ONE object (one FBDI zip,
+-- PjcExpendituresInterface). Each work item is one (transaction
+-- source, document) partition: one load (Load Interface File for
+-- Import) and one separately submitted import (Import Costs,
+-- ImportProcessParallelEssJob, argument 8 = the work item's queue
+-- id). The reconciler calls this report once per work item with
+-- that item's own load and import ids.
+--
+-- Row selection (owner decision 2026-10-07): rows are FOUND only
+-- by the work item's Fusion job ids, never by the run prefix or
+-- run id. Verified live on runs 236 and 238 (2026-10-07):
+--   BASE rows: PJC_EXP_ITEMS_ALL.REQUEST_ID = :P_IMPORT_ESS_ID
+--     (Fusion stamps the Import Costs job id on each costed item;
+--     run 238 work item 1576, import 10070713 -> items 765733 and
+--     765734). FUSION_ID = EXPENDITURE_ITEM_ID.
+--   INTERFACE rows rejected by the import: PJC_TXN_XFACE_ALL with
+--     REQUEST_ID = :P_IMPORT_ESS_ID and a status other than 'P'
+--     (run 238: E2DATE and E3RATE kept REQUEST_ID 10070713,
+--     status R).
+--   INTERFACE rows left in staging by the load:
+--     PJC_TXN_XFACE_STAGE_ALL with LOAD_REQUEST_ID =
+--     :P_LOAD_REQUEST_ID and a status other than 'P'.
+-- No LIKE anywhere. P_RUN_ID and P_PREFIX are declared for
+-- contract symmetry only. The prefixed ORIG_TRANSACTION_REFERENCE
+-- (= TFM RECON_KEY) is used only as RECORD_KEY, to match a row
+-- Fusion returned back to its TFM row.
+--
+-- FUSION_STATUS normalized SUCCESS/ERROR in the DM:
+--   BASE (present in PJC_EXP_ITEMS_ALL) => SUCCESS
+--   INTERFACE (rejected, status <> 'P') => ERROR
+--
+-- ERROR_MESSAGE is NULL on INTERFACE rows, unchanged from V1: the
+-- cost interface tables carry no error-text column. The real
+-- per-row Fusion message is harvested from the Import Costs
+-- report output of the same import job by
+-- DMT_EXPENDITURE_RESULTS_PKG; a row with no real message is left
+-- UNACCOUNTED, never fabricated FAILED.
+--
+-- Keyset: ORDER BY RECORD_KEY (pinned to BINARY so the ordering
+-- and the > comparison agree), only rows whose RECORD_KEY sorts
+-- after :P_AFTER_KEY, at most :P_CHUNK_SIZE per page.
+-- ============================================================
+WITH recon_rows AS (
+    -- BASE: costed expenditure items -- found by the import job's REQUEST_ID
+    SELECT
+        'Expenditures'                       AS object_type,
+        ei.orig_transaction_reference        AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        ei.expenditure_item_id               AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        ei.request_id                        AS load_request_id,
+        ei.orig_transaction_reference        AS source_ref,
+        ei.attribute1                        AS dmt_reference,
+        NVL(ei.orig_transaction_reference, '#NO_REFERENCE#') AS page_key
+    FROM   pjc_exp_items_all ei
+    WHERE  ei.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+
+    UNION ALL
+
+    -- INTERFACE: rows the import rejected -- found by the import job's REQUEST_ID
+    SELECT
+        'Expenditures'                       AS object_type,
+        x.orig_transaction_reference         AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        x.request_id                         AS load_request_id,
+        x.orig_transaction_reference         AS source_ref,
+        x.attribute1                         AS dmt_reference,
+        NVL(x.orig_transaction_reference, '#NO_REFERENCE#') AS page_key
+    FROM   pjc_txn_xface_all x
+    WHERE  x.request_id = TO_NUMBER(:P_IMPORT_ESS_ID)
+    AND    NVL(x.transaction_status_code,'X') <> 'P'
+
+    UNION ALL
+
+    -- INTERFACE: rows left unprocessed in staging -- found by the load job's LOAD_REQUEST_ID
+    SELECT
+        'Expenditures'                       AS object_type,
+        st.orig_transaction_reference        AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        st.load_request_id                   AS load_request_id,
+        st.orig_transaction_reference        AS source_ref,
+        st.attribute1                        AS dmt_reference,
+        NVL(st.orig_transaction_reference, '#NO_REFERENCE#') AS page_key
+    FROM   pjc_txn_xface_stage_all st
+    WHERE  st.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+    AND    NVL(st.transaction_status_code,'X') <> 'P'
+),
+-- V3 header keyset (backlog #685). The page's headers are the next
+-- :P_CHUNK_SIZE distinct transaction references after :P_AFTER_KEY. An
+-- empty P_AFTER_KEY (first page) binds to NULL in BIP, so NULL means
+-- "from the start"; later pages get the previous page's last PAGE_KEY.
+-- Compared and ordered as BINARY so the cursor and the order always agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page header, never a row cap.
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key
+FROM   recon_rows r
+JOIN   page_headers ph
+       ON ph.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="exp_recon_v2_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header keyset pagination: P_CHUNK_SIZE is a number of
+         transaction references (headers). The shared fetch calls with an empty
+         P_AFTER_KEY first, then passes the last PAGE_KEY received on
+         each next call, until a page holds fewer headers than the
+         chunk size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

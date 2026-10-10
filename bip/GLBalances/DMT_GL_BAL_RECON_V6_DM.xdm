@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_GL_BAL_RECON_V6_DM (2026-10-10, backlog #734): the SQL, parameters and output are identical to DMT_GL_BAL_RECON_V5_DM. This version exists only because its report wrapper DMT_GL_BAL_RECON_V6_RPT.xdo is deployed with BIP data caching off, so a repeated call with the same parameters reads Fusion again instead of a cached result. Deployed alongside DMT_GL_BAL_RECON_V5_DM, which is never overwritten. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="gl_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- DMT_GL_BAL_RECON_V5_DM (2026-10-09), deployed ALONGSIDE V1, V3 and V4
+-- (never overwritten). One change from V4: HEADER PAGING (owner
+-- decision 2026-10-09, design section 5 "Reconciliation fetches page
+-- on header boundaries", backlog #686). The header (document) is the
+-- JOURNAL. A page is the next :P_CHUNK_SIZE journals after
+-- :P_AFTER_KEY plus EVERY line row of those journals, base and
+-- interface. Each row carries a tenth column PAGE_KEY;
+-- DMT_RECON_CONTRACT_PKG.FETCH_ROWS counts journals, not rows, and
+-- passes the last PAGE_KEY back as :P_AFTER_KEY. V4 cut pages at
+-- :P_CHUNK_SIZE ROWS ordered by line key, so a page could end inside a
+-- journal (and its keyset compare was not pinned to BINARY).
+--
+-- Journal key (PAGE_KEY) = GROUP_ID || '~' || the lowest line
+-- reference (REFERENCE21 / GL_JE_LINES.REFERENCE_1) of the journal:
+--   BASE      jb.group_id || '~' || MIN(jl.reference_1)
+--               OVER (PARTITION BY jh.je_header_id)
+--   INTERFACE gi.group_id || '~' || MIN(reference21) OVER (PARTITION BY
+--               group, ledger, REFERENCE1 batch, REFERENCE4 journal,
+--               category, currency), taken over ALL of the load's
+--               GL_INTERFACE lines before the rejected-line filter.
+-- Fusion keeps no copy of the raw journal name on GL_JE_HEADERS (NAME
+-- is REFERENCE4 plus the category, e.g. "RT-JNL-G1 Adjustment", and the
+-- batch name gets the source, group and request appended), so the name
+-- itself is not identical on both tiers. The journal's lowest line
+-- reference is: it is the same string whether the journal's lines sit
+-- in GL_JE_LINES or were held in GL_INTERFACE.
+-- Row selection (job ids only), RECORD_KEYs, FUSION_IDs and error
+-- text are unchanged from V4.
+-- ============================================================
+-- (V4 history follows.)
+-- GLBalances reconciliation data model V4 (backlog #173), Contract v1:
+-- nine columns, keyset pagination, the six standard parameters.
+-- Deployed ALONGSIDE V1 and V3, never overwriting them.
+--
+-- How DMT loads GL (owner decision 2026-10-07): GROUP_ID = the work queue
+-- id, one group per load, and Import Journals is submitted with exactly
+-- that group id (never ALL, so it never imports another user's journals).
+-- Journal Import holds the WHOLE group when any line errors (proven with one
+-- group of 2 good journals + 1 bad journal, probe load 10075834): the good
+-- lines are rolled back to status P. The reconciler quotes the rejected
+-- line's error onto them (PROPAGATE_DOCUMENT_ERRORS, document = group).
+--
+-- ERROR_MESSAGE carries only Journal Import's own error for the row:
+--   GL_INTERFACE.STATUS (the error code or codes, e.g. EF04 or EF04,EC03),
+--   plus ': ' and GL_INTERFACE.STATUS_DESCRIPTION when Fusion wrote one;
+--   the code alone when it did not. Nothing is composed around it.
+-- An unbalanced base journal has no Fusion error behind it (Journal Import
+--   accepts it), so it is returned BASE / ERROR with a NULL message: neither
+--   LOADED nor FAILED, it falls to UNACCOUNTED.
+--
+-- Rows are selected by Fusion job id, never by run id or prefix:
+--   BASE      batches whose GROUP_ID is the GroupID argument of OUR Import
+--             Journals job (:P_IMPORT_ESS_ID, FUSION_ORA_ESS.REQUEST_PROPERTY
+--             submit.argument4), on the job's ledger argument (submit.argument3),
+--             created after the job started. GL_JE_BATCHES.REQUEST_ID is
+--             always NULL on this pod.
+--   INTERFACE rows our load job (:P_LOAD_REQUEST_ID) put in GL_INTERFACE that
+--             Journal Import rejected (status code starting with E).
+--
+-- NINE response columns, in contract order:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE.
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY (P_RUN_ID and P_PREFIX are
+--   declared for the contract and not used to select rows).
+--
+-- Keys (need source "Import Journal References" = ON):
+--   RECORD_KEY / SOURCE_REF = GL_JE_LINES.REFERENCE_1 (base) or
+--       GL_INTERFACE.REFERENCE21 (interface) = TFM RECON_KEY,
+--   DMT_REFERENCE           = REFERENCE_2 / REFERENCE22 (Slot C ref),
+--   FUSION_ID               = JE_HEADER_ID~JE_LINE_NUM (line grain).
+-- ============================================================
+WITH recon_rows AS (
+    -- Tier: BASE. One row per GL_JE_LINES line of the batches of OUR group
+    -- (the import job's own GroupID argument) on the job's ledger.
+    SELECT
+        'GLBalances'                         AS object_type,
+        jl.reference_1                       AS record_key,
+        'BASE'                               AS source_type,
+        CASE WHEN jh.running_total_dr = jh.running_total_cr
+             THEN 'SUCCESS' ELSE 'ERROR' END AS fusion_status,
+        jh.je_header_id || '~' || jl.je_line_num AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_LOAD_REQUEST_ID)        AS load_request_id,
+        jl.reference_1                       AS source_ref,
+        jl.reference_2                       AS dmt_reference,
+        -- PAGE_KEY = the journal: group id plus the journal's lowest line reference.
+        jb.group_id || '~' || MIN(jl.reference_1) OVER (PARTITION BY jh.je_header_id)
+                                             AS page_key
+    FROM   gl_je_batches jb
+    JOIN   gl_je_headers jh ON jh.je_batch_id = jb.je_batch_id
+    JOIN   gl_je_lines   jl ON jl.je_header_id = jh.je_header_id
+    WHERE  jb.creation_date >= (SELECT h.processstart
+                                FROM   fusion_ora_ess.request_history h
+                                WHERE  h.requestid = TO_NUMBER(:P_IMPORT_ESS_ID))
+    AND    jb.group_id = (SELECT TO_NUMBER(rp.value)
+                          FROM   fusion_ora_ess.request_property rp
+                          WHERE  rp.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
+                          AND    rp.name = 'submit.argument4')
+    AND    jh.ledger_id = (SELECT TO_NUMBER(rp.value)
+                           FROM   fusion_ora_ess.request_property rp
+                           WHERE  rp.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
+                           AND    rp.name = 'submit.argument3')
+
+    UNION ALL
+
+    -- Tier: INTERFACE. Lines Journal Import rejected, still in GL_INTERFACE
+    -- with their error code(s) in STATUS and, when Fusion wrote it, the
+    -- message text in STATUS_DESCRIPTION.
+    SELECT
+        'GLBalances'                         AS object_type,
+        gi.reference21                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS VARCHAR2(100))          AS fusion_id,
+        gi.status || NVL2(gi.status_description, ': ' || gi.status_description, NULL)
+                                             AS error_message,
+        gi.load_request_id                   AS load_request_id,
+        gi.reference21                       AS source_ref,
+        gi.reference22                       AS dmt_reference,
+        -- PAGE_KEY = the journal: group id plus the journal's lowest line
+        -- reference, over ALL of the load's lines of that journal (the
+        -- inline view below), so it equals the base tier's key.
+        gi.group_id || '~' || gi.jnl_first_ref AS page_key
+    FROM   (SELECT g.*,
+                   MIN(g.reference21) OVER (
+                       PARTITION BY g.group_id, g.ledger_id, g.reference1, g.reference4,
+                                    g.user_je_category_name, g.currency_code)
+                       AS jnl_first_ref
+            FROM   gl_interface g
+            WHERE  g.load_request_id = :P_LOAD_REQUEST_ID) gi
+    WHERE  gi.status LIKE 'E%'
+),
+-- V5 header keyset (backlog #686). The page's headers are the next
+-- :P_CHUNK_SIZE distinct journal keys after :P_AFTER_KEY. An empty
+-- P_AFTER_KEY (first page) binds to NULL in BIP, so NULL means "from the
+-- start"; later pages get the previous page's last PAGE_KEY. Compared
+-- and ordered as BINARY so the cursor and the order always agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page header: whole journals, never a row cap.
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key
+FROM   recon_rows r
+JOIN   page_headers ph
+       ON ph.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="gl_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:string"  tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header keyset pagination (V5): P_CHUNK_SIZE is a number of
+         journals (headers). The shared fetch calls with an empty
+         P_AFTER_KEY first, then passes the last PAGE_KEY received on
+         each next call, until a page holds fewer headers than the
+         chunk size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>
