@@ -37,8 +37,8 @@
 --       object's zip, sharing the PO TFM tables), are untouched.
 --   B5  LOADED and already-FAILED rows untouched; another run untouched.
 --
--- Isolation. Every row this test writes (three synthetic runs and their TFM
--- rows) lives in ONE transaction that is ROLLED BACK at the end (and on any
+-- Isolation. Every row this test writes (three synthetic runs, one synthetic
+-- STG parent per FK-constrained TFM table, and their TFM rows) lives in ONE transaction that is ROLLED BACK at the end (and on any
 -- failure). No existing STG or TFM row is read or changed. The only committed
 -- side effect is the activity-log entry DMT_UTIL_PKG.LOG writes in its own
 -- autonomous transaction; the test deletes exactly those entries (matched on
@@ -73,6 +73,8 @@ declare
     l_rows   number;
     l_code   number;
     l_n      number;
+    -- One synthetic STG parent per FK-constrained TFM table (rolled back with the rest).
+    s_prj number; s_tsk number; s_tm number; s_txc number; s_poh number; s_pol number;
 
     procedure ok(p_name in varchar2, p_cond in boolean) is
     begin
@@ -98,16 +100,16 @@ declare
     -- Projects record types
     procedure prj(p_run number, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_pjf_projects_tfm_tbl (run_id, stg_sequence_id, tfm_status, error_text)
-          values (p_run, -1, p_status, p_err); end;
+          values (p_run, s_prj, p_status, p_err); end;
     procedure tsk(p_run number, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_pjf_tasks_tfm_tbl (run_id, stg_sequence_id, tfm_status, error_text)
-          values (p_run, -1, p_status, p_err); end;
+          values (p_run, s_tsk, p_status, p_err); end;
     procedure tm(p_run number, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_pjf_team_members_tfm_tbl (run_id, stg_sequence_id, tfm_status, error_text)
-          values (p_run, -1, p_status, p_err); end;
+          values (p_run, s_tm, p_status, p_err); end;
     procedure txc(p_run number, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_pjc_txn_controls_tfm_tbl (run_id, stg_sequence_id, tfm_status, error_text)
-          values (p_run, -1, p_status, p_err); end;
+          values (p_run, s_txc, p_status, p_err); end;
 
     -- Assets record types (book scope rides on ASSET_NUMBER, as GENERATE_FBDI does)
     procedure ahdr(p_run number, p_asset varchar2, p_status varchar2, p_err varchar2 default null) is
@@ -124,10 +126,10 @@ declare
     procedure poh(p_run number, p_key varchar2, p_bu varchar2, p_style varchar2, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_po_headers_int_tfm_tbl (run_id, stg_sequence_id, interface_header_key, prc_bu_name,
                                                   style_display_name, tfm_status, error_text)
-          values (p_run, -1, p_key, p_bu, p_style, p_status, p_err); end;
+          values (p_run, s_poh, p_key, p_bu, p_style, p_status, p_err); end;
     procedure pol(p_run number, p_key varchar2, p_status varchar2, p_err varchar2 default null) is
     begin insert into dmt_po_lines_int_tfm_tbl (run_id, stg_sequence_id, interface_header_key, tfm_status, error_text)
-          values (p_run, -1, p_key, p_status, p_err); end;
+          values (p_run, s_pol, p_key, p_status, p_err); end;
 
     function failed_with_load_error(p_tbl varchar2, p_run number, p_where varchar2 default '1=1') return number is
         l_c number;
@@ -150,6 +152,14 @@ begin
     l_run2 := new_run('UNIT_TEST_LOADFAIL_ALL_TYPES_2');
     l_run3 := new_run('UNIT_TEST_LOADFAIL_ALL_TYPES_3');
     :run1 := l_run1; :run2 := l_run2; :run3 := l_run3;
+
+    -- Synthetic STG parents (the TFM STG_SEQUENCE_ID foreign keys need one); never a real STG row.
+    insert into dmt_pjf_projects_stg_tbl     (stg_status) values ('NEW') returning stg_sequence_id into s_prj;
+    insert into dmt_pjf_tasks_stg_tbl        (stg_status) values ('NEW') returning stg_sequence_id into s_tsk;
+    insert into dmt_pjf_team_members_stg_tbl (stg_status) values ('NEW') returning stg_sequence_id into s_tm;
+    insert into dmt_pjc_txn_controls_stg_tbl (stg_status) values ('NEW') returning stg_sequence_id into s_txc;
+    insert into dmt_po_headers_int_stg_tbl   (stg_status) values ('NEW') returning stg_sequence_id into s_poh;
+    insert into dmt_po_lines_int_stg_tbl     (stg_status) values ('NEW') returning stg_sequence_id into s_pol;
 
     -- ======================= Projects (#672) =======================
     -- The failed load: 1 project, 2 tasks, 1 team member, 1 transaction control GENERATED.
