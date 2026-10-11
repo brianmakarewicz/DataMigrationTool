@@ -9,6 +9,9 @@ AS
 -- PurchaseOrders FBDI zip generation.
 -- Multi-BU: when p_prc_bu_name is non-NULL, filters all 4 CSVs
 -- to only include rows for that Procurement BU.
+-- Only Purchase Order style headers (STYLE_DISPLAY_NAME =
+-- 'Purchase Order'): BlanketPOs and Contracts share these TFM
+-- tables and may be STAGED in the same run and BU (backlog #760).
 -- ============================================================
 
     FUNCTION clob_to_blob(p_clob IN CLOB) RETURN BLOB IS
@@ -178,6 +181,7 @@ AS
             FROM   DMT_PO_HEADERS_INT_TFM_TBL t
             WHERE  t.RUN_ID = p_run_id
             AND    t.TFM_STATUS = 'STAGED'
+            AND    t.STYLE_DISPLAY_NAME = 'Purchase Order'
             AND    (p_prc_bu_name IS NULL OR t.PRC_BU_NAME = p_prc_bu_name)
             ORDER BY t.TFM_SEQUENCE_ID
         ) LOOP
@@ -304,12 +308,13 @@ AS
             FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
             AND    l.TFM_STATUS = 'STAGED'
-            AND    (p_prc_bu_name IS NULL OR l.INTERFACE_HEADER_KEY IN (
+            AND    l.INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
-            AND    h.PRC_BU_NAME = p_prc_bu_name))
+            AND    h.STYLE_DISPLAY_NAME = 'Purchase Order'
+            AND    (p_prc_bu_name IS NULL OR h.PRC_BU_NAME = p_prc_bu_name))
             ORDER BY l.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -429,7 +434,7 @@ AS
             FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
             AND    ll.TFM_STATUS = 'STAGED'
-            AND    (p_prc_bu_name IS NULL OR ll.INTERFACE_LINE_KEY IN (
+            AND    ll.INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
@@ -439,7 +444,8 @@ AS
             FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
-            AND    h.PRC_BU_NAME = p_prc_bu_name)))
+            AND    h.STYLE_DISPLAY_NAME = 'Purchase Order'
+            AND    (p_prc_bu_name IS NULL OR h.PRC_BU_NAME = p_prc_bu_name)))
             ORDER BY ll.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -590,7 +596,7 @@ AS
             FROM   DMT_PO_DISTS_INT_TFM_TBL d
             WHERE  d.RUN_ID = p_run_id
             AND    d.TFM_STATUS = 'STAGED'
-            AND    (p_prc_bu_name IS NULL OR d.INTERFACE_LINE_LOCATION_KEY IN (
+            AND    d.INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
             FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
@@ -605,7 +611,8 @@ AS
             FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
             AND    h.TFM_STATUS IN ('STAGED','GENERATED')
-            AND    h.PRC_BU_NAME = p_prc_bu_name))))
+            AND    h.STYLE_DISPLAY_NAME = 'Purchase Order'
+            AND    (p_prc_bu_name IS NULL OR h.PRC_BU_NAME = p_prc_bu_name))))
             ORDER BY d.TFM_SEQUENCE_ID
         ) LOOP
             DBMS_LOB.WRITEAPPEND(l_csv, LENGTH(r.csv_line), r.csv_line);
@@ -673,6 +680,7 @@ AS
                                      p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_PO_HEADERS_INT_TFM_TBL'))),
                LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    STYLE_DISPLAY_NAME = 'Purchase Order'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Generate all 4 CSVs (filtered by BU when provided)
@@ -713,37 +721,38 @@ AS
         UPDATE DMT_PO_HEADERS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
+        AND    STYLE_DISPLAY_NAME = 'Purchase Order'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id.
         UPDATE DMT_PO_LINES_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-        AND    (p_prc_bu_name IS NULL OR INTERFACE_HEADER_KEY IN (
+        AND    INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
             FROM   DMT_PO_HEADERS_INT_TFM_TBL h
             WHERE  h.RUN_ID = p_run_id
-            AND    h.FBDI_CSV_ID = l_fbdi_csv_id));
+            AND    h.FBDI_CSV_ID = l_fbdi_csv_id);
 
         -- Line locations -> locs csv id; join predicate scopes on the PARENT (lines) csv id.
         UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locs_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-        AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_KEY IN (
+        AND    INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
             FROM   DMT_PO_LINES_INT_TFM_TBL l
             WHERE  l.RUN_ID = p_run_id
-            AND    l.FBDI_CSV_ID = l_lines_csv_id));
+            AND    l.FBDI_CSV_ID = l_lines_csv_id);
 
         -- Distributions -> dists csv id; join predicate scopes on the PARENT (locs) csv id.
         UPDATE DMT_PO_DISTS_INT_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
-        AND    (p_prc_bu_name IS NULL OR INTERFACE_LINE_LOCATION_KEY IN (
+        AND    INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY
             FROM   DMT_PO_LINE_LOCS_INT_TFM_TBL ll
             WHERE  ll.RUN_ID = p_run_id
-            AND    ll.FBDI_CSV_ID = l_locs_csv_id));
+            AND    ll.FBDI_CSV_ID = l_locs_csv_id);
 
         -- Free temporary CLOBs (accumulate across multi-BU loop if not freed)
         DBMS_LOB.FREETEMPORARY(l_hdr_csv);
