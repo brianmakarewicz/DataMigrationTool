@@ -35,7 +35,7 @@
 -- REVISIONS:
 --   1.0  2026-07-08  Split from the shared supplier results package (#43).
 --   2.0  2026-10-09  Contract v1 nine-column report via FETCH_ROWS (#217).
---   2.1  2026-10-10  Apply scoped by work item; retired row cap dropped (#711).
+--   2.1  2026-10-10  Apply scoped by work item (#711).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_SITE_RESULTS_PKG';
