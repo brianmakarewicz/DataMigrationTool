@@ -1,5 +1,19 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-11 — checkpoint (work in flight)
+
+**Where things stand.** ATP is still on main commit 78560c0, which passed local regression run 402 and ATP regression run 182 with no new failures and 63 of 63 click-through pages on both instances.
+
+**Merged to main since then, not yet regression-tested or promoted.** Three PRs have landed after the docs PR #742 and nothing else has merged since. PR #743 changes the promotion gate so that only code changes need fresh regression evidence (backlog #770). PR #744 makes the console's object view read from the catalog table, adds a Back button to page 53, and records a cancel reason with a badge on cancelled runs. PR #745 drops packages nothing uses: DMT_RECON_ENGINE_PKG, the four supplier validator stubs, DMT_REGRESSION_PKG, DMT_RECON_STAGE_GTT and the unused p_row_cap parameter.
+
+**In flight (check branches and PRs first next session).** One branch makes PurchaseOrders FBDI generation and its load-failure path select headers by style and not only by BU (#760), audits every load-failure path against the owner's caveat on cross-grain shape (d) (#761), and writes cross-grain rules (a) through (d) into the design doc as accepted rules. A second branch makes the supplier transforms stamp WORK_QUEUE_ID so suppliers reconcile by work item (#711), and adds a new twelve-rule "Top rules" list to CLAUDE.md and DMT_DESIGN. A third makes the deploy guard also wait for runs that are not yet in a terminal state and lets apex_deploy find SQLcl without relying on PATH (#776). All four backlog items are marked IN PROGRESS (checkpoint 2026-10-11), and the counts table now reads 480 items with 361 resolved, 4 in progress and 55 still open.
+
+**Owner decisions on 2026-10-10 and 2026-10-11.** Cross-grain shapes (a) through (d) are standing rules, and (d) applies only when no row of the load loaded. There is no rule about ending sessions or processes; agents use their judgment and report afterwards. Grants award selection stays parked. The promotion gate ignores changes that are not code. An Items category-only retry is simply a rerun and needs no code. For Assets, the rest of the rows are always sent after a validation failure. A new Rule #2 says to keep it simple, rely on reruns, and treat consistency across objects as important. The owner wants no progress updates until the work is done or he asks.
+
+**Next.** Finish the in-flight PRs, then run the four-step promotion (status update before and after both the local and the ATP regressions), then the remaining ERP backlog at low priority, then configuration objects, and then HCM.
+
+**Known issues.** Run 408 failed mid-run with ORA-04063 because a deploy landed while it was running; it does not need a rerun because proof run 410 superseded it. An agent once skipped the local APEX import, and it was re-imported at the next deploy-local.
+
 ## 2026-10-10 — after ATP regression: batch promoted
 
 **Bottom line.** Main at commit 78560c0, which carries the code from PRs #714 through #740, is now on ATP and has passed every gate on both instances. On local, regression run 402 passed with no new failures (only the 7 known HCM entries in `scripts/regression_known_issues.json`) and the click-through passed 63 of 63 pages. The ATP deploy went cleanly through the promotion gate with 0 invalid objects. The new baseline RegressionTest261010163656 was loaded onto ATP with 356 STG rows and 0 duplicates, matching local. ATP regression run 182 used prefix 93427, which is exactly one above the highest prefix used on either instance, and it passed with no new failures beyond the same 7 known entries. The ATP click-through also passed 63 of 63 pages.
