@@ -145,6 +145,126 @@ def override_scenarios(ident, tmp):
     return len(cases) + 1, failures
 
 
+def _run_git(repo, *args):
+    import subprocess
+    p = subprocess.run(["git", "-c", "user.name=Gate Test", "-c",
+                        "user.email=gate@example.com", "-c", "commit.gpgsign=false",
+                        "-c", "core.autocrlf=false", *args],
+                       cwd=repo, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {p.stderr}")
+    return p.stdout
+
+
+def code_tree_scenarios(tmp_evidence):
+    """Owner decision 2026-10-10 (#770): fresh evidence is needed only when CODE
+    changed. Builds a throwaway git repo, records evidence on one commit, then
+    changes things and asks the gate again."""
+    repo = tempfile.mkdtemp(prefix="dmt2_gate_repo_")
+    files = {"db/packages/x.pkb.sql": "-- v1\n", "scripts/regression_scenario.json": "{}\n",
+             "scripts/regression_known_issues.json": "[]\n", "test/unit/t.py": "x=1\n",
+             "apex/app.sql": "-- app\n", "bip/r.xdm": "<dm/>\n",
+             "docs/status.md": "status v1\n", "docs/backlog.html": "<p>v1</p>\n",
+             "README.md": "readme v1\n", "db/README.md": "db readme v1\n",
+             ".github/workflows/w.yml": "on: push\n", ".claude/skills/s/SKILL.md": "skill\n"}
+
+    def write(rel, text):
+        p = Path(repo) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8", newline="\n")
+
+    def commit(msg):
+        _run_git(repo, "add", "-A")
+        _run_git(repo, "commit", "-q", "-m", msg)
+
+    def gate_on_current(ev):
+        ident = gate.code_identity(cwd=repo)
+        ok, lines = gate.check_gate(ident=ident, now=NOW, evidence=ev)
+        return ok, lines, ident
+
+    failures, total = 0, 0
+    try:
+        _run_git(repo, "init", "-q")
+        for rel, text in files.items():
+            write(rel, text)
+        commit("base")
+        base = gate.code_identity(cwd=repo)
+        base_commit = _run_git(repo, "rev-parse", "HEAD").strip()
+        ev = good_evidence(base["commit"], base["tree"])
+        for k in ("deploy_local", "regression", "clickthrough_local"):
+            ev[k]["code_tree"] = base["code_tree"]
+        # Evidence recorded before #770 has no code_tree: matched via its commit.
+        legacy = json.loads(json.dumps(ev))
+        for k in ("deploy_local", "regression", "clickthrough_local"):
+            del legacy[k]["code_tree"]
+
+        def case(name, setup, expect, evidence=None, cleanup=True):
+            nonlocal failures, total
+            total += 1
+            setup()
+            ok, lines, ident = gate_on_current(evidence or ev)
+            right = ok == expect
+            failures += 0 if right else 1
+            print(f"[{'PASS' if right else 'WRONG'}] {name}: gate "
+                  f"{'ACCEPTED' if ok else 'REFUSED'} (expected "
+                  f"{'ACCEPTED' if expect else 'REFUSED'})")
+            for ln in lines:
+                if "REFUSED" in ln or "code tree matches" in ln:
+                    print("      " + ln.strip())
+                    break
+            if cleanup:
+                _run_git(repo, "reset", "-q", "--hard", base_commit)
+                _run_git(repo, "clean", "-q", "-fdx")
+
+        def docs_only():
+            write("docs/status.md", "status v2\n")
+            write("docs/backlog.html", "<p>v2</p>\n")
+            write("README.md", "readme v2\n")
+            write("db/README.md", "db readme v2\n")
+            write(".github/workflows/w.yml", "on: pull_request\n")
+            write(".claude/skills/s/SKILL.md", "skill v2\n")
+            commit("docs only")
+
+        def chg(rel):
+            def f():
+                write(rel, "changed\n")
+                commit(f"change {rel}")
+            return f
+
+        case("docs-only commit (docs/, *.md anywhere, .github/, .claude/) after "
+             "evidence", docs_only, True)
+        case("docs-only commit after LEGACY evidence (no code_tree recorded)",
+             docs_only, True, evidence=legacy)
+        case("change under db/ after evidence", chg("db/packages/x.pkb.sql"), False)
+        case("change to scripts/regression_scenario.json after evidence",
+             chg("scripts/regression_scenario.json"), False)
+        case("change to scripts/regression_known_issues.json after evidence",
+             chg("scripts/regression_known_issues.json"), False)
+        case("change under test/ after evidence", chg("test/unit/t.py"), False)
+        case("new root-level file (not clearly non-code) after evidence",
+             chg("Makefile"), False)
+        case("change under db/ after LEGACY evidence", chg("db/packages/x.pkb.sql"),
+             False, evidence=legacy)
+        case("untracked file under db/ (same commit)",
+             lambda: write("db/packages/new.pks.sql", "-- new\n"), False)
+        case("untracked docs file (same commit)",
+             lambda: write("docs/notes.html", "<p>n</p>\n"), True)
+        case("uncommitted edit to a tracked *.md file only (same commit)",
+             lambda: write("db/README.md", "edited\n"), True)
+        case("uncommitted edit under scripts/ (same commit)",
+             lambda: write("scripts/regression_known_issues.json", "[1]\n"), False)
+        total += 1
+        ident = gate.code_identity(cwd=repo)
+        right = (ident["code_tree"] == base["code_tree"]
+                 and ident["code_identity_basis"] == gate.CODE_IDENTITY_BASIS)
+        failures += 0 if right else 1
+        print(f"[{'PASS' if right else 'WRONG'}] code identity basis is recorded "
+              f"with the code tree hash")
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+    return total, failures
+
+
 def main():
     real = gate.code_identity()
     # Judge the evidence logic against a clean identity for the real HEAD;
@@ -229,10 +349,12 @@ def main():
                     print("      " + ln.strip())
         print("\n--- owner override ---")
         n_ov, f_ov = override_scenarios(ident, tmp)
+        print("\n--- code tree identity (owner decision 2026-10-10, #770) ---")
+        n_ct, f_ct = code_tree_scenarios(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    total = len(scenarios) + n_ov
-    failures += f_ov
+    total = len(scenarios) + n_ov + n_ct
+    failures += f_ov + f_ct
     print(f"\n{total - failures}/{total} scenarios decided correctly")
     return 0 if failures == 0 else 1
 
