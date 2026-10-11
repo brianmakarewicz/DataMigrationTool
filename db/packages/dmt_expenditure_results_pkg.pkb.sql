@@ -367,7 +367,8 @@ AS
     PROCEDURE APPLY_CONTRACT_V1_EXPENDITURES (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_EXPENDITURES';
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
@@ -437,6 +438,7 @@ AS
                            RESULTS_UPDATED_DATE       = SYSDATE,
                            LAST_UPDATED_DATE          = SYSDATE
                     WHERE  RUN_ID    = p_run_id
+                    AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_rc := SQL%ROWCOUNT;
@@ -452,6 +454,7 @@ AS
                                    RESULTS_UPDATED_DATE       = SYSDATE,
                                    LAST_UPDATED_DATE          = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    TFM_SEQUENCE_ID = l_dff_seq
                             AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                             l_rc := SQL%ROWCOUNT;
@@ -466,6 +469,7 @@ AS
                                RESULTS_UPDATED_DATE       = SYSDATE,
                                LAST_UPDATED_DATE          = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    ORIG_TRANSACTION_REFERENCE = l_rows(i).BUSINESS_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -493,6 +497,7 @@ AS
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID    = p_run_id
+                    AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_failed := l_failed + SQL%ROWCOUNT;
@@ -554,7 +559,8 @@ AS
         APPLY_CONTRACT_V1_EXPENDITURES(
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
-            p_import_ess_id => p_import_ess_id);
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => p_work_queue_id);
 
         -- Rejected expenditures are purged from the interface, so the report
         -- above cannot return them: read their real errors from this work

@@ -56,7 +56,6 @@
         INSERT INTO DMT_POZ_SUP_SITE_TFM_TBL (
                     STG_SEQUENCE_ID,
                     RUN_ID,
-                    WORK_QUEUE_ID,
                     FBDI_CSV_ID,
                     IMPORT_ACTION,
                     VENDOR_NAME,
@@ -183,10 +182,6 @@
         SELECT
                     s.STG_SEQUENCE_ID,
                     p_run_id,
-                    -- Backlog #711: the work item that owns this row (the
-                    -- current item's QUEUE_ID, set for every object; NULL
-                    -- only for a direct call outside the queue).
-                    DMT_LOADER_PKG.g_gen_queue_id,
                     NULL,
                     s.IMPORT_ACTION,
                     -- Cross-object reference to the parent Supplier: resolve via xref

@@ -1723,7 +1723,8 @@ AS
     PROCEDURE APPLY_CONTRACT_V1_GRANTS (
         p_run_id        IN NUMBER,
         p_request_id    IN VARCHAR2,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_GRANTS';
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
@@ -1800,6 +1801,7 @@ AS
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -1815,6 +1817,7 @@ AS
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
                                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                                 l_rc := SQL%ROWCOUNT;
@@ -1843,6 +1846,7 @@ AS
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -1927,7 +1931,7 @@ AS
             'INFO',
             C_PKG, C_PROC);
 
-        APPLY_CONTRACT_V1_GRANTS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
+        APPLY_CONTRACT_V1_GRANTS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id, p_work_queue_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object

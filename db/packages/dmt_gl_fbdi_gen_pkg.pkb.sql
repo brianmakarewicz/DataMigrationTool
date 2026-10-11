@@ -287,15 +287,12 @@
         -- column: proof-of-recipe run 301 showed GL Journal Import does not carry
         -- GL_INTERFACE.ATTRIBUTE20 onto the base tables, whereas the line
         -- REFERENCE columns round-trip (same path as REFERENCE21 -> REFERENCE_1).
-        -- WORK_QUEUE_ID is the generating work-queue item. Use g_gen_queue_id (the
-        -- current item's QUEUE_ID, set for EVERY object) rather than g_work_queue_id
-        -- (which is deliberately NULL for non-partitioned objects to preserve the
-        -- reconcile-sweep scope, so it would leave the wq slot empty). g_gen_queue_id
-        -- is the sanctioned "reference component" global and does not affect sweep
-        -- scope. Scoped to the STAGED rows this GENERATE call will emit (this ledger).
+        -- The wq component is g_gen_queue_id (the current item's QUEUE_ID, set for
+        -- EVERY object). The row's WORK_QUEUE_ID column itself is stamped where the
+        -- rows are marked GENERATED below, as in every FBDI generator (backlog #777).
+        -- Scoped to the STAGED rows this GENERATE call will emit (this ledger).
         UPDATE DMT_GL_INTERFACE_TFM_TBL
-        SET    WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id,
-               -- GROUP_ID = prefix || work queue id (see l_group_id above).
+        SET    -- GROUP_ID = prefix || work queue id (see l_group_id above).
                GROUP_ID      = l_group_id,
                REFERENCE22   = DMT_REF_ID_PKG.BUILD_REF(
                                    p_run_id        => p_run_id,
@@ -338,7 +335,8 @@
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'GLBalances', x_filename, l_zip, l_bytes);
 
         UPDATE DMT_GL_INTERFACE_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_ledger_name IS NULL OR LEDGER_NAME = p_ledger_name);
 

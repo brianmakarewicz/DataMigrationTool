@@ -545,14 +545,14 @@ AS
         -- work-queue item's id so reconcile scopes its sweep to this item's rows only.
         UPDATE DMT_POR_REQ_HEADERS_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
-               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         -- Lines -> lines csv id
         UPDATE DMT_POR_REQ_LINES_TFM_TBL l
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id,
-               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1 FROM DMT_POR_REQ_HEADERS_TFM_TBL h
@@ -563,7 +563,7 @@ AS
         -- Distributions -> dists csv id
         UPDATE DMT_POR_REQ_DISTS_TFM_TBL d
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id,
-               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR EXISTS (
                     SELECT 1

@@ -314,13 +314,13 @@ AS
         -- partition the CSV was built from, so a child only flips its own rows and
         -- leaves the other groups STAGED for their own children (spawn-per-partition).
         -- Stamp WORK_QUEUE_ID = the generating child work item's id
-        -- (DMT_LOADER_PKG.g_work_queue_id) so the accounting gate and the unaccounted
+        -- (DMT_LOADER_PKG.g_gen_queue_id, #777) so the accounting gate and the unaccounted
         -- sweep scope to ONLY this child's rows -- mirrors DMT_EGP_ITEM_FBDI_GEN_PKG.
         -- Without it a spawn child accounts/sweeps zero rows and settles DONE blind.
         -- NULL on the standalone/legacy path (no work-item context).
         UPDATE DMT_PJC_EXPENDITURES_TFM_TBL
         SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
-               WORK_QUEUE_ID = DMT_LOADER_PKG.g_work_queue_id, LAST_UPDATED_DATE = l_now
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_txn_source IS NULL OR USER_TRANSACTION_SOURCE = p_txn_source)
         AND    (p_document   IS NULL OR DOCUMENT_NAME           = p_document)

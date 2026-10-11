@@ -719,14 +719,16 @@ AS
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter directly by PRC_BU_NAME.
         UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    STYLE_DISPLAY_NAME = 'Purchase Order'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);
 
         -- Lines -> lines csv id; join predicate scopes on the PARENT (headers) csv id.
         UPDATE DMT_PO_LINES_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_HEADER_KEY IN (
             SELECT h.INTERFACE_HEADER_KEY
@@ -736,7 +738,8 @@ AS
 
         -- Line locations -> locs csv id; join predicate scopes on the PARENT (lines) csv id.
         UPDATE DMT_PO_LINE_LOCS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locs_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locs_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_LINE_KEY IN (
             SELECT l.INTERFACE_LINE_KEY
@@ -746,7 +749,8 @@ AS
 
         -- Distributions -> dists csv id; join predicate scopes on the PARENT (locs) csv id.
         UPDATE DMT_PO_DISTS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_dists_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    INTERFACE_LINE_LOCATION_KEY IN (
             SELECT ll.INTERFACE_LINE_LOCATION_KEY

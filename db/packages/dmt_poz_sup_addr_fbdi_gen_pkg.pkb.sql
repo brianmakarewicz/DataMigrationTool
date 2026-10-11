@@ -210,6 +210,7 @@
         UPDATE DMT_POZ_SUP_ADDR_TFM_TBL
         SET    TFM_STATUS             = 'GENERATED',
                FBDI_CSV_ID       = l_csv_id,
+               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID    = p_run_id
         AND    TFM_STATUS             = 'STAGED';

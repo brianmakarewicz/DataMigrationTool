@@ -630,8 +630,7 @@ AS
         synthesize_null_siteuse_refs(p_run_id, p_batch_id);
 
         -- ============================================================
-        -- Backlog #12 -- stamp the generating work-queue id onto the party
-        -- (header-tier) TFM rows BEFORE the CSVs are built. Carrier config
+        -- Backlog #12 -- the party (header-tier) reference carriers. Carrier config
         -- (DMT_REF_CARRIER_CFG_TBL, cemli_code Customers), resolved to reality
         -- 2026-09-20 and the TEMPLATE for the TCA family:
         --   Slot A = PARTY_ORIG_SYSTEM_REFERENCE -> HZ_ORIG_SYS_REFERENCES
@@ -645,17 +644,8 @@ AS
         --            we do NOT invent a Slot C. Nothing extra is written into the
         --            CSV; the full run-scoped ref (BUILD_REF = DMT:run:wq:tfm) is
         --            recomputed at reconcile for audit and the round-trip rides Slot A.
-        -- We only persist WORK_QUEUE_ID here so BUILD_REF has the wq component at
-        -- reconcile. Use g_gen_queue_id (the current item's queue id, set for EVERY
-        -- object) rather than g_work_queue_id (deliberately NULL for non-partitioned
-        -- objects to preserve reconcile-sweep scope). g_gen_queue_id is the sanctioned
-        -- reference component and does not affect sweep scope.
-        UPDATE DMT_HZ_PARTIES_TFM_TBL
-        SET    WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
-               LAST_UPDATED_DATE = l_now
-        WHERE  RUN_ID = p_run_id
-        AND    TFM_STATUS = 'STAGED'
-        AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
+        -- BUILD_REF's wq component is the row's WORK_QUEUE_ID, stamped on every
+        -- record type where the rows are marked GENERATED below (backlog #777).
 
         -- Generate all 7 CSVs
         l_parties_csv    := gen_parties_csv(p_run_id, p_batch_id);
@@ -716,37 +706,44 @@ AS
 
         -- Update all 7 TFM tables to GENERATED and stamp EACH file's own FBDI_CSV_ID
         UPDATE DMT_HZ_PARTIES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_LOCATIONS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locations_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_locations_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_PARTY_SITES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psites_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psites_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_PARTY_SITE_USES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psite_uses_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_psite_uses_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_ACCOUNTS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_accounts_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_accounts_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_ACCT_SITES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_sites_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_sites_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 
         UPDATE DMT_HZ_ACCT_SITE_USES_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_suses_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_acct_suses_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_batch_id IS NULL OR BATCH_ID = p_batch_id);
 

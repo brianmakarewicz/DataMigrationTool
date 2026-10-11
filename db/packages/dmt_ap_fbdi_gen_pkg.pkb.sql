@@ -518,14 +518,16 @@ AS
         -- Update TFM rows to GENERATED and stamp EACH file's own FBDI_CSV_ID.
         -- Headers: filter directly by OPERATING_UNIT.
         UPDATE DMT_AP_INVOICES_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR OPERATING_UNIT = p_operating_unit);
 
         -- Lines: filter via header chain (INVOICE_ID). Chain predicate points at the
         -- HEADER file's id (just stamped above); SET stamps the LINES file's id.
         UPDATE DMT_AP_INVOICE_LINES_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_lines_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    (p_operating_unit IS NULL OR INVOICE_ID IN (
             SELECT h.INVOICE_ID
