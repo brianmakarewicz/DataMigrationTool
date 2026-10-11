@@ -28,13 +28,14 @@
 --   * Everything else is left GENERATED for the shared unaccounted sweep.
 -- Every UPDATE is guarded TFM_STATUS NOT IN ('LOADED','FAILED'), so a proven
 -- LOADED row is never flipped (report row order is not guaranteed). The apply
--- is scoped to the run, exactly as before: the object runs as ONE work item per
--- run, and the supplier transform does not stamp WORK_QUEUE_ID on its TFM rows
--- (it is NULL on every supplier row; tracked as its own backlog item), so a
--- work-item predicate here would match nothing.
+-- is scoped to the run and, when the queue passes one, to the work item: the
+-- transform stamps WORK_QUEUE_ID on every row it inserts (backlog #711), the
+-- same (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id) predicate
+-- the other objects' reconcilers use.
 -- REVISIONS:
 --   1.0  2026-07-08  Split from the shared supplier results package (#43).
 --   2.0  2026-10-09  Contract v1 nine-column report via FETCH_ROWS (#217).
+--   2.1  2026-10-10  Apply scoped by work item; retired row cap dropped (#711).
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_POZ_SUP_RESULTS_PKG';
@@ -58,7 +59,8 @@
     PROCEDURE APPLY_CONTRACT_V1 (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1';
         l_step      VARCHAR2(500);
@@ -108,6 +110,7 @@
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
+                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                 AND    VENDOR_NAME || '~' || SEGMENT1 = l_rows(i).RECORD_KEY
                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                 l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -123,6 +126,7 @@
                        RESULTS_UPDATED_DATE = SYSDATE,
                        LAST_UPDATED_DATE    = SYSDATE
                 WHERE  RUN_ID = p_run_id
+                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                 AND    VENDOR_NAME || '~' || SEGMENT1 = l_rows(i).RECORD_KEY
                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                 l_failed := l_failed + SQL%ROWCOUNT;
@@ -168,7 +172,7 @@
             p_procedure => C_PROC);
 
         CHECK_CEMLI(C_PROC, p_cemli_code);
-        APPLY_CONTRACT_V1(p_run_id, p_load_ess_id, p_import_ess_id);
+        APPLY_CONTRACT_V1(p_run_id, p_load_ess_id, p_import_ess_id, p_work_queue_id);
 
         -- Unresolved records intentionally left GENERATED (unaccounted).
         -- No fabricated FAILED: the accounting gate reports the object
