@@ -144,6 +144,47 @@ def wait_until_no_dmt_jobs(connect, label, timeout_s=None, poll_s=None,
         sleep(poll_s)
 
 
+# Backlog #780: recompile only the INVALID objects, as the schema owner (the
+# connection's own USER; never ADMIN). Install order can rebuild a view after its
+# dependents compiled (PR #744 rebuilt DMT_V_CEMLI_TFM_TABLES, leaving
+# DMT_REST_LOOKUP_PKG body and DMT_V_CATALOG_HEALTH INVALID on every deploy-local).
+_RECOMPILE_SQL = "BEGIN DBMS_UTILITY.COMPILE_SCHEMA(schema => USER, compile_all => FALSE); END;"
+
+
+def recompile_invalid(connect, label, log=print):
+    """Recompile the schema's INVALID objects on a FRESH connection (connect()), so
+    a session that dropped earlier in the deploy cannot skip it. Returns True when
+    the call completed; a failure is logged and returns False (the invalid count
+    that follows is what decides the deploy)."""
+    try:
+        con = connect()
+        try:
+            con.cursor().execute(_RECOMPILE_SQL)
+        finally:
+            con.close()
+    except Exception as e:  # noqa: BLE001
+        log(f"[deploy-guard:{label}] COMPILE_SCHEMA did not complete ({str(e)[:200]}); "
+            f"counting invalid objects anyway.")
+        return False
+    log(f"[deploy-guard:{label}] recompiled invalid objects (DBMS_UTILITY.COMPILE_SCHEMA).")
+    return True
+
+
+def count_invalid(connect, label, log=print):
+    """Number of INVALID objects, read on a FRESH connection (backlog #780: never
+    report -1 because the deploy's own session dropped). None when even the fresh
+    connection fails."""
+    try:
+        con = connect()
+        try:
+            return len(invalid_objects(con))
+        finally:
+            con.close()
+    except Exception as e:  # noqa: BLE001
+        log(f"[deploy-guard:{label}] could not count invalid objects ({str(e)[:200]}).")
+        return None
+
+
 def assert_no_invalid(connect, label, log=print):
     """True when the schema has 0 invalid objects right after a deploy. Otherwise
     lists them (up to 30) and returns False; a failed check also returns False."""
