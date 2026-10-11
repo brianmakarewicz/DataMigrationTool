@@ -25,6 +25,10 @@ no network, no real waiting):
       refused -> exit 3 and nothing deployed; idle + clean -> 0; invalid objects
       after the deploy -> exit 4; a failed deploy keeps its own exit code and the
       invalid check still runs; both tracks in main() go through run_guarded.
+  * scripts/ci_promote.py deploy_db (backlog #780): after the SQLcl script it
+      recompiles INVALID objects with DBMS_UTILITY.COMPILE_SCHEMA(USER, FALSE) on a
+      fresh connection, then counts on another fresh connection (never -1 when the
+      SQLcl session dropped); stuck objects or no connection fail the deploy.
 
     python test/unit/test_deploy_guard.py
 
@@ -342,6 +346,101 @@ check(rc == 1 and any("INVALID" in s for s in db.sql),
 src = (REPO / "scripts" / "dmt_deploy.py").read_text(encoding="utf-8")
 check('run_guarded("code"' in src and 'run_guarded("table"' in src,
       "dmt_deploy: both the code and table tracks go through run_guarded")
+
+# 10. Backlog #780: deploy_db recompiles INVALID objects as the schema owner on a
+# fresh connection, then counts on another fresh connection (never -1).
+class RecompileDB:
+    """INVALID objects that a COMPILE_SCHEMA call clears (or not, when stuck).
+    fail_connects: how many connect() calls fail first (a dropped session)."""
+
+    def __init__(self, invalid, stuck=(), compile_error=None, fail_connects=0):
+        self.invalid = list(invalid)
+        self.stuck = list(stuck)
+        self.compile_error = compile_error
+        self.fail_connects = fail_connects
+        self.connects = 0
+        self.sql = []
+
+    def connect(self):
+        self.connects += 1
+        if self.fail_connects:
+            self.fail_connects -= 1
+            raise OSError("DPY-4011: the database or network closed the connection")
+        db = self
+
+        class Con:
+            def cursor(self):
+                class Cur:
+                    def execute(self, sql, binds=None):
+                        db.sql.append(sql)
+                        if "COMPILE_SCHEMA" in sql:
+                            if db.compile_error:
+                                raise Exception(db.compile_error)
+                            db.invalid = list(db.stuck)
+                            self.rows = []
+                        else:
+                            self.rows = list(db.invalid)
+
+                    def fetchall(self):
+                        return self.rows
+                return Cur()
+
+            def close(self):
+                pass
+        return Con()
+
+
+scripts_seen = []
+
+
+def fake_sqlcl(target, text):
+    scripts_seen.append(text)
+    return "ORA-03113: end-of-file on communication channel"   # session dropped, no marker
+
+
+before = [("PACKAGE BODY", "DMT_REST_LOOKUP_PKG"), ("VIEW", "DMT_V_CATALOG_HEALTH")]
+lines, log = quiet_log()
+db = RecompileDB(before)
+ok = cp.deploy_db("local", connect=db.connect, sqlcl=fake_sqlcl, log=log)
+compile_sql = [x for x in db.sql if "COMPILE_SCHEMA" in x]
+check(ok and compile_sql and "schema => USER" in compile_sql[0]
+      and "compile_all => FALSE" in compile_sql[0]
+      and db.sql.index(compile_sql[0]) < max(i for i, x in enumerate(db.sql) if "user_objects" in x),
+      "#780: deploy_db recompiles invalid objects (COMPILE_SCHEMA USER, compile_all FALSE) before counting -> 0, passes")
+check(any("invalid objects after deploy: 0" in l for l in lines) and not any("-1" in l for l in lines),
+      "#780: a dropped SQLcl session (no marker in its output) no longer reports -1; count is read on a fresh connection")
+check("ADMIN" not in compile_sql[0].upper() and "COMPILE_SCHEMA" not in scripts_seen[-1],
+      "#780: the recompile never names ADMIN (runs as the target's schema owner)")
+
+lines, log = quiet_log()
+db = RecompileDB(before, stuck=[("VIEW", "DMT_V_CATALOG_HEALTH")])
+check(not cp.deploy_db("local", connect=db.connect, sqlcl=fake_sqlcl, log=log)
+      and any("invalid objects after deploy: 1" in l for l in lines),
+      "#780: an object still INVALID after the recompile fails the deploy with its count")
+
+lines, log = quiet_log()
+db = RecompileDB(before, compile_error="ORA-24344: success with compilation error")
+check(not cp.deploy_db("local", connect=db.connect, sqlcl=fake_sqlcl, log=log)
+      and any("COMPILE_SCHEMA did not complete" in l for l in lines)
+      and any("invalid objects after deploy: 2" in l for l in lines),
+      "#780: a failed COMPILE_SCHEMA is logged and the count still runs")
+
+lines, log = quiet_log()
+db = RecompileDB(before, fail_connects=1)   # the recompile connection drops; count reconnects
+check(not cp.deploy_db("local", connect=db.connect, sqlcl=fake_sqlcl, log=log)
+      and db.connects == 2 and any("invalid objects after deploy: 2" in l for l in lines),
+      "#780: the count reconnects even after the recompile's connection failed")
+
+lines, log = quiet_log()
+db = RecompileDB(before, fail_connects=99)
+check(not cp.deploy_db("atp", connect=db.connect, sqlcl=fake_sqlcl, log=log)
+      and any("UNKNOWN" in l for l in lines) and not any("after deploy: -1" in l for l in lines),
+      "#780: no connection at all -> deploy not verified, reported UNKNOWN (not -1)")
+
+check(cp.deploy_db.__defaults__ is not None
+      and 'deploy_db("local")' in (REPO / "scripts" / "ci_promote.py").read_text(encoding="utf-8")
+      and 'deploy_db("atp")' in (REPO / "scripts" / "ci_promote.py").read_text(encoding="utf-8"),
+      "#780: deploy-local and deploy-prod (ATP) both use deploy_db, so both recompile before counting")
 
 print(f"TEST_DEPLOY_GUARD: {passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)

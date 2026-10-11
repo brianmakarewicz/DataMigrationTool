@@ -78,7 +78,7 @@ PROMOTE_YES=1 env) so they never fire unattended by accident. test-prod and
 test-local both write prefixed test records to the real Fusion demo pod — that
 is what the regression does; the prefix sync keeps them from colliding.
 """
-import argparse, glob, json, os, re, subprocess, sys, tempfile
+import argparse, glob, json, os, subprocess, sys, tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -152,12 +152,22 @@ def _oracle(target):
                               user=t["schema"], password=t["pw"], dsn=t["dsn"], **kw)
 
 # ---------------------------------------------------------------- DB deploy
-def deploy_db(target):
+def deploy_db(target, connect=None, sqlcl=None, log=print):
     """Idempotent sync of the working tree's db/ into an existing instance:
     tables (idempotent add_col/exception-wrapped), types, package specs, bodies,
     views, procedures, seeds - all continue-on-error - then recompile and assert
     0 invalid.
-    (install.sql is fresh-install only: it exits on the first 'already exists'.)"""
+    (install.sql is fresh-install only: it exits on the first 'already exists'.)
+
+    Backlog #780: the install order can rebuild a view after its dependents were
+    compiled, so after the SQLcl script finishes the schema's INVALID objects are
+    recompiled with DBMS_UTILITY.COMPILE_SCHEMA(USER, compile_all => FALSE) as the
+    schema owner (the target's own login, never ADMIN) on a FRESH connection, and
+    the invalid count is read on another fresh connection, so a SQLcl session that
+    dropped mid-script no longer reports -1. connect/sqlcl are injectable for the
+    offline unit test (test/unit/test_deploy_guard.py)."""
+    connect = connect or (lambda: _oracle(target))
+    sqlcl = sqlcl or _sqlcl
     order = []
     for pat in ("db/tables/*.sql", "db/types/*.sql",
                 "db/packages/*.pks.sql", "db/packages/*.pkb.sql",
@@ -174,25 +184,15 @@ def deploy_db(target):
     order += migrations
     lines = ["whenever sqlerror continue", "set define off", "set serveroutput off"]
     lines += [f"@@{f}" for f in order]
-    lines += [
-        "declare begin",
-        "  for r in (select object_name,object_type from user_objects where status='INVALID') loop",
-        "    begin",
-        "      if r.object_type='PACKAGE BODY' then execute immediate 'alter package '||r.object_name||' compile body';",
-        "      else execute immediate 'alter '||r.object_type||' '||r.object_name||' compile'; end if;",
-        "    exception when others then null; end;",
-        "  end loop;",
-        "end;", "/",
-        "set heading off",
-        "select 'INVALID_AFTER_DEPLOY='||count(*) from user_objects where status='INVALID';",
-        "exit",
-    ]
-    out = _sqlcl(target, "\n".join(lines) + "\n")
-    m = re.search(r"INVALID_AFTER_DEPLOY=(\d+)", out)
-    n = int(m.group(1)) if m else -1
-    print(f"[deploy-db:{target}] invalid objects after deploy: {n}")
+    lines += ["exit"]
+    out = sqlcl(target, "\n".join(lines) + "\n")
+    label = f"deploy-db:{target}"
+    guard.recompile_invalid(connect, label, log=log)
+    n = guard.count_invalid(connect, label, log=log)
+    log(f"[deploy-db:{target}] invalid objects after deploy: "
+        f"{n if n is not None else 'UNKNOWN (count failed on a fresh connection)'}")
     if n != 0:
-        print(out[-2000:])
+        log(out[-2000:])
     return n == 0
 
 def deploy_apex(target):
