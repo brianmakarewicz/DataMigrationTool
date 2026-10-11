@@ -34,8 +34,10 @@ git status
 ```
 
 `git status` must show a clean tree. The gate refuses to promote when there are
-uncommitted changes or untracked files under `db/`, `apex/`, `bip/`, `scripts/` or
-`test/`, because then the commit SHA would not describe the code being deployed.
+uncommitted changes or untracked files in any CODE path, because then the commit SHA
+would not describe the code being deployed. Code is everything except `docs/`,
+`.github/`, `.claude/` and `*.md` files anywhere (owner decision 2026-10-10, #770), so
+`db/`, `apex/`, `bip/`, `scripts/` and `test/` changes always block.
 
 ## 2. Deploy main to the local Docker instance
 
@@ -112,8 +114,17 @@ deploying anything. It needs all of these, for the current commit:
 - a PASS click-through of the local console for that same run id, run after the
   regression finished.
 
-Evidence matches the current commit when the commit SHA matches, or when the files
-are byte-for-byte identical (same git tree), which is what a squash merge produces.
+Evidence matches the current commit when the commit SHA matches, when the files
+are byte-for-byte identical (same git tree, which is what a squash merge produces), or
+when every CODE file is byte-for-byte identical (same code tree hash). Owner decision
+2026-10-10 (backlog #770): fresh regression evidence is needed only when code changed.
+Non-code is exactly `docs/`, `.github/`, `.claude/` and any `*.md` file; everything
+else is code, including `scripts/regression_scenario.json` and
+`scripts/regression_known_issues.json`. So a docs-only PR (status, backlog, design doc)
+may be merged between the local regression and this promotion without re-running it,
+while any change to a code file makes the gate refuse. The gate prints which basis
+matched, and the code tree hash and basis are recorded in the evidence and in
+`.ci_evidence/promotion_log.jsonl`.
 
 ## 6. Promote to ATP
 

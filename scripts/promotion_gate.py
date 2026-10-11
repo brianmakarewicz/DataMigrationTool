@@ -31,13 +31,33 @@ not weaken the gate: the evidence found there must still match the commit.
 
 How evidence is tied to the code
 --------------------------------
-Every record stores the git commit SHA, the git tree SHA (a hash of the exact
-file contents) and whether the working tree had uncommitted changes in it when
-the step ran. The gate accepts evidence for the commit being promoted when the
-commit SHA matches, or when the tree SHA matches. The tree match exists for one
-reason: the PR reviewer squash-merges, so main gets a new commit SHA whose files
-are byte-for-byte identical to the branch commit the regression ran on. Any
-difference in any file changes the tree SHA, so the gate still refuses.
+Owner decision 2026-10-10 (backlog #770): fresh regression evidence is needed
+ONLY when CODE changed. A commit that touches only documentation after the local
+regression does not invalidate it.
+
+CODE is every tracked path except the clearly non-code ones, which are exactly:
+    docs/, .github/, .claude/, and any *.md file anywhere.
+Everything else counts as code: db/, apex/, bip/, scripts/ (including
+scripts/regression_scenario.json and scripts/regression_known_issues.json),
+test/, and any other path that is not on the non-code list.
+
+Every record stores the git commit SHA, the git tree SHA, the CODE TREE hash (a
+SHA-256 over `git ls-tree -r` of the commit restricted to code paths: mode, blob
+SHA and path of every code file) and whether the working tree had uncommitted
+code changes when the step ran. The gate accepts evidence for the commit being
+promoted when, in this order:
+  * the commit SHA matches;
+  * the tree SHA matches (every file identical, e.g. a squash merge);
+  * the code tree hash matches (every CODE file byte-identical; only docs/,
+    .github/, .claude/ or *.md files differ). Evidence recorded before the code
+    tree hash existed is matched by computing the hash of its commit, when that
+    commit is still in the local repository.
+Any difference in any code file changes the code tree hash, so the gate still
+refuses. The basis of every match is printed, and the code identity basis is
+recorded in the evidence (code_identity_basis) and in the promotion log.
+
+The dirty-working-tree check uses the same split: uncommitted or untracked
+changes to code paths block; changes only to non-code paths do not.
 
 To get past the gate, run the regression and the click-through on the code you
 want to promote.
@@ -91,7 +111,24 @@ def regression_verdict_passes(verdict):
     v = str(verdict or "")
     return v == "PASS" or (v.startswith(KNOWN_ONLY_VERDICT_PREFIX) and v.endswith(" known)"))
 
-UNTRACKED_MATTERS = ("db/", "apex/", "bip/", "scripts/", "test/")
+# Owner decision 2026-10-10 (#770): only CODE changes need fresh evidence. These
+# are the ONLY non-code paths; anything else (db/, apex/, bip/, scripts/ incl.
+# the regression scenario and known-issues JSON, test/, root files, ...) is code.
+NON_CODE_DIRS = ("docs/", ".github/", ".claude/")
+NON_CODE_SUFFIXES = (".md",)
+CODE_IDENTITY_BASIS = ("code tree = every tracked path except docs/, .github/, "
+                       ".claude/ and *.md files (owner decision 2026-10-10, #770)")
+
+
+def is_code_path(path):
+    """True unless the path is clearly non-code: under docs/, .github/ or
+    .claude/, or a *.md file anywhere. Paths are repo-relative."""
+    p = str(path).replace("\\", "/").lstrip("/")
+    if p.startswith(NON_CODE_DIRS):
+        return False
+    if p.lower().endswith(NON_CODE_SUFFIXES):
+        return False
+    return True
 
 LOCAL_UI_PREFIXES =("http://localhost", "http://127.0.0.1")
 
@@ -138,27 +175,71 @@ def _git(*args, cwd=None):
     return p.stdout.strip()
 
 
-def code_identity(cwd=None):
-    """The commit and tree SHA of HEAD, plus the list of uncommitted changes.
+def _git_bytes(*args, cwd=None):
+    p = subprocess.run(["git", *args], cwd=cwd or REPO, capture_output=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: "
+                           f"{p.stderr.decode('utf-8', 'replace').strip()}")
+    return p.stdout.decode("utf-8", "surrogateescape")
 
-    Any modified tracked file counts as a change. Untracked files count when
-    they sit in a directory whose contents get deployed or executed (db/,
-    apex/, bip/, scripts/, test/): deploy-local globs db/**/*.sql from the
+
+def code_tree(rev="HEAD", cwd=None):
+    """SHA-256 over the code files of `rev`: one 'mode blob-sha path' line per
+    tracked code path (see is_code_path), sorted by path. Identical code files
+    give an identical hash whatever the docs, commit message or commit SHA."""
+    import hashlib
+    rows = []
+    for rec in _git_bytes("ls-tree", "-r", "-z", "--full-tree", rev, cwd=cwd).split("\0"):
+        if not rec:
+            continue
+        meta, path = rec.split("\t", 1)
+        if not is_code_path(path):
+            continue
+        mode, _typ, sha = meta.split()
+        rows.append((path, f"{mode} {sha} {path}"))
+    rows.sort()
+    text = "\n".join(r for _, r in rows)
+    return hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def _status_paths(cwd=None):
+    """(status, path) for every uncommitted or untracked path, from
+    `git status --porcelain -z` (a rename or copy yields both paths)."""
+    recs = _git_bytes("status", "--porcelain", "-z", "--untracked-files=all",
+                      cwd=cwd).split("\0")
+    res, k = [], 0
+    while k < len(recs):
+        rec = recs[k]
+        k += 1
+        if not rec:
+            continue
+        code, path = rec[:2], rec[3:]
+        res.append((code, path))
+        if "R" in code or "C" in code:
+            if k < len(recs) and recs[k]:
+                res.append((code, recs[k]))   # the rename / copy source path
+            k += 1
+    return res
+
+
+def code_identity(cwd=None):
+    """The commit SHA, tree SHA and code tree hash of HEAD, plus the list of
+    uncommitted CODE changes.
+
+    A modified, staged, deleted or untracked path counts as a change only when
+    it is a code path (is_code_path): deploy-local globs db/**/*.sql from the
     working tree, so an untracked .sql file there would be deployed and tested
-    without being part of the commit. Gitignored paths (including the evidence
-    directory) never appear in git status."""
+    without being part of the commit. Changes only to docs/, .github/, .claude/
+    or *.md files do not make the tree dirty (owner decision 2026-10-10, #770).
+    Gitignored paths (including the evidence directory) never appear here."""
     commit = _git("rev-parse", "HEAD", cwd=cwd)
     tree = _git("rev-parse", "HEAD^{tree}", cwd=cwd)
-    status = _git("status", "--porcelain", "--untracked-files=all", cwd=cwd)
-    changes = []
-    for ln in status.splitlines():
-        if not ln.strip():
-            continue
-        if ln.startswith("??") and not ln[3:].lstrip('"').startswith(UNTRACKED_MATTERS):
-            continue
-        changes.append(ln)
-    return {"commit": commit, "tree": tree,
-            "dirty": bool(changes), "dirty_files": changes[:20]}
+    changes = [f"{code} {path}" for code, path in _status_paths(cwd)
+               if is_code_path(path)]
+    return {"commit": commit, "tree": tree, "code_tree": code_tree("HEAD", cwd),
+            "code_identity_basis": CODE_IDENTITY_BASIS,
+            "dirty": bool(changes), "dirty_files": changes[:20],
+            "repo": str(cwd or REPO)}
 
 
 # ---------------------------------------------------------------- storage
@@ -197,6 +278,9 @@ def record(step, data, identity=None):
     ident = identity or code_identity()
     entry = dict(data)
     entry.update(commit=ident["commit"], tree=ident["tree"],
+                 code_tree=ident.get("code_tree"),
+                 code_identity_basis=ident.get("code_identity_basis",
+                                               CODE_IDENTITY_BASIS),
                  dirty=ident["dirty"], dirty_files=ident.get("dirty_files", []))
     entry.setdefault("at", _iso(_now()))
     ev = load_evidence() or {}
@@ -210,16 +294,38 @@ def record(step, data, identity=None):
 
 
 # ---------------------------------------------------------------- the gate
+def _evidence_code_tree(entry, ident):
+    """The code tree hash of the evidence: as recorded, or (for evidence
+    recorded before #770) computed from its commit if git still has it."""
+    if entry.get("code_tree"):
+        return entry["code_tree"]
+    c = entry.get("commit")
+    if not c:
+        return None
+    try:
+        return code_tree(c, cwd=ident.get("repo"))
+    except (RuntimeError, OSError, ValueError):
+        return None
+
+
 def _same_code(entry, ident):
-    """Return (matches, how)."""
+    """Return (matches, how). Matches on the commit SHA, then the full tree
+    SHA, then the code tree hash (only non-code files differ; owner rule #770)."""
     if entry.get("commit") == ident["commit"]:
         return True, "commit SHA matches"
     if entry.get("tree") and entry.get("tree") == ident["tree"]:
         return True, (f"tree SHA matches (commit {entry.get('commit', '?')[:12]} "
                       f"has identical files, e.g. a squash merge)")
+    mine = ident.get("code_tree")
+    theirs = _evidence_code_tree(entry, ident) if mine else None
+    if mine and theirs == mine:
+        return True, (f"code tree matches (commit {str(entry.get('commit'))[:12]} "
+                      f"has byte-identical code files, code tree {mine[:12]}; only "
+                      f"docs/, .github/, .claude/ or *.md files differ)")
     return False, (f"evidence is for commit {str(entry.get('commit'))[:12]} "
-                   f"(tree {str(entry.get('tree'))[:12]}), promoting commit "
-                   f"{ident['commit'][:12]} (tree {ident['tree'][:12]})")
+                   f"(code tree {str(theirs)[:12]}), promoting commit "
+                   f"{ident['commit'][:12]} (code tree {str(mine)[:12]}): code files "
+                   f"differ, so the local regression must be re-run")
 
 
 def check_gate(ident=None, now=None, evidence=None):
@@ -250,9 +356,11 @@ def check_gate_detail(ident=None, now=None, evidence=None):
     def good(msg):
         lines.append("  ok       " + msg)
 
-    lines.append(f"  promoting commit {ident['commit']} (tree {ident['tree']})")
+    lines.append(f"  promoting commit {ident['commit']} (tree {ident['tree']}, "
+                 f"code tree {ident.get('code_tree')})")
+    lines.append(f"  code identity basis: {CODE_IDENTITY_BASIS}")
     if ident["dirty"]:
-        fail("working tree has uncommitted or untracked changes, so the commit "
+        fail("working tree has uncommitted or untracked CODE changes, so the commit "
              "SHA does not describe the code that would be deployed: "
              + "; ".join(ident.get("dirty_files", [])[:5]))
 
@@ -469,6 +577,10 @@ def enforce(ident=None, stage="deploy-prod", owner_override=None,
     print("=" * 72)
     log_event({"event": "gate", "stage": stage, "decision": banner,
                "commit": ident["commit"], "tree": ident["tree"],
+               "code_tree": ident.get("code_tree"),
+               "code_identity_basis": CODE_IDENTITY_BASIS,
+               "match_basis": [l.strip()[2:].strip() for l in lines
+                               if l.strip().startswith("ok") and "matches" in l],
                "dirty": ident["dirty"],
                "regression_verdict": _reg_field("verdict"),
                "regression_known_failures": _reg_field("known_failures"),

@@ -62,6 +62,12 @@ The deliverable is **honest accounting, not clean data.** Concretely:
   exists for the owner personally (interactive TTY + typed commit short SHA, logged to
   `.ci_evidence/promotion_log.jsonl`). **Agents must NEVER use the override**, never edit
   the evidence, and never deploy to ATP another way: report a gate refusal to the owner.
+  **Fresh evidence only when CODE changed (owner decision 2026-10-10, #770):** evidence
+  matches when every code file is byte-identical (code tree hash). Non-code is exactly
+  `docs/`, `.github/`, `.claude/` and `*.md` anywhere; everything else (db/, apex/, bip/,
+  scripts/ incl. the regression scenario and known-issues JSON, test/, ...) is code. A
+  docs-only commit after the regression does not force a re-run; any code change does.
+  The dirty-tree check ignores non-code paths only.
 - **Fusion BIP folder for this stack:** `/Custom/DMT2/` (never `/Custom/DMT/` — that belongs to the frozen stack).
 - **FBL file delivery:** decision deferred (blocks the 6 FBL config objects only — Phase 4).
 - **Frozen stack:** bugs may still be fixed on the old ATP; every such fix must be ported here.
