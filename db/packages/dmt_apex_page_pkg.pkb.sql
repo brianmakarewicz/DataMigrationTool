@@ -833,7 +833,9 @@ BEGIN
     l_sc := CASE l_rec.RUN_STATUS
         WHEN 'COMPLETED' THEN 'color:#1a9c3e' WHEN 'COMPLETED_ERRORS' THEN 'color:#e07600'
         WHEN 'FAILED' THEN 'color:#c42b1c' WHEN 'IN_PROGRESS' THEN 'color:#0070d2'
-        WHEN 'QUEUED' THEN 'color:#6b48c9' ELSE 'color:#333' END;
+        WHEN 'QUEUED' THEN 'color:#6b48c9'
+        WHEN 'CANCELLED' THEN 'color:#ad1457;background:#fce4ec;padding:2px 10px;border-radius:10px' -- #721: own badge, not grey
+        ELSE 'color:#333' END;
     HTP.P('<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;padding:8px 0">');
     HTP.P('<span style="font-size:20px;font-weight:bold">Run #' || l_rec.RUN_ID || '</span>');
     HTP.P('<span style="' || l_sc || ';font-weight:bold;font-size:16px">' || l_rec.RUN_STATUS || '</span>');
@@ -842,6 +844,13 @@ BEGIN
     HTP.P('<span>' || l_d || '/' || l_t || CASE WHEN l_f > 0 THEN ' (' || l_f || ' failed)' END || '</span>');
     HTP.P('<a href="' || APEX_PAGE.GET_URL(p_page=>54, p_items=>'P54_RUN_ID', p_values=>TO_CHAR(p_run_id))
         || '" style="color:#0070d2;text-decoration:none;font-weight:600">View Activity Log &rarr;</a></div>');
+    -- #721: a cancelled run shows who cancelled it, when and why (CANCEL_RUN
+    -- saves that text in the run's ERROR_MESSAGE).
+    IF l_rec.RUN_STATUS = 'CANCELLED' THEN
+      HTP.P('<div id="run_cancel_reason_82" style="margin:4px 0 8px;padding:8px 12px;border-left:4px solid #ad1457;background:#fce4ec;color:#333">'
+          || '<strong>Cancel reason:</strong> '
+          || HTF.ESCAPE_SC(NVL(l_rec.ERROR_MESSAGE, 'No reason was recorded.')) || '</div>');
+    END IF;
   EXCEPTION WHEN NO_DATA_FOUND THEN HTP.P('<p>Run not found.</p>');
   END RENDER_RUN_HEADER;
 

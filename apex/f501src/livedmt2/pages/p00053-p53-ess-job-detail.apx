@@ -26,6 +26,22 @@ page 53 (
         }
     )
 
+    region page-actions (
+        name: Page Actions
+        type: staticContent
+        layout {
+            sequence: 2
+            slot: body
+        }
+        appearance {
+            template: @/buttons-container
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: page_actions_53
+        }
+    )
+
     region ess-job-detail (
         name: ESS Job Detail
         type: plSqlDynamicContent
@@ -120,8 +136,8 @@ page 53 (
         label: Back
         layout {
             sequence: 5
-            region: @breadcrumb
-            slot: PREVIOUS
+            region: @page-actions
+            slot: previous
         }
         appearance {
             buttonTemplate: @/text

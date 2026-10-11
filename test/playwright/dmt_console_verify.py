@@ -60,6 +60,9 @@ def main():
                     "Cancel run form on run detail (page 82). It is admin-only (backlog "
                     "#722): absent for a non-admin user such as DMT_SMOKE, present with "
                     "--expect-admin. The button is never pressed.")
+    ap.add_argument("--cancelled-run-id", help="a CANCELLED run id: checks the cancel "
+                    "reason and CANCELLED badge on run detail (page 82) and Run "
+                    "History (page 80), backlog #721")
     ap.add_argument("--expect-admin", action="store_true",
                     help="--user is an APEX workspace administrator, so the admin-only "
                     "Cancel run form must render on --active-run-id")
@@ -95,6 +98,8 @@ def main():
         env["DMT2_UI_CMP_RUN"] = str(args.cmp_run_id)
     if args.active_run_id:
         env["DMT2_UI_ACTIVE_RUN"] = str(args.active_run_id)
+    if args.cancelled_run_id:
+        env["DMT2_UI_CANCELLED_RUN"] = str(args.cancelled_run_id)
     if args.expect_admin:
         env["DMT2_UI_EXPECT_ADMIN"] = "1"
     if args.cemlis:

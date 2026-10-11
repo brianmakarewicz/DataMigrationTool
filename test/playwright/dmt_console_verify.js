@@ -19,6 +19,8 @@
 //   DMT2_UI_RUN    run id to drill                 (optional; a recent run)
 //   DMT2_UI_CMP_RUN run id with comparison data    (optional; for page 85)
 //   DMT2_UI_ACTIVE_RUN a QUEUED/IN_PROGRESS run id (optional; Cancel form check)
+//   DMT2_UI_CANCELLED_RUN a CANCELLED run id (optional; cancel reason + badge
+//                  on run detail 82 and Run History 80, backlog #721)
 //   DMT2_UI_EXPECT_ADMIN '1' when DMT2_UI_USER is an administrator (optional;
 //                  the Cancel form is admin-only, backlog #722, so a non-admin
 //                  such as DMT_SMOKE must NOT see it on an active run)
@@ -42,6 +44,7 @@ const PASS = process.env.DMT2_UI_PASS;
 const RUN = process.env.DMT2_UI_RUN || '';
 const CMP_RUN = process.env.DMT2_UI_CMP_RUN || RUN;
 const ACTIVE_RUN = process.env.DMT2_UI_ACTIVE_RUN || '';
+const CANCELLED_RUN = process.env.DMT2_UI_CANCELLED_RUN || '';
 const EXPECT_ADMIN = process.env.DMT2_UI_EXPECT_ADMIN === '1';
 const CEMLIS = (process.env.DMT2_UI_CEMLIS
   || 'Suppliers,PurchaseOrders,GLBalances,Customers,Assets')
@@ -356,8 +359,21 @@ const PAGES = [
           fp(52, 'P52_RUN_ID,P52_CEMLI_CODE', `${RUN},${cem}`));
         if (!r.ok) continue;
         // object detail 52 -> ESS job detail 53 and record detail 57
-        await visit(`drill: ESS job detail 53 [${cem} run ${RUN}]`,
+        const ess = await visit(`drill: ESS job detail 53 [${cem} run ${RUN}]`,
           fp(53, 'P53_RUN_ID,P53_CEMLI_CODE', `${RUN},${cem}`));
+        // Backlog #720: the Back button sat in slot PREVIOUS of a region with
+        // no template, which APEX 26.1 rejects, so it never rendered. It now
+        // lives in a Buttons Container region (page_actions_53).
+        if (ess.ok) {
+          const back = await page.evaluate(() => {
+            const box = document.getElementById('page_actions_53');
+            const b = box && Array.from(box.querySelectorAll('button'))
+              .find(x => /\bBack\b/.test(x.textContent || ''));
+            return !!b && b.offsetParent !== null;
+          }).catch(() => false);
+          step(`run actions: Back button renders on ESS job detail 53 [${cem} run ${RUN}]`,
+            back, `back=${back}`);
+        }
         await visit(`drill: ESS job output 58 [${cem} run ${RUN}]`,
           fp(58, 'P53_RUN_ID,P53_CEMLI_CODE', `${RUN},${cem}`));
         for (const st of ['LOADED', 'FAILED']) {
@@ -457,6 +473,39 @@ const PAGES = [
             !acts.cancel && !acts.reason && !acts.confirm,
             `cancel-button=${acts.cancel} reason-field=${acts.reason} confirm-box=${acts.confirm}`);
         }
+      }
+    }
+
+    // (a3) a cancelled run shows its cancel reason and its own badge (backlog
+    //      #721): the run header on page 82 carries the reason block
+    //      run_cancel_reason_82, and Run History (page 80, filtered to the run)
+    //      shows the Cancel Reason column and a non-grey CANCELLED badge.
+    if (CANCELLED_RUN) {
+      const cr = await visit(`cancelled run: run detail 82 [run ${CANCELLED_RUN}]`,
+        fp(82, 'P82_RUN_ID', CANCELLED_RUN), { mustMatch: new RegExp(`Run #${CANCELLED_RUN}\\b`) });
+      if (cr.ok) {
+        const why = await page.evaluate(() => {
+          const el = document.getElementById('run_cancel_reason_82');
+          return el && el.offsetParent !== null ? (el.textContent || '').trim() : '';
+        }).catch(() => '');
+        step(`cancelled run: cancel reason shows on run detail 82 [run ${CANCELLED_RUN}]`,
+          /Cancel reason:\s*Cancelled by \S+/.test(why), why.slice(0, 160));
+      }
+      const rh = await visit(`cancelled run: Run History 80 filtered [run ${CANCELLED_RUN}]`,
+        `${BASE}/f?p=${APPID}:80:${SESS}::NO:RIR:IR_RUN_ID:${CANCELLED_RUN}`);
+      if (rh.ok) {
+        const row = await page.evaluate(() => {
+          const badge = Array.from(document.querySelectorAll('span.t-Badge'))
+            .find(s => (s.textContent || '').trim() === 'CANCELLED');
+          const bg = badge ? getComputedStyle(badge).backgroundColor : '';
+          const body = document.body.innerText || '';
+          return { badge: !!badge, bg, reason: /Cancelled by \S+ at /.test(body),
+                   heading: /Cancel Reason/.test(body) };
+        }).catch(() => ({ badge: false, bg: '', reason: false, heading: false }));
+        step(`cancelled run: Run History shows the cancel reason [run ${CANCELLED_RUN}]`,
+          row.heading && row.reason, `heading=${row.heading} reason=${row.reason}`);
+        step(`cancelled run: CANCELLED has its own badge colour on Run History [run ${CANCELLED_RUN}]`,
+          row.badge && row.bg === 'rgb(252, 228, 236)', `badge=${row.badge} background=${row.bg}`);
       }
     }
 

@@ -20,7 +20,7 @@ page 80 (
         source {
             location: localDatabase
             type: sqlQuery
-            sqlQuery: SELECT RUN_ID, PIPELINE_CODES, NVL(SCENARIO_NAME,'(all)') AS SCENARIO, PREFIX, RUN_MODE, RUN_STATUS, DONE_COUNT || '/' || TOTAL_OBJECTS AS PROGRESS, CURRENT_STEP, FAILED_COUNT, TO_CHAR(SUBMITTED_DATE,'YYYY-MM-DD HH24:MI') AS SUBMITTED, SUBMITTED_BY FROM DMT_RUN_HISTORY_V ORDER BY RUN_ID DESC
+            sqlQuery: SELECT RUN_ID, PIPELINE_CODES, NVL(SCENARIO_NAME,'(all)') AS SCENARIO, PREFIX, RUN_MODE, RUN_STATUS, DONE_COUNT || '/' || TOTAL_OBJECTS AS PROGRESS, CURRENT_STEP, FAILED_COUNT, TO_CHAR(SUBMITTED_DATE,'YYYY-MM-DD HH24:MI') AS SUBMITTED, SUBMITTED_BY, CANCEL_REASON, CASE RUN_STATUS WHEN 'COMPLETED' THEN 't-Badge t-Badge--success' WHEN 'COMPLETED_ERRORS' THEN 't-Badge t-Badge--warning' WHEN 'FAILED' THEN 't-Badge t-Badge--danger' WHEN 'IN_PROGRESS' THEN 't-Badge t-Badge--info' ELSE 't-Badge' END AS RUN_STATUS_BADGE_CLASS, CASE RUN_STATUS WHEN 'CANCELLED' THEN 'color:#ad1457;background:#fce4ec' END AS RUN_STATUS_BADGE_STYLE FROM DMT_RUN_HISTORY_V ORDER BY RUN_ID DESC
         }
         layout {
             sequence: 10
@@ -53,6 +53,23 @@ page 80 (
         advanced {
             savedReportMappingIdentifier: 800001
         }
+
+        column CANCEL_REASON (
+            type: plainText
+            heading {
+                heading: Cancel Reason
+                alignment: center
+            }
+            layout {
+                sequence: 120
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: M
+            }
+        )
 
         column CURRENT_STEP (
             type: plainText
@@ -189,8 +206,37 @@ page 80 (
             source {
                 dataType: STRING
             }
+            columnFormatting {
+                htmlExpression: <span class="#RUN_STATUS_BADGE_CLASS#" style="#RUN_STATUS_BADGE_STYLE#">#RUN_STATUS#</span>
+            }
             advanced {
                 endUserAlias: F
+            }
+        )
+
+        column RUN_STATUS_BADGE_CLASS (
+            type: hidden
+            heading {
+                heading: Run Status Badge Class
+            }
+            layout {
+                sequence: 130
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column RUN_STATUS_BADGE_STYLE (
+            type: hidden
+            heading {
+                heading: Run Status Badge Style
+            }
+            layout {
+                sequence: 140
+            }
+            source {
+                dataType: STRING
             }
         )
 
@@ -298,6 +344,10 @@ page 80 (
 
             displayColumn SUBMITTED_BY (
                 sequence: 11
+            )
+
+            displayColumn CANCEL_REASON (
+                sequence: 12
             )
 
         )
