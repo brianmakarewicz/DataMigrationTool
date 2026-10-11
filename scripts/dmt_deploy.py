@@ -328,7 +328,7 @@ def run_guarded(label, deploy_fn, connect_fn=None, timeout_s=None):
     connect_fn is injectable for the offline unit test (test/unit/test_deploy_guard.py)."""
     connect_fn = connect_fn or connect
     if not guard.wait_until_no_dmt_jobs(connect_fn, label, timeout_s=timeout_s):
-        print(f"[dmt_deploy] NOT deploying ({label}): DMT child jobs are running "
+        print(f"[dmt_deploy] NOT deploying ({label}): DMT child jobs or runs are active "
               f"(or the check failed).", file=sys.stderr)
         return 3
     rc = 0

@@ -29,7 +29,10 @@ Workflow this enforces:
                   python scripts/apex_deploy.py import --target atp
 
 Connections come from ~/workspace/connections.json (never hardcode creds).
-SQLcl (+ JDK 21) must be on PATH; TNS_ADMIN is set from the wallet for ATP.
+SQLcl is resolved without relying on PATH (backlog #776): DMT_SQLCL env var, then
+`sql` on PATH, then the known install C:/Users/Monroe/tools/sqlcl/bin/sql.exe (the
+same one ci_promote._sqlcl uses, with its JDK 21). TNS_ADMIN is set from the wallet
+for ATP.
 
 Usage:
   python scripts/apex_deploy.py export --target atp     # refresh git baseline from ATP app 500
@@ -108,13 +111,47 @@ def _win(path: Path) -> str:
     return os.fspath(path)
 
 
+# Same install ci_promote._sqlcl uses; the fallback when `sql` is not on PATH
+# (an agent's APEX import failed because it was not, backlog #776).
+SQLCL_FALLBACK = "C:/Users/Monroe/tools/sqlcl/bin/sql.exe"
+JDK_FALLBACK = "C:/Users/Monroe/tools/jdk-21.0.11+10"
+
+
+def _find_sqlcl(which=shutil.which, exists=os.path.exists, environ=os.environ):
+    """Path to the SQLcl launcher: DMT_SQLCL, else `sql` on PATH, else the known
+    install. Raises FileNotFoundError naming every place looked."""
+    override = environ.get("DMT_SQLCL")
+    if override and exists(override):
+        return override
+    on_path = which("sql")
+    if on_path:
+        return on_path
+    if exists(SQLCL_FALLBACK):
+        return SQLCL_FALLBACK
+    raise FileNotFoundError(
+        f"SQLcl not found: DMT_SQLCL={override!r}, no `sql` on PATH, and "
+        f"{SQLCL_FALLBACK} does not exist. Install SQLcl or set DMT_SQLCL.")
+
+
+def _sqlcl_env(sqlcl, base=None, exists=os.path.exists):
+    """Environment for SQLcl: its bin dir on PATH, and JAVA_HOME pointed at the
+    known JDK 21 when none is set (as ci_promote._sqlcl does)."""
+    env = dict(os.environ if base is None else base)
+    env["PATH"] = os.path.dirname(sqlcl) + os.pathsep + env.get("PATH", "")
+    if not env.get("JAVA_HOME") and exists(JDK_FALLBACK):
+        env["JAVA_HOME"] = JDK_FALLBACK
+        env["PATH"] = JDK_FALLBACK + "/bin" + os.pathsep + env["PATH"]
+    return env
+
+
 def _sqlcl(schema, pw, dsn, tns_admin, script):
-    env = dict(os.environ)
+    sqlcl = _find_sqlcl()
+    env = _sqlcl_env(sqlcl)
     if tns_admin:
         env["TNS_ADMIN"] = tns_admin
     # Stop Git-Bash / MSYS from rewriting the "/nolog"-style tokens or DSN.
     env["MSYS_NO_PATHCONV"] = "1"
-    cmd = ["sql", "-s", f"{schema}/{pw}@{dsn}"]
+    cmd = [sqlcl, "-s", f"{schema}/{pw}@{dsn}"]
     # UTF-8 + replace: cp1252 default dies on bytes like 0x9d (backlog 646).
     p = subprocess.run(cmd, input=script, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", env=env)
@@ -250,8 +287,8 @@ def do_import(target, connect=None, guard_timeout_s=None, importer=None):
         return 2
     if not guard.wait_until_no_dmt_jobs(connect, f"apex:{target}",
                                         timeout_s=guard_timeout_s):
-        print(f"[apex_deploy] NOT importing to {target}: DMT child jobs are "
-              f"running (or the check failed).", file=sys.stderr)
+        print(f"[apex_deploy] NOT importing to {target}: DMT child jobs or runs are "
+              f"active (or the check failed).", file=sys.stderr)
         return 3
     rc = importer(target)
     clean = guard.assert_no_invalid(connect, f"apex:{target}")

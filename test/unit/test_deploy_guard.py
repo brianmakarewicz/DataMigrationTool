@@ -13,7 +13,9 @@ no network, no real waiting):
       - a failed check (connection error) refuses rather than assuming idle;
       - the running-jobs query binds the four families with "_" escaped and asks
         USER_SCHEDULER_RUNNING_JOBS (so the poller and other jobs never block);
-      - the invalid-object check passes on 0 and fails, listing them, otherwise.
+      - the invalid-object check passes on 0 and fails, listing them, otherwise;
+      - (#776) a non-terminal DMT_PIPELINE_RUN_TBL run from the last 24h blocks the
+        deploy even with no job running, with the same bounded wait and refusal.
   * scripts/ci_promote.py guarded_deploy (used by deploy-local and deploy-prod):
       refused -> the deploy function is never called; idle -> deploy runs, then the
       invalid check runs; invalid objects after the deploy -> failure.
@@ -56,8 +58,12 @@ class FakeDB:
     """running: a list of job-name lists, one per check (the last one repeats).
     invalid: list of (type, name) returned by the invalid-object query."""
 
-    def __init__(self, running=None, invalid=None, fail_connect=False):
+    def __init__(self, running=None, invalid=None, fail_connect=False, runs=None,
+                 runs_error=None):
         self.running = running or [[]]
+        self.runs = runs or [[]]          # list of [(run_id, status), ...] per check
+        self.runs_error = runs_error
+        self.run_checks = 0
         self.invalid = invalid or []
         self.fail_connect = fail_connect
         self.checks = 0
@@ -80,6 +86,12 @@ class FakeDB:
                             i = min(db.checks, len(db.running) - 1)
                             db.checks += 1
                             self.rows = [(n,) for n in db.running[i]]
+                        elif "dmt_pipeline_run_tbl" in sql:
+                            if db.runs_error:
+                                raise Exception(db.runs_error)
+                            i = min(db.run_checks, len(db.runs) - 1)
+                            db.run_checks += 1
+                            self.rows = list(db.runs[i])
                         else:
                             self.rows = list(db.invalid)
 
@@ -154,6 +166,80 @@ check("user_scheduler_running_jobs" in db.sql[0]
           ["DMT\\_WQ\\_%", "DMT\\_PF\\_%", "DMT\\_PL\\_%", "DMT\\_RC\\_%"])
       and "ESCAPE" in db.sql[0],
       "running-jobs query reads USER_SCHEDULER_RUNNING_JOBS for the four DMT families only")
+
+# 5b. Backlog #776: a run between jobs (no scheduler job, run still QUEUED /
+#     IN_PROGRESS) blocks the deploy too.
+db, c = FakeDB(runs=[[(408, "IN_PROGRESS")], [(408, "IN_PROGRESS")], []]), Clock()
+lines, log = quiet_log()
+ok = guard.wait_until_no_dmt_jobs(db.connect, "t", timeout_s=600, poll_s=20,
+                                  sleep=c.sleep, clock=c.now, log=log)
+check(ok and c.sleeps == [20, 20] and db.run_checks == 3,
+      "#776: non-terminal run with no job running: waits, proceeds once it is terminal")
+check(any("waiting" in l and "run 408 (IN_PROGRESS)" in l for l in lines),
+      "#776: while waiting it names the blocking run and its status")
+
+db, c = FakeDB(runs=[[(410, "QUEUED"), (411, "IN_PROGRESS")]]), Clock()
+lines, log = quiet_log()
+ok = guard.wait_until_no_dmt_jobs(db.connect, "t", timeout_s=60, poll_s=20,
+                                  sleep=c.sleep, clock=c.now, log=log)
+check(not ok and sum(c.sleeps) == 60
+      and any("REFUSING" in l and "run 410 (QUEUED)" in l and "run 411 (IN_PROGRESS)" in l
+              for l in lines),
+      "#776: runs still active at the timeout: deploy REFUSED, runs listed")
+
+db, c = FakeDB(running=[["DMT_WQ_9"]], runs=[[(412, "IN_PROGRESS")]]), Clock()
+lines, log = quiet_log()
+ok = guard.wait_until_no_dmt_jobs(db.connect, "t", timeout_s=0, poll_s=20,
+                                  sleep=c.sleep, clock=c.now, log=log)
+check(not ok and any("DMT_WQ_9" in l and "run 412" in l and "2 DMT" in l for l in lines),
+      "#776: jobs and runs are both reported in one refusal")
+
+db = FakeDB()
+guard.active_runs(db.connect())
+q = db.sql[0]
+check("dmt_pipeline_run_tbl" in q and "INTERVAL '1' DAY" in q and "submitted_date" in q
+      and all(f"'{st}'" in q for st in guard.TERMINAL_RUN_STATUSES)
+      and "NOT IN" in q,
+      "#776: active-runs query: last 24h by SUBMITTED_DATE, excludes all 5 terminal statuses")
+
+db, c = FakeDB(runs_error="ORA-00942: table or view does not exist"), Clock()
+lines, log = quiet_log()
+check(guard.wait_until_no_dmt_jobs(db.connect, "t", timeout_s=0, poll_s=20,
+                                   sleep=c.sleep, clock=c.now, log=log),
+      "#776: no run table yet (fresh install, ORA-00942) does not block the deploy")
+db, c = FakeDB(runs_error="ORA-03113: end-of-file on communication channel"), Clock()
+lines, log = quiet_log()
+check(not guard.wait_until_no_dmt_jobs(db.connect, "t", timeout_s=0, poll_s=20,
+                                       sleep=c.sleep, clock=c.now, log=log)
+      and any("NOT deploying" in l for l in lines),
+      "#776: any other failure reading the run table refuses the deploy")
+
+rc = ad.do_import("local", connect=FakeDB(runs=[[(408, "IN_PROGRESS")]]).connect,
+                  guard_timeout_s=0, importer=lambda t: 0)
+check(rc == 3, "#776: apex_deploy refuses (exit 3) while a run is between jobs")
+
+# 5c. Backlog #776: apex_deploy finds SQLcl without relying on PATH.
+check(ad._find_sqlcl(which=lambda n: None, exists=lambda p: p == ad.SQLCL_FALLBACK,
+                     environ={}) == ad.SQLCL_FALLBACK,
+      "#776: apex_deploy: no `sql` on PATH -> falls back to the known SQLcl install")
+check(ad.SQLCL_FALLBACK == cp.SQLCL,
+      "#776: apex_deploy's fallback is the same SQLcl ci_promote uses")
+check(ad._find_sqlcl(which=lambda n: "/x/sql", exists=lambda p: True, environ={}) == "/x/sql",
+      "#776: apex_deploy: `sql` on PATH is used when present")
+check(ad._find_sqlcl(which=lambda n: "/x/sql", exists=lambda p: True,
+                     environ={"DMT_SQLCL": "/o/sql"}) == "/o/sql",
+      "#776: apex_deploy: DMT_SQLCL override wins")
+try:
+    ad._find_sqlcl(which=lambda n: None, exists=lambda p: False, environ={})
+    check(False, "#776: apex_deploy: no SQLcl anywhere raises a clear error")
+except FileNotFoundError as e:
+    check("SQLcl not found" in str(e), "#776: apex_deploy: no SQLcl anywhere raises a clear error")
+env = ad._sqlcl_env("C:/s/bin/sql.exe", base={"PATH": "P"}, exists=lambda p: True)
+check("C:/s/bin" in env["PATH"].split(ad.os.pathsep) and env["JAVA_HOME"] == ad.JDK_FALLBACK,
+      "#776: apex_deploy: SQLcl env puts its bin dir on PATH and sets JAVA_HOME when unset")
+src = (REPO / "scripts" / "apex_deploy.py").read_text(encoding="utf-8")
+check('["sql", "-s"' not in src and "_find_sqlcl()" in src,
+      "#776: apex_deploy._sqlcl no longer launches a bare `sql` from PATH")
 
 # 6. Invalid objects after deploy.
 lines, log = quiet_log()
