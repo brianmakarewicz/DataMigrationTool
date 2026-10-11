@@ -210,7 +210,7 @@ def guarded_deploy(target, deploy_fn, timeout_s=None):
     confirm 0 invalid objects right after. See scripts/dmt_deploy_guard.py."""
     label = f"{target}"
     if not guard.wait_until_no_dmt_jobs(lambda: _oracle(target), label, timeout_s=timeout_s):
-        print(f"[deploy:{target}] NOT deploying: DMT child jobs are running "
+        print(f"[deploy:{target}] NOT deploying: DMT child jobs or runs are active "
               f"(or the check failed).")
         return False
     ok = deploy_fn()

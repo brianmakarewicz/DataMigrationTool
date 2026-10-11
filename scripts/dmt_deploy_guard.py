@@ -16,6 +16,15 @@ starting (ORA-04063). The rule (CLAUDE.md, "Shared local DB deploy rule"):
 
 The persistent poller job is not in those families, so it never blocks a deploy.
 
+Backlog #776: a run that is BETWEEN jobs (QUEUED / IN_PROGRESS with work items
+READY, AWAITING_* or RECONCILING but no scheduler job at that instant) was not
+protected, so a deploy recompiled packages mid-run and run 408 failed with
+ORA-04063. The guard therefore also waits while any DMT_PIPELINE_RUN_TBL run
+submitted in the last 24 hours is non-terminal (RUN_STATUS not in COMPLETED,
+COMPLETED_ERRORS, FAILED, CANCELLED, NO_ROWS_PROCESSED), with the same bounded
+timeout, and refuses on timeout naming the blocking runs. A schema without the
+run table yet (fresh install, ORA-00942) has no runs to protect.
+
 Used by scripts/ci_promote.py (deploy-local, deploy-prod) and scripts/apex_deploy.py
 (import). Every function takes a connection factory (and, for the wait, a sleep and
 a clock) so the unit test drives it with fakes: test/unit/test_deploy_guard.py.
@@ -37,6 +46,13 @@ _RUNNING_SQL = (
     "WHERE job_name LIKE :p1 ESCAPE '\\' OR job_name LIKE :p2 ESCAPE '\\' "
     "OR job_name LIKE :p3 ESCAPE '\\' OR job_name LIKE :p4 ESCAPE '\\' "
     "ORDER BY job_name")
+TERMINAL_RUN_STATUSES = ("COMPLETED", "COMPLETED_ERRORS", "FAILED", "CANCELLED",
+                         "NO_ROWS_PROCESSED")
+_ACTIVE_RUNS_SQL = (
+    "SELECT run_id, run_status FROM dmt_pipeline_run_tbl "
+    "WHERE submitted_date > SYSTIMESTAMP - INTERVAL '1' DAY "
+    "AND run_status NOT IN ('COMPLETED','COMPLETED_ERRORS','FAILED','CANCELLED',"
+    "'NO_ROWS_PROCESSED') ORDER BY run_id")
 _INVALID_SQL = (
     "SELECT object_type, object_name FROM user_objects "
     "WHERE status = 'INVALID' ORDER BY object_type, object_name")
@@ -53,6 +69,27 @@ def running_dmt_jobs(con):
     return [r[0] for r in cur.fetchall()]
 
 
+def active_runs(con):
+    """(run_id, run_status) of every non-terminal run submitted in the last 24h.
+    A schema without DMT_PIPELINE_RUN_TBL (ORA-00942, fresh install) has none."""
+    cur = con.cursor()
+    try:
+        cur.execute(_ACTIVE_RUNS_SQL)
+    except Exception as e:  # noqa: BLE001
+        if "ORA-00942" in str(e):
+            return []
+        raise
+    return [(r[0], r[1]) for r in cur.fetchall()]
+
+
+def _blockers(con):
+    """Human-readable list of what blocks a deploy right now: running DMT jobs
+    and non-terminal recent runs."""
+    jobs = running_dmt_jobs(con)
+    runs = active_runs(con)
+    return jobs + [f"run {rid} ({st})" for rid, st in runs]
+
+
 def invalid_objects(con):
     """(object_type, object_name) of every INVALID object in the schema."""
     cur = con.cursor()
@@ -62,12 +99,13 @@ def invalid_objects(con):
 
 def wait_until_no_dmt_jobs(connect, label, timeout_s=None, poll_s=None,
                            sleep=time.sleep, clock=time.monotonic, log=print):
-    """Block until no DMT child job runs on the target, or refuse after timeout_s.
+    """Block until no DMT child job runs on the target AND no run submitted in the
+    last 24h is non-terminal (backlog #776), or refuse after timeout_s.
 
     connect() returns a fresh connection; one is opened per check and closed, so
     a long wait never holds a session. Returns True when the database is idle
-    (deploy may go ahead), False when the timeout passed with jobs still running
-    or the check itself failed (deploy must NOT go ahead)."""
+    (deploy may go ahead), False when the timeout passed with jobs or runs still
+    active or the check itself failed (deploy must NOT go ahead)."""
     timeout_s = DEFAULT_TIMEOUT_S if timeout_s is None else timeout_s
     poll_s = DEFAULT_POLL_S if poll_s is None else poll_s
     start = clock()
@@ -76,30 +114,31 @@ def wait_until_no_dmt_jobs(connect, label, timeout_s=None, poll_s=None,
         try:
             con = connect()
             try:
-                jobs = running_dmt_jobs(con)
+                blockers = _blockers(con)
             finally:
                 con.close()
         except Exception as e:  # noqa: BLE001 - any failure means "not proven idle"
-            log(f"[deploy-guard:{label}] could not read USER_SCHEDULER_RUNNING_JOBS "
-                f"({str(e)[:200]}); NOT deploying.")
+            log(f"[deploy-guard:{label}] could not read USER_SCHEDULER_RUNNING_JOBS / "
+                f"DMT_PIPELINE_RUN_TBL ({str(e)[:200]}); NOT deploying.")
             return False
-        if not jobs:
+        if not blockers:
             if first:
                 log(f"[deploy-guard:{label}] no DMT_WQ_/DMT_PF_/DMT_PL_/DMT_RC_ job is "
-                    f"running; deploy may proceed.")
+                    f"running and no run from the last 24h is active; deploy may proceed.")
             else:
-                log(f"[deploy-guard:{label}] the running DMT jobs have finished after "
+                log(f"[deploy-guard:{label}] the active DMT jobs/runs have finished after "
                     f"{int(clock() - start)}s; deploy may proceed.")
             return True
         elapsed = clock() - start
-        shown = ", ".join(jobs[:8]) + (f" (+{len(jobs) - 8} more)" if len(jobs) > 8 else "")
+        n = len(blockers)
+        shown = ", ".join(blockers[:8]) + (f" (+{n - 8} more)" if n > 8 else "")
         if elapsed >= timeout_s:
-            log(f"[deploy-guard:{label}] REFUSING to deploy: {len(jobs)} DMT job(s) still "
-                f"running after waiting {int(elapsed)}s (timeout {timeout_s}s): {shown}. "
-                f"Deploying now could invalidate a package under a running job "
+            log(f"[deploy-guard:{label}] REFUSING to deploy: {n} DMT job(s)/run(s) still "
+                f"active after waiting {int(elapsed)}s (timeout {timeout_s}s): {shown}. "
+                f"Deploying now could invalidate a package a run is about to use "
                 f"(ORA-04063). Re-run once the run has finished.")
             return False
-        log(f"[deploy-guard:{label}] waiting: {len(jobs)} DMT job(s) running: {shown} "
+        log(f"[deploy-guard:{label}] waiting: {n} DMT job(s)/run(s) active: {shown} "
             f"({int(elapsed)}s of {timeout_s}s; next check in {poll_s}s)")
         first = False
         sleep(poll_s)
