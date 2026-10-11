@@ -110,12 +110,13 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
 ## Rules carried over from the old stack (all still binding)
 
 1. No test passes unless GOOD rows reach Fusion base tables (LOADED via BIP) AND BAD rows reach FAILED with reportable ERROR_TEXT.
-2. Pure PL/SQL pipeline; Python is dev/test shim only.
-3. Git-first DDL: DB changes only by running committed files. Never connect as ADMIN/SYSTEM for DMT DDL.
-4. Prefix system always on (test 9001+); never reset STG/TFM row status — re-run with a new prefix.
-5. Errors accumulate in ERROR_TEXT, never overwrite.
-6. Read `objects/{Name}/README.md` before working on any CEMLI.
-7. APEX work is deferred until the full regression scenario passes on the engine (see plan, Stage F).
+2. Keep it simple and do not over-engineer (owner, 2026-10-10). Users rerun with a new prefix whenever something breaks, so we do not build machinery to prevent or recover from every possible failure. We fix whatever makes a run's reported result wrong. Consistency across objects matters: every object follows the same patterns, including the same work-item stamping, the same reconciliation, the same error format and the same cross-grain rules, unless an exception has been approved.
+3. Pure PL/SQL pipeline; Python is dev/test shim only.
+4. Git-first DDL: DB changes only by running committed files. Never connect as ADMIN/SYSTEM for DMT DDL.
+5. Prefix system always on (test 9001+); never reset STG/TFM row status — re-run with a new prefix.
+6. Errors accumulate in ERROR_TEXT, never overwrite.
+7. Read `objects/{Name}/README.md` before working on any CEMLI.
+8. APEX work is deferred until the full regression scenario passes on the engine (see plan, Stage F).
 
 ## Session git hygiene (MANDATORY — prevents stale-drift rot)
 

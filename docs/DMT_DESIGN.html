@@ -1015,6 +1015,18 @@
 <section id="standards">
   <h2>7 · Coding standards <span class="b b-impl">VERIFIED 2026-07-06</span></h2>
   <p class="lead">Rules every DMT package, view, and page region follows. Initial set from the requirements review plus the 2026-07-06 audit of the MCCS conversion codebase (the predecessor project — its conventions and its scars both inform these). To be mirrored in <code>docs/coding-standards.md</code>.</p>
+  <div class="note" style="color:#b42318"><strong style="color:#b42318">Binding rules, in priority order <span style="font-weight:700">[2026-10-10, owner-directed]</span></strong> <span style="color:#b42318">These come before every standard below. Rules 1 and 2 are the owner's first two rules; the rest are the rules carried over from the old stack, renumbered. The same list is in the repository's <code>CLAUDE.md</code>.</span>
+    <ol style="color:#b42318;margin:6px 0 6px 18px">
+      <li><strong>No test passes unless GOOD rows reach Fusion base tables (LOADED via BIP) AND BAD rows reach FAILED with reportable ERROR_TEXT.</strong> Nothing may be left UNACCOUNTED.</li>
+      <li><strong>Keep it simple and do not over-engineer.</strong> Users rerun with a new prefix whenever something breaks, so we do not build machinery to prevent or recover from every possible failure. We fix whatever makes a run's reported result wrong. Consistency across objects matters: every object follows the same patterns, including the same work-item stamping, the same reconciliation, the same error format and the same cross-grain rules, unless an exception has been approved.</li>
+      <li>The pipeline is pure PL/SQL. Python is only a development and test aid.</li>
+      <li>Git-first DDL: the database changes only by running committed files. Never connect as ADMIN or SYSTEM for DMT DDL.</li>
+      <li>The prefix system is always on. Never reset STG or TFM row status; rerun with a new prefix instead.</li>
+      <li>Errors accumulate in ERROR_TEXT and are never overwritten.</li>
+      <li>Read <code>objects/{Name}/README.md</code> before working on any object.</li>
+      <li>APEX work waits until the full regression scenario passes on the engine.</li>
+    </ol>
+  </div>
   <div class="note"><strong>Gold standard — worked example.</strong> The complete AP Invoices object (<a href="DMT_GOLD_STANDARD.html">DMT_GOLD_STANDARD.html</a> (rendered page: README + full source of all 8 files; raw files in <code>docs/gold-standard/</code>): validator, transform, FBDI generator, reconciler) is written to every standard below and is the model for all other objects. Its README maps each standard to file:line examples. Reference code — not yet deployed; it codes against the end-state contracts (<code>SET_LOG_CONTEXT</code>, <code>ERR$_</code> error tables) and its assumptions are listed in the README.</div>
   <table>
     <tr><th>Standard</th><th>Rule</th><th>Why</th><th>Known violations to sweep</th></tr>
