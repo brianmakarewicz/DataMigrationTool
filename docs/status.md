@@ -1,5 +1,22 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-11 — before local regression
+
+**What is being tested.** Local regression is about to run on current origin/main, commit 0ab754c (0ab754ca95e8e6fabdb711dc7b4e70e5d1eb3734), using the baseline RegressionTest261010163656. ATP is still on 78560c0 until this batch passes locally and is promoted.
+
+**What is in the batch.**
+- The promotion gate needs fresh regression only when code changed (#743, backlog #770).
+- The console's object list now comes from the catalog, page 53 has a working Back button, and cancelled runs show their cancel reason and a badge (#744, backlog #717, #720, #721).
+- Unused packages are dropped (#745, backlog #730, #731).
+- The PurchaseOrders file takes only Purchase Order style rows, and every load-failure path was audited for scope (#746, backlog #760, #761).
+- The deploy guard waits for runs that are still active, and the APEX deploy finds SQLcl without PATH (#748 and #749, backlog #776).
+- Cross-grain rules (a) through (d) are accepted, with the caveat that (d) applies only when no row of the load loaded (#750).
+- Suppliers stamp and reconcile by work item, and the twelve Top rules are in CLAUDE.md and the design doc (#751, backlog #711).
+
+**Backlog.** The ten items above are marked IN TEST (full regression pending). The counts table now reads 480 items: 355 resolved, 10 in test, none in progress and 55 still open.
+
+**Pending owner decision.** Whether every object should record WORK_QUEUE_ID at file generation, for consistency across objects.
+
 ## 2026-10-11 — checkpoint (work in flight)
 
 **Where things stand.** ATP is still on main commit 78560c0, which passed local regression run 402 and ATP regression run 182 with no new failures and 63 of 63 click-through pages on both instances.
