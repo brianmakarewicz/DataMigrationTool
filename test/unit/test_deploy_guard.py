@@ -234,8 +234,8 @@ try:
     check(False, "#776: apex_deploy: no SQLcl anywhere raises a clear error")
 except FileNotFoundError as e:
     check("SQLcl not found" in str(e), "#776: apex_deploy: no SQLcl anywhere raises a clear error")
-env = ad._sqlcl_env("C:/s/bin/sql.exe", base={"PATH": "P"}, exists=lambda p: True)
-check("C:/s/bin" in env["PATH"].split(ad.os.pathsep) and env["JAVA_HOME"] == ad.JDK_FALLBACK,
+env = ad._sqlcl_env("/opt/sqlcl/bin/sql", base={"PATH": "P"}, exists=lambda p: True)
+check("/opt/sqlcl/bin" in env["PATH"].split(ad.os.pathsep) and env["JAVA_HOME"] == ad.JDK_FALLBACK,
       "#776: apex_deploy: SQLcl env puts its bin dir on PATH and sets JAVA_HOME when unset")
 src = (REPO / "scripts" / "apex_deploy.py").read_text(encoding="utf-8")
 check('["sql", "-s"' not in src and "_find_sqlcl()" in src,
