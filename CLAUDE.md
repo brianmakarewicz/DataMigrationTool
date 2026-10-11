@@ -107,7 +107,7 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
   read its rows in db/seed/dmt_cemli_catalog_tbl.sql and db/seed/dmt_pipeline_def_tbl.sql.
   The registry is the truth. Structure claims without that lookup are guesses.
 
-## Top rules (owner, 2026-10-10)
+## Top rules (owner decision, accepted 2026-10-11)
 
 Binding, in priority order. Each rule points to its detail in `docs/DMT_DESIGN.html`.
 
