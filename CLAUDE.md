@@ -107,16 +107,22 @@ Ports in use elsewhere: 1521 (rt-oracle-free), 1522 (old dmt-local). DMT2 = **15
   read its rows in db/seed/dmt_cemli_catalog_tbl.sql and db/seed/dmt_pipeline_def_tbl.sql.
   The registry is the truth. Structure claims without that lookup are guesses.
 
-## Rules carried over from the old stack (all still binding)
+## Top rules (owner, 2026-10-10)
 
-1. No test passes unless GOOD rows reach Fusion base tables (LOADED via BIP) AND BAD rows reach FAILED with reportable ERROR_TEXT.
-2. Keep it simple and do not over-engineer (owner, 2026-10-10). Users rerun with a new prefix whenever something breaks, so we do not build machinery to prevent or recover from every possible failure. We fix whatever makes a run's reported result wrong. Consistency across objects matters: every object follows the same patterns, including the same work-item stamping, the same reconciliation, the same error format and the same cross-grain rules, unless an exception has been approved.
-3. Pure PL/SQL pipeline; Python is dev/test shim only.
-4. Git-first DDL: DB changes only by running committed files. Never connect as ADMIN/SYSTEM for DMT DDL.
-5. Prefix system always on (test 9001+); never reset STG/TFM row status — re-run with a new prefix.
-6. Errors accumulate in ERROR_TEXT, never overwrite.
-7. Read `objects/{Name}/README.md` before working on any CEMLI.
-8. APEX work is deferred until the full regression scenario passes on the engine (see plan, Stage F).
+Binding, in priority order. Each rule points to its detail in `docs/DMT_DESIGN.html`.
+
+1. Nothing is left UNACCOUNTED: GOOD rows reach the Fusion base tables (LOADED, proven by the job id) and BAD rows end FAILED with a real error. Detail: section 5, Error handling (`#errors`).
+2. Keep it simple and do not over-engineer. Users rerun with a new prefix whenever something breaks, so we fix what makes a run's reported result wrong rather than building machinery for every failure. Consistency across objects matters: every object follows the same patterns unless an exception is approved. Detail: section 7, Coding standards (`#standards`).
+3. Reconciliation finds rows by the Fusion ESS job id, never by prefix or run id; the approved exceptions are listed in the design document. Keys are used only to match a returned row back to its TFM row. Detail: section 5, BIP reconciliation report contract (the note "Reports find rows by Fusion job id" and the approved exceptions under it) (`#errors`).
+4. Cross-grain rules: (a) a parent's error goes down to its children; (b) a child's error goes up to its parent and siblings; (c) a child rejected under a LOADED parent keeps its own error; (d) a whole-load failure fails every row of that load, but only when no row of the load loaded. Detail: section 5, cross-grain failure shapes checklist (`#crossgrain-checklist`).
+5. Always send the rest: a row that fails DMT validation never holds back the other rows of its document. Detail: section 5, ERROR_TEXT tag convention, the [POST_VALIDATION] row (`#errors`).
+6. The prefix is always on. Take exactly the next prefix (the highest used on local and ATP, plus one) and never waste or reuse one. Never reset STG or TFM rows; rerun with a new prefix. Detail: Overview, How users run and re-run data; section 6, Prefix sync across instances (`#overview`).
+7. Never overwrite or delete a Fusion BIP object; deploy a new version alongside it. Detail: section 7, Every BIP report wrapper is deployed with data caching off (checked by scripts/check_bip_no_overwrite.py) (`#standards`).
+8. The database changes only through committed files, never as ADMIN. Never deploy while a DMT_WQ_ or DMT_PF_ job is running (the deploy tools enforce this), and confirm 0 invalid objects afterwards. Detail: section 3, How the schema is deployed (`#tables`).
+9. The pipeline is pure PL/SQL. Python is development and test tooling only. Detail: section 4, Package structure (`#packages`).
+10. Errors accumulate in ERROR_TEXT and are never overwritten, in the standard error format. Detail: section 5, Error handling and the ERROR_TEXT tag convention (`#errors`).
+11. Read `objects/{Name}/README.md` before working on an object. Detail: section 1, Canonical object list (`#objects`).
+12. ATP promotion goes only through the gate: a local regression and click-through on the same code, then an ATP regression and click-through, with the status and backlog updated before and after both. Detail: ATP Promotion Gate (`#promotion-gate`).
 
 ## Session git hygiene (MANDATORY — prevents stale-drift rot)
 
