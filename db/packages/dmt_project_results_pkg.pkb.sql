@@ -417,7 +417,6 @@ AS
         p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_PROJECTS';
-        l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_prj_loaded NUMBER := 0;  l_prj_failed NUMBER := 0;
@@ -428,15 +427,6 @@ AS
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
-        -- Generated-row count across all four tiers drives the shared fetch's
-        -- keyset page-count cap. Done statically here (not in the shared pkg).
-        SELECT (SELECT COUNT(*) FROM DMT_PJF_PROJECTS_TFM_TBL     WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_PJF_TASKS_TFM_TBL        WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_PJF_TEAM_MEMBERS_TFM_TBL WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_PJC_TXN_CONTROLS_TFM_TBL WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   dual;
-
         -- Report V2 finds this work item's rows only: base projects by the
         -- reference the transform stamped ('<run_id>:<work_queue_id>:...', the
         -- owner-approved exception -- Fusion stamps no job id on the project base
@@ -447,7 +437,6 @@ AS
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count,
             x_rows          => l_rows,
             x_error_code    => l_err_code,
             p_work_queue_id => p_work_queue_id);

@@ -60,8 +60,8 @@ BIP-NINE-COLUMNS  The report returns exactly the nine contract columns, in order
     LOAD_REQUEST_ID, SOURCE_REF, DMT_REFERENCE.
     Design doc section 5, "BIP reconciliation report contract" (the seven response
     columns) plus section 7, the recon-engine record "The generic recon engine PARSES
-    generically ..." (SOURCE_REF and DMT_REFERENCE make it nine; DMT_RECON_ENGINE_PKG
-    reads exactly these nine). Further debug columns after the nine are tolerated
+    generically ..." (SOURCE_REF and DMT_REFERENCE make it nine;
+    DMT_RECON_CONTRACT_PKG.FETCH_ROWS reads exactly these nine). Further debug columns after the nine are tolerated
     (section 5: "further per-object columns after these seven are debug-only").
 
 BIP-ERROR-SOURCE  ERROR_MESSAGE is built ONLY from a real Fusion error source.

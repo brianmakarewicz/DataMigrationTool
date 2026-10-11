@@ -67,7 +67,7 @@ That multi-CSV-in-one-zip pattern does NOT apply to the supplier family.
 - STG Table DDL (SiteAssignments): `db/tables/dmt_poz_sup_site_assn_stg_tbl.sql`
 - STG Table DDL (Contacts): `db/tables/dmt_poz_sup_contacts_stg_tbl.sql`
 - TFM Table DDL: `db/tables/dmt_poz_*_tfm_tbl.sql` (same five stems)
-- Validators: `db/packages/dmt_poz_sup_validator_pkg.*`, `dmt_poz_sup_addr_validator_pkg.*`, `dmt_poz_sup_site_validator_pkg.*`, `dmt_poz_sup_site_assn_validator_pkg.*`, `dmt_poz_sup_cont_validator_pkg.*`
+- Validator: `db/packages/dmt_poz_sup_validator_pkg.*` validates all five supplier objects (VALIDATE_SUPPLIERS, VALIDATE_ADDRESSES, VALIDATE_SITES, VALIDATE_SITE_ASSIGNMENTS, VALIDATE_CONTACTS). The four per-object stub validator packages were dropped on 2026-10-10.
 - Transformer: `db/packages/dmt_poz_sup_transform_pkg.*` (one package, five TRANSFORM_* procedures — one per object)
 - FBDI Generators: `db/packages/dmt_poz_sup_fbdi_gen_pkg.*`, `dmt_poz_sup_addr_fbdi_gen_pkg.*`, `dmt_poz_sup_site_fbdi_gen_pkg.*`, `dmt_poz_sup_site_assn_fbdi_gen_pkg.*`, `dmt_poz_sup_cont_fbdi_gen_pkg.*`
 - Results/Reconciliation: one package per object — `db/packages/dmt_poz_sup_results_pkg.*`, `dmt_poz_sup_addr_results_pkg.*`, `dmt_poz_sup_site_results_pkg.*`, `dmt_poz_sup_site_assn_results_pkg.*`, `dmt_poz_sup_cont_results_pkg.*`. Each reads its report through the shared fetch `DMT_RECON_CONTRACT_PKG.FETCH_ROWS` and applies it with static SQL; RECONCILE_BATCH keeps p_cemli_code (registry rows set RECON_HAS_CEMLI_ARG=Y) and rejects any other object's code.

@@ -14,9 +14,9 @@
 -- key. The fix joins the pairs with DMT_UTIL_PKG.C_BIP_PARAM_SEP (CHR(30),
 -- illegal in XML 1.0, so it can never occur in a key read back from a
 -- report). These tests prove the key travels whole, that the legacy '~'
--- form every other caller uses is unchanged, and that both paging callers
--- (DMT_RECON_CONTRACT_PKG.FETCH_ROWS, DMT_RECON_ENGINE_PKG) use the safe
--- separator. No Fusion call is made; nothing is written to any table.
+-- form every other caller uses is unchanged, and that the paging caller
+-- (DMT_RECON_CONTRACT_PKG.FETCH_ROWS; the dormant DMT_RECON_ENGINE_PKG was
+-- dropped under backlog #731) uses the safe separator. No Fusion call is made; nothing is written to any table.
 -- ============================================================
 
 whenever sqlerror exit failure
@@ -122,21 +122,21 @@ begin
     assert(l_pairs.count = 2 and val('P_AFTER_KEY') is null,
            7, 'empty P_AFTER_KEY (first page) is still sent');
 
-    -- 8/9. Both keyset-paging callers join their pairs with the safe
-    --      separator; neither still builds the legacy '~P_AFTER_KEY|' pair.
+    -- 8/9. The keyset-paging caller joins its pairs with the safe
+    --      separator and does not build the legacy '~P_AFTER_KEY|' pair.
     select count(*) into l_cnt
     from   user_source
-    where  name in ('DMT_RECON_CONTRACT_PKG', 'DMT_RECON_ENGINE_PKG')
+    where  name = 'DMT_RECON_CONTRACT_PKG'
     and    type = 'PACKAGE BODY'
     and    instr(text, '''~P_AFTER_KEY|''') > 0;
     assert(l_cnt = 0, 8, 'no paging caller builds the legacy ''~P_AFTER_KEY|'' pair');
 
     select count(distinct name) into l_cnt
     from   user_source
-    where  name in ('DMT_RECON_CONTRACT_PKG', 'DMT_RECON_ENGINE_PKG')
+    where  name = 'DMT_RECON_CONTRACT_PKG'
     and    type = 'PACKAGE BODY'
     and    instr(text, 'CONSTANT VARCHAR2(1)  := DMT_UTIL_PKG.C_BIP_PARAM_SEP') > 0;
-    assert(l_cnt = 2, 9, 'both paging callers declare C_SEP from DMT_UTIL_PKG.C_BIP_PARAM_SEP');
+    assert(l_cnt = 1, 9, 'the paging caller declares C_SEP from DMT_UTIL_PKG.C_BIP_PARAM_SEP');
 
     -- 10/11. Backlog #485: the ERP non-paging multi-parameter callers join
     --        their pairs with the safe separator too. No ERP package body

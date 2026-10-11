@@ -37,23 +37,15 @@ AS
         p_request_id IN VARCHAR2
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_ABSENCES';
-        l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_loaded    NUMBER := 0;
         l_failed    NUMBER := 0;
     BEGIN
-        -- Generated-row count is done statically here (not in the shared pkg),
-        -- and drives the shared fetch's keyset page-count cap.
-        SELECT COUNT(*) INTO l_gen_count
-        FROM   DMT_ABSENCE_TFM_TBL
-        WHERE  RUN_ID = p_run_id;
-
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code  => C_CONTRACT_CEMLI,
             p_run_id      => p_run_id,
             p_load_ess_id => TO_NUMBER(p_request_id),
-            p_row_cap     => l_gen_count,
             x_rows        => l_rows,
             x_error_code  => l_err_code);
 

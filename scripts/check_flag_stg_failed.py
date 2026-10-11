@@ -59,7 +59,7 @@ of these holds:
   d. it sets a FUSION_* column, REQUEST_ID or LOAD_REQUEST_ID (Fusion ids);
   e. it sets ERROR_TEXT from a *_TFM_TBL sub-select;
   f. it lives in a reconcile package (any *_results_pkg, dmt_hdl_util_pkg,
-     dmt_recon_engine_pkg, dmt_recon_contract_pkg, dmt_queue_worker_pkg,
+     dmt_recon_contract_pkg, dmt_queue_worker_pkg,
      dmt_loader_pkg) -- those packages run after the load and have no pre-TFM
      reason to touch STG at all.
 Comments are stripped first, so prose that mentions an old write-back cannot trip it.
@@ -96,8 +96,6 @@ TEMPLATE = "dmt_poz_sup_validator_pkg"
 # Validator packages that own an STG table AND use the named-helper form.
 REQUIRED = [
     "dmt_poz_sup_validator_pkg",        # template
-    "dmt_poz_sup_addr_validator_pkg",   "dmt_poz_sup_site_validator_pkg",
-    "dmt_poz_sup_site_assn_validator_pkg","dmt_poz_sup_cont_validator_pkg",
     "dmt_ap_validator_pkg",             "dmt_ap_pay_term_validator_pkg",
     "dmt_req_validator_pkg",            "dmt_misc_receipt_validator_pkg",
     "dmt_gl_validator_pkg",             "dmt_gl_budget_validator_pkg",
@@ -243,7 +241,7 @@ def check_pkg(base):
 
 # Packages that run after the load; any STG UPDATE in them is a write-back (rule f).
 RECONCILE_PKG_RE = re.compile(
-    r"^(dmt_\w+_results_pkg|dmt_hdl_util_pkg|dmt_recon_engine_pkg|"
+    r"^(dmt_\w+_results_pkg|dmt_hdl_util_pkg|"
     r"dmt_recon_contract_pkg|dmt_queue_worker_pkg|dmt_loader_pkg)$")
 
 STATIC_UPD_RE = re.compile(r"\bUPDATE\s+(?:DMT_OWNER\.)?(DMT_\w*_STG_TBL)\b", re.I)

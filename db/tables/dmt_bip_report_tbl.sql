@@ -54,13 +54,12 @@ COMMENT ON TABLE "DMT_BIP_REPORT_TBL"  IS 'BIP report registry. One row per CEML
 --                     the Fusion base-table id into on a BASE/SUCCESS row.
 --   RECON_KEY_SQL     (documentation) how RECON_KEY is built for the object; the
 --                     reconciler matches the report's RECORD_KEY to TFM.RECON_KEY.
---   APPLY_PROC        PKG.PROC of the object's thin STATIC apply (APPLY_<OBJ>).
---                     The generic recon engine (DMT_RECON_ENGINE_PKG) stages the
---                     parsed report into DMT_RECON_STAGE_GTT, then dispatches
---                     this proc through the sanctioned invoke_registered site.
---                     It is a PROCEDURE NAME (invoke_registered validates the
---                     PKG.PROC allow-pattern), never a table or column name — so
---                     no new dynamic-SQL site is introduced.
+--   APPLY_PROC        RETIRED (backlog #731). It named the APPLY_<OBJ> proc the
+--                     generic recon engine DMT_RECON_ENGINE_PKG dispatched; that
+--                     engine and its DMT_RECON_STAGE_GTT were dropped on
+--                     2026-10-10 (migration 2026-10-10_drop_unused_packages.sql).
+--                     Every row holds NULL and nothing reads the column; it is
+--                     kept only so the table shape matches existing databases.
 -- ---------------------------------------------------------------------------
 declare
   procedure add_col(p_col varchar2, p_ddl varchar2) is
@@ -84,7 +83,7 @@ COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."CONTRACT_VERSION" IS 'Contract v1 confor
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."TFM_TABLE" IS 'TFM table the shared Contract v1 parser updates for this object.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."FUSION_ID_COLUMN" IS 'TFM column the shared parser stamps the Fusion base-table id into on a BASE/SUCCESS row.';
 COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."RECON_KEY_SQL" IS 'Documents how RECON_KEY is built for this object (report RECORD_KEY is matched to TFM.RECON_KEY).';
-COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."APPLY_PROC" IS 'PKG.PROC of the object thin static apply (APPLY_<OBJ>), dispatched by DMT_RECON_ENGINE_PKG through invoke_registered after staging the report to DMT_RECON_STAGE_GTT.';
+COMMENT ON COLUMN "DMT_BIP_REPORT_TBL"."APPLY_PROC" IS 'Retired (backlog #731): was the APPLY_<OBJ> proc the dropped generic engine DMT_RECON_ENGINE_PKG dispatched. Always NULL; nothing reads it.';
 
 -- ---------------------------------------------------------------------------
 -- Post-run comparison report columns (design: post-run comparison report).
