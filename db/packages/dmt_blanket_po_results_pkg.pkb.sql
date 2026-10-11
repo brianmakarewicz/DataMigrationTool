@@ -72,7 +72,6 @@ AS
         p_import_ess_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_BLANKET_POS';
-        l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
@@ -81,18 +80,11 @@ AS
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
-        -- Generated-row count across both tiers drives the keyset page-count cap.
-        SELECT (SELECT COUNT(*) FROM DMT_PO_HEADERS_INT_TFM_TBL WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_PO_LINES_INT_TFM_TBL   WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   dual;
-
         DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
             p_cemli_code    => C_CEMLI,
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count,
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 

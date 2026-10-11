@@ -137,7 +137,6 @@
         l_fetch_code    NUMBER;
         l_sql_rows      DMT_RECON_ROW_TBL := DMT_RECON_ROW_TBL();
         l_load_ess_id   NUMBER;
-        l_row_cap       NUMBER;
     BEGIN
         x_error_code := DMT_UTIL_PKG.C_ERROR;
 
@@ -180,14 +179,6 @@
             RETURN;
         END IF;
 
-        -- Row cap for the shared fetch's keyset paging = this run's record count
-        -- for the object (from the view, static).
-        SELECT COUNT(*)
-          INTO l_row_cap
-          FROM DMT_RUN_RECORDS_V
-         WHERE RUN_ID = p_run_id
-           AND CEMLI_CODE = p_cemli_code;
-
         -- The load ESS job id for this object/run (best available; NULL is fine —
         -- FETCH_ROWS treats it as the Contract v1 P_LOAD_REQUEST_ID). LOAD_ESS_JOB_ID
         -- is a VARCHAR2 column, so convert deliberately: take the numeric-only
@@ -211,7 +202,6 @@
             p_cemli_code  => p_cemli_code,
             p_run_id      => p_run_id,
             p_load_ess_id => l_load_ess_id,
-            p_row_cap     => l_row_cap,
             x_rows        => l_fetch_rows,
             x_error_code  => l_fetch_code);
 
@@ -388,13 +378,11 @@
                 -- to THIS run by P_RUN_ID / P_LOAD_REQUEST_ID (the report's run
                 -- filter is the wqid scope); it owns all BIP transport, never
                 -- touches a TFM table, and never raises out (reports via its code).
-                -- p_row_cap is the run/object total so the keyset paging is bounded.
                 BEGIN
                     DMT_RECON_CONTRACT_PKG.FETCH_ROWS(
                         p_cemli_code  => o.CEMLI_CODE,
                         p_run_id      => p_run_id,
                         p_load_ess_id => l_load_ess_id,
-                        p_row_cap     => o.TFM_TOTAL_ROWS,
                         x_rows        => l_fetch_rows,
                         x_error_code  => l_fetch_code);
                 EXCEPTION

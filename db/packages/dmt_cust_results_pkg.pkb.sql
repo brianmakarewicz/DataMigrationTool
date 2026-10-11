@@ -236,7 +236,6 @@
         p_work_queue_id IN NUMBER DEFAULT NULL
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_CUSTOMERS';
-        l_gen_count NUMBER := 0;
         l_batch_id  NUMBER;          -- the Fusion import batch id this load sent
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
@@ -247,18 +246,6 @@
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
         l_no_msg    NUMBER := 0;     -- ERROR rows the report sent with no message
     BEGIN
-        -- Generated-row count across all SEVEN Customer TFM tables (static, this
-        -- object's own tables) drives the shared fetch's keyset page-count cap.
-        SELECT (SELECT COUNT(*) FROM DMT_HZ_PARTIES_TFM_TBL         WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_LOCATIONS_TFM_TBL       WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_PARTY_SITES_TFM_TBL     WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_PARTY_SITE_USES_TFM_TBL WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_ACCOUNTS_TFM_TBL        WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_ACCT_SITES_TFM_TBL      WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_HZ_ACCT_SITE_USES_TFM_TBL  WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   DUAL;
-
         -- The report's INTERFACE tier filters HZ_IMP_*_T on
         -- load_request_id = :P_LOAD_REQUEST_ID, and those interface rows carry the
         -- LOAD ESS request id (InterfaceLoaderController), NOT the import ess id. So
@@ -276,7 +263,6 @@
             p_run_id          => p_run_id,
             p_load_ess_id     => p_load_ess_id,
             p_import_ess_id   => p_import_ess_id,
-            p_row_cap         => l_gen_count,
             x_rows            => l_rows,
             x_error_code      => l_err_code,
             p_fusion_batch_id => l_batch_id);

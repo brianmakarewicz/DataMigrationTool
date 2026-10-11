@@ -20,8 +20,8 @@
 -- A report without PAGE_KEY is single-grain (each record is its own header):
 -- its cursor is the last RECORD_KEY and a page is the last page when it holds
 -- fewer than P_CHUNK_SIZE rows.
--- There is NO page-count cap (the cap derived from p_row_cap is retired; the
--- argument is ignored). The only loop guard is the runaway check in
+-- There is NO page-count cap (the retired row-count argument that sized one
+-- was removed, backlog #730). The only loop guard is the runaway check in
 -- ACCEPT_PAGE: a page whose first key is not greater than the cursor it was
 -- given, or a full page that yields no next key, raises an error, so the fetch
 -- fails loudly with an empty result. It never returns a partial set as success.
@@ -212,7 +212,6 @@
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
         p_work_queue_id IN  NUMBER   DEFAULT NULL,

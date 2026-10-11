@@ -34,31 +34,14 @@ begin
 end;
 /
 
-prompt == Point GLBalances at the generic engine + its static apply ==
--- Converge the GLBalances registry: Contract v1 columns + APPLY_PROC (the
--- engine dispatches DMT_GL_RESULTS_PKG.APPLY_GL after staging the report).
-merge into "DMT_BIP_REPORT_TBL" t
-using (
-    select 'GLBalances'                     cemli_code,
-           1                                contract_version,
-           'DMT_GL_INTERFACE_TFM_TBL'       tfm_table,
-           'FUSION_JE_HEADER_ID'            fusion_id_column,
-           'DMT_GL_RESULTS_PKG.APPLY_GL'    apply_proc
-    from dual
-) s
-on (t."CEMLI_CODE" = s.cemli_code)
-when matched then update set
-    t."CONTRACT_VERSION" = s.contract_version,
-    t."TFM_TABLE"        = s.tfm_table,
-    t."FUSION_ID_COLUMN" = s.fusion_id_column,
-    t."APPLY_PROC"       = s.apply_proc;
-
--- Route GLBalances' RECON_PROC through the generic engine (RECON_HAS_CEMLI_ARG
--- = 'Y' so the engine gets p_cemli_code).
-update "DMT_PIPELINE_DEF_TBL"
-   set "RECON_PROC"          = 'DMT_RECON_ENGINE_PKG.RECONCILE_BATCH',
-       "RECON_HAS_CEMLI_ARG" = 'Y'
- where "CEMLI_CODE" = 'GLBalances';
+-- The GLBalances routing that used to follow here (APPLY_PROC =
+-- DMT_GL_RESULTS_PKG.APPLY_GL and RECON_PROC = the generic engine's
+-- RECONCILE_BATCH) was removed on 2026-10-10 (backlog #731): GLBalances moved
+-- back to its own reconciler on 2026-09-30 (migration
+-- 2026-09-30_glbalances_shared_parser_option_a.sql) and the generic engine was
+-- dropped (2026-10-10_drop_unused_packages.sql). Re-running the old routing on
+-- every deploy pointed GLBalances at the engine until the 09-30 migration
+-- pointed it back; with the engine gone it would name a missing package.
 
 prompt == Log migration (idempotent) ==
 merge into DMT_MIGRATION_LOG t

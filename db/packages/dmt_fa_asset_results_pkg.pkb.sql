@@ -98,7 +98,6 @@
         p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ASSETS';
-        l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_hdr_loaded NUMBER := 0;  l_hdr_failed NUMBER := 0;
@@ -107,17 +106,6 @@
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
         l_marker    VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
     BEGIN
-        -- Generated-row count drives the shared fetch's keyset page-count cap
-        -- (a safety page limit, not an exact total). Done statically here (not in
-        -- the shared pkg). The DM now returns two BASE tiers -- the header and the
-        -- backlog #11 'Assets Distribution' tier (one row per asset that has an
-        -- active distribution) -- so the header count plus the assign-child count
-        -- bounds the rows the report can return.
-        SELECT (SELECT COUNT(*) FROM DMT_FA_ASSET_HDR_TFM_TBL    WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_FA_ASSET_ASSIGN_TFM_TBL WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   dual;
-
         -- Report V2 (owner decision 2026-10-07) finds rows only by this work
         -- item's load job id: base assets and distributions through their POSTED
         -- FA_MASS_ADDITIONS row (FA_ADDITIONS_B carries no request id), interface
@@ -129,7 +117,6 @@
             p_run_id        => p_run_id,
             p_load_ess_id   => TO_NUMBER(p_request_id),
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count,
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 

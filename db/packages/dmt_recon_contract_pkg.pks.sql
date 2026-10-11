@@ -116,11 +116,6 @@
     --                   the work item's projects by the reference DMT stamps,
     --                   '<run_id>:<work_queue_id>:<legacy reference>'. Every other
     --                   caller leaves it NULL and its report never sees P_WQ_ID.
-    --   p_row_cap       RETIRED 2026-10-09 (backlog #680) and ignored: the
-    --                   page-count cap it sized is gone (design section 5,
-    --                   "Reconciliation fetches page on header boundaries"). Kept
-    --                   in the signature only until every caller stops passing it
-    --                   (backlog #730).
     --   x_rows          OUT the parsed rows (empty when the report returns zero rows).
     --   x_error_code    OUT DMT_UTIL_PKG.C_SUCCESS or C_ERROR. On C_ERROR the failure
     --                   detail is in DMT_LOG_TBL and x_rows is empty.
@@ -136,7 +131,6 @@
         p_run_id        IN  NUMBER,
         p_load_ess_id   IN  NUMBER   DEFAULT NULL,
         p_import_ess_id IN  NUMBER   DEFAULT NULL,
-        p_row_cap       IN  NUMBER   DEFAULT NULL,
         x_rows          OUT T_RECON_TBL,
         x_error_code    OUT NUMBER,
         p_work_queue_id IN  NUMBER   DEFAULT NULL,

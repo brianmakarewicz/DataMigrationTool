@@ -1684,35 +1684,6 @@ AS
     END RECONCILE_VIA_REGISTRY;
 
     -- ============================================================
-    -- INVOKE_APPLY — dispatch an object's thin static APPLY_<OBJ> proc through
-    -- the SAME sanctioned invoke_registered site (style RECON). The generic
-    -- recon engine has already staged the parsed report into
-    -- DMT_RECON_STAGE_GTT; the object's own proc reads it and MERGEs with STATIC
-    -- SQL into its literally-named TFM table. No new dynamic-SQL site is added:
-    -- the ONLY EXECUTE IMMEDIATE remains inside invoke_registered.
-    -- ============================================================
-    PROCEDURE INVOKE_APPLY (
-        p_apply_proc    IN VARCHAR2,
-        p_run_id        IN NUMBER,
-        p_cemli_code    IN VARCHAR2,
-        p_load_ess_id   IN NUMBER   DEFAULT NULL,
-        p_import_ess_id IN NUMBER   DEFAULT NULL,
-        p_work_queue_id IN NUMBER   DEFAULT NULL
-    ) IS
-        l_ignore_keys DMT_PARTITION_KEY_TBL;  -- unused OUT for non-KEYS invoke_registered
-    BEGIN
-        invoke_registered(
-            p_proc          => p_apply_proc,
-            p_style         => 'RECON',
-            p_run_id        => p_run_id,
-            p_cemli_code    => p_cemli_code,
-            p_load_ess_id   => p_load_ess_id,
-            p_import_ess_id => p_import_ess_id,
-            p_work_queue_id => p_work_queue_id,
-            x_keys          => l_ignore_keys);
-    END INVOKE_APPLY;
-
-    -- ============================================================
     -- INVOKE_RESET — dispatch an object's thin static RESET_UNACCOUNTED proc
     -- through the SAME sanctioned invoke_registered site (style RECON). Used by
     -- the "re-run reconcile for a run" recovery path (DMT_QUEUE_PKG.RERUN_RUN,
@@ -1722,8 +1693,9 @@ AS
     -- those rows. Each object's own results package carries a STATIC
     -- RESET_UNACCOUNTED proc (a static UPDATE against its literally-named TFM
     -- table(s) — no dynamic SQL, no catalog-name binding), and this wrapper drives
-    -- it through the ONE existing dynamic-invocation site, exactly as INVOKE_APPLY
-    -- drives the object's static APPLY proc. No new dynamic-SQL site is added: the
+    -- it through the ONE existing dynamic-invocation site, the same way
+    -- RECONCILE_VIA_REGISTRY drives the object's RECON_PROC. No new dynamic-SQL
+    -- site is added: the
     -- ONLY EXECUTE IMMEDIATE remains inside invoke_registered, and the reset proc
     -- name is registry data (DMT_PIPELINE_DEF_TBL.RESET_PROC), a PKG.PROC validated
     -- by the same allow-pattern, never a table or column name. The reset proc uses

@@ -185,8 +185,6 @@ AS
             p_run_id        => p_run_id,
             p_load_ess_id   => TO_NUMBER(p_request_id),
             p_import_ess_id => p_import_ess_id,
-            -- No p_row_cap (backlog #224): report V5 pages by header, which the
-            -- shared fetch runs without a page-count cap.
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 

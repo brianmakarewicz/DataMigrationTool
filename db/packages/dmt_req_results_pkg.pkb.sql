@@ -99,7 +99,6 @@ AS
         p_import_ess_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_REQUISITIONS';
-        l_gen_count NUMBER := 0;
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
         l_err_code  NUMBER;
         l_hdr_loaded  NUMBER := 0;  l_hdr_failed  NUMBER := 0;
@@ -109,14 +108,6 @@ AS
         l_dff_seq   NUMBER;          -- backlog #65 tier 2: TFM_SEQUENCE_ID from DFF_KEY
         l_tier      VARCHAR2(10);    -- backlog #65: which tier matched (audit log)
     BEGIN
-        -- Generated-row count across all three tiers drives the shared fetch's
-        -- keyset page-count cap. Done statically here (not in the shared pkg).
-        SELECT (SELECT COUNT(*) FROM DMT_POR_REQ_HEADERS_TFM_TBL WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_POR_REQ_LINES_TFM_TBL   WHERE RUN_ID = p_run_id)
-             + (SELECT COUNT(*) FROM DMT_POR_REQ_DISTS_TFM_TBL   WHERE RUN_ID = p_run_id)
-        INTO   l_gen_count
-        FROM   dual;
-
         -- Report V2 (owner decision 2026-10-07) finds rows only by this work
         -- item's Fusion job ids: base rows by the import job's REQUEST_ID,
         -- interface rows and errors by the load request id and the import
@@ -127,7 +118,6 @@ AS
             p_run_id        => p_run_id,
             p_load_ess_id   => TO_NUMBER(p_request_id),
             p_import_ess_id => p_import_ess_id,
-            p_row_cap       => l_gen_count,
             x_rows          => l_rows,
             x_error_code    => l_err_code);
 
