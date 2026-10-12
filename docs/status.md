@@ -1,5 +1,13 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-11 — after local regression / before ATP regression
+
+**Local result.** Local regression run 412 on main 7b9a864, against the baseline RegressionTest261010163656, passed with no new failures; the 7 failures it shows are the known ones. The local click-through passed 68 of 68 pages.
+
+**ATP next.** The ATP deploy of 7b9a864 is under way, and the baseline RegressionTest261010163656 is already on ATP. Once the deploy finishes, the ATP regression and the ATP click-through run.
+
+**Backlog.** The 12 IN TEST items (#711, #717, #720, #721, #730, #731, #760, #761, #770, #776, #777 and #780) stay IN TEST, each now noting that local run 412 passed and ATP is pending. The counts table is unchanged at 484 items: 355 resolved, 12 in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
 ## 2026-10-11 — before local regression (updated: now testing main 7b9a864)
 
 **What is being tested now.** The local regression now tests current origin/main, commit 7b9a864, still against the baseline RegressionTest261010163656. That commit carries everything in the earlier batch below plus two more changes. The deploy now recompiles invalid objects before it counts them, so DMT_REST_LOOKUP_PKG and DMT_V_CATALOG_HEALTH no longer block the promotion and the count can no longer read -1 (#754, backlog #780). Every ERP object now stamps WORK_QUEUE_ID on its TFM rows at FBDI file generation, and each reconciler is scoped by work item (#753, backlog #777); proof run 411 matched run 402 exactly, with 0 UNACCOUNTED. ATP is still on 78560c0 until this batch passes locally and is promoted.
