@@ -1,6 +1,12 @@
 # DMT2 -- Session Status Log
 
-## 2026-10-11 — before local regression
+## 2026-10-11 — before local regression (updated: now testing main 7b9a864)
+
+**What is being tested now.** The local regression now tests current origin/main, commit 7b9a864, still against the baseline RegressionTest261010163656. That commit carries everything in the earlier batch below plus two more changes. The deploy now recompiles invalid objects before it counts them, so DMT_REST_LOOKUP_PKG and DMT_V_CATALOG_HEALTH no longer block the promotion and the count can no longer read -1 (#754, backlog #780). Every ERP object now stamps WORK_QUEUE_ID on its TFM rows at FBDI file generation, and each reconciler is scoped by work item (#753, backlog #777); proof run 411 matched run 402 exactly, with 0 UNACCOUNTED. ATP is still on 78560c0 until this batch passes locally and is promoted.
+
+**Backlog.** Items #777 and #780 are now also marked IN TEST (full regression pending). The counts table now reads 484 items: 355 resolved, 12 in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
+## 2026-10-11 — before local regression (earlier batch, main 0ab754c)
 
 **What is being tested.** Local regression is about to run on current origin/main, commit 0ab754c (0ab754ca95e8e6fabdb711dc7b4e70e5d1eb3734), using the baseline RegressionTest261010163656. ATP is still on 78560c0 until this batch passes locally and is promoted.
 
@@ -15,7 +21,7 @@
 
 **Backlog.** The ten items above are marked IN TEST (full regression pending). The counts table now reads 480 items: 355 resolved, 10 in test, none in progress and 55 still open.
 
-**Pending owner decision.** Whether every object should record WORK_QUEUE_ID at file generation, for consistency across objects.
+**Owner decision since taken.** Every object records WORK_QUEUE_ID at file generation, now merged as #753 (see the entry above).
 
 ## 2026-10-11 — checkpoint (work in flight)
 
