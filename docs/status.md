@@ -1,5 +1,24 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-11 — after ATP regression: batch promoted
+
+**Result.** Main commit 7b9a864 is now on ATP. Local regression run 412, against the baseline RegressionTest261010163656, passed with no new failures (the 7 failures it shows are the known ones), and the local click-through passed 68 of 68 pages. The ATP deploy was clean: the gate passed and ATP has 0 invalid objects. ATP regression run 183, using prefix 93433 (the highest prefix used plus one), passed with no new failures (the same 7 known ones), and the ATP click-through passed 68 of 68 pages.
+
+**What the promoted batch contains.**
+- The promotion gate asks for fresh regression only when code changed (#743).
+- The console's object list comes from the catalog, page 53 has a Back button, and cancelled runs show their cancel reason (#744).
+- Unused packages are dropped (#745).
+- The PurchaseOrders file takes only Purchase Order style rows, and every load-failure path was audited for scope (#746).
+- The deploy guard waits for runs that are still active, and the APEX deploy finds SQLcl without PATH (#748 and #749).
+- Cross-grain rules (a) through (d) are accepted (#750).
+- Suppliers stamp and reconcile by work item, and the twelve Top rules are written down (#751).
+- The deploy recompiles invalid objects before it counts them (#754).
+- Every ERP object stamps WORK_QUEUE_ID at file generation (#753).
+
+**Backlog.** All 12 IN TEST items (#711, #717, #720, #721, #730, #731, #760, #761, #770, #776, #777 and #780) are now RESOLVED, verified by local run 412 and ATP run 183. The counts table reads 484 items: 367 resolved, none in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
+**Next.** The remaining low-priority ERP backlog, then the config objects, then HCM.
+
 ## 2026-10-11 — after local regression / before ATP regression
 
 **Local result.** Local regression run 412 on main 7b9a864, against the baseline RegressionTest261010163656, passed with no new failures; the 7 failures it shows are the known ones. The local click-through passed 68 of 68 pages.
