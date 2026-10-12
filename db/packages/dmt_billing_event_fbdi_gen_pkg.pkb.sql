@@ -239,7 +239,8 @@ AS
 
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID
         UPDATE DMT_PJB_BILL_EVENTS_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         -- Free temporary CLOBs

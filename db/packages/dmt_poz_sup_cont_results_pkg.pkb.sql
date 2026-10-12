@@ -29,7 +29,7 @@
 -- Every UPDATE is guarded TFM_STATUS NOT IN ('LOADED','FAILED'), so a proven
 -- LOADED row is never flipped (report row order is not guaranteed). The apply
 -- is scoped to the run and, when the queue passes one, to the work item: the
--- transform stamps WORK_QUEUE_ID on every row it inserts (backlog #711), the
+-- generator stamps WORK_QUEUE_ID on every row it sends (backlog #711, #777), the
 -- same (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id) predicate
 -- the other objects' reconcilers use.
 -- REVISIONS:

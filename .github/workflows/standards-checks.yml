@@ -58,3 +58,7 @@ jobs:
       - name: BIP catalog objects are never overwritten or deleted (backlog 757)
         if: always()
         run: python scripts/check_bip_no_overwrite.py
+
+      - name: WORK_QUEUE_ID stamped at FBDI generation; reconcilers scope by work item (backlog 777)
+        if: always()
+        run: python scripts/check_work_queue_id_at_generation.py

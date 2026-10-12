@@ -401,7 +401,6 @@ AS
                                      p_work_queue_id => DMT_LOADER_PKG.g_gen_queue_id,
                                      p_tfm_seq_id    => TFM_SEQUENCE_ID,
                                      p_format        => DMT_REF_ID_PKG.GET_REF_FORMAT('DMT_INV_TRX_TFM_TBL'))),
-               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
@@ -529,6 +528,7 @@ AS
         UPDATE DMT_INV_TRX_TFM_TBL
         SET    TFM_STATUS        = 'GENERATED',
                FBDI_CSV_ID       = l_trx_csv_id,
+               WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                LAST_UPDATED_DATE = SYSDATE
         WHERE  RUN_ID = p_run_id
         AND    TFM_STATUS     = 'STAGED';

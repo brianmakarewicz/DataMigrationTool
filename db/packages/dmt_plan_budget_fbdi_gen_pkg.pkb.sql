@@ -99,7 +99,8 @@
         DMT_UTIL_PKG.BUILD_ZIP_FROM_CSVS(p_run_id, l_zip_id, 'PlanningBudgets', x_filename, l_zip, l_bytes);
 
         UPDATE DMT_PLAN_BUDGET_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED';
 
         DBMS_LOB.FREETEMPORARY(l_csv);

@@ -282,7 +282,8 @@ AS
         -- Update TFM rows to GENERATED and stamp FBDI_CSV_ID.
         -- Headers only: filter by STYLE_DISPLAY_NAME and PRC_BU_NAME.
         UPDATE DMT_PO_HEADERS_INT_TFM_TBL
-        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id, LAST_UPDATED_DATE = l_now
+        SET    TFM_STATUS = 'GENERATED', FBDI_CSV_ID = l_fbdi_csv_id,
+               WORK_QUEUE_ID = DMT_LOADER_PKG.g_gen_queue_id, LAST_UPDATED_DATE = l_now
         WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
         AND    STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'
         AND    (p_prc_bu_name IS NULL OR PRC_BU_NAME = p_prc_bu_name);

@@ -123,7 +123,8 @@
     PROCEDURE APPLY_CONTRACT_V1_ITEMS (
         p_run_id        IN NUMBER,
         p_load_ess_id   IN NUMBER,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(30) := 'APPLY_CONTRACT_V1_ITEMS';
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
@@ -190,6 +191,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -205,6 +207,7 @@
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
                                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                                 l_rc := SQL%ROWCOUNT;
@@ -219,6 +222,7 @@
                                    RESULTS_UPDATED_DATE = SYSDATE,
                                    LAST_UPDATED_DATE    = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    RECON_KEY = l_rows(i).BUSINESS_KEY
                             AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                             l_rc := SQL%ROWCOUNT;
@@ -245,6 +249,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -273,6 +278,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -288,6 +294,7 @@
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
                                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                                 l_rc := SQL%ROWCOUNT;
@@ -302,6 +309,7 @@
                                    RESULTS_UPDATED_DATE = SYSDATE,
                                    LAST_UPDATED_DATE    = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    RECON_KEY = l_rows(i).BUSINESS_KEY
                             AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                             l_rc := SQL%ROWCOUNT;
@@ -319,6 +327,7 @@
                                    RESULTS_UPDATED_DATE = SYSDATE,
                                    LAST_UPDATED_DATE    = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    RECON_KEY = l_rows(i).RECORD_KEY
                             AND    TFM_STATUS = 'LOADED'
                             AND    FUSION_CATEGORY_ID IS NULL;
@@ -343,6 +352,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -407,7 +417,8 @@
         APPLY_CONTRACT_V1_ITEMS(
             p_run_id        => p_run_id,
             p_load_ess_id   => p_load_ess_id,
-            p_import_ess_id => p_import_ess_id);
+            p_import_ess_id => p_import_ess_id,
+            p_work_queue_id => p_work_queue_id);
 
         -- No second pass (backlog #482). The old loop re-ran the report once per
         -- InterfaceLoaderController request of the whole RUN with the retired

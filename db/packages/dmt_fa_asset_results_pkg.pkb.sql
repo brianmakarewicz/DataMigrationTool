@@ -95,7 +95,8 @@
     PROCEDURE APPLY_CONTRACT_V1_ASSETS (
         p_run_id        IN NUMBER,
         p_request_id    IN VARCHAR2,
-        p_import_ess_id IN NUMBER
+        p_import_ess_id IN NUMBER,
+        p_work_queue_id IN NUMBER
     ) IS
         C_PROC      CONSTANT VARCHAR2(40) := 'APPLY_CONTRACT_V1_ASSETS';
         l_rows      DMT_RECON_CONTRACT_PKG.T_RECON_TBL;
@@ -170,6 +171,7 @@
                         SET    FUSION_DISTRIBUTION_ID = l_rows(i).FUSION_ID,
                                LAST_UPDATED_DATE      = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    ASSET_NUMBER = SUBSTR(l_rows(i).RECORD_KEY, 1,
                                                      LENGTH(l_rows(i).RECORD_KEY) - 5)
                         AND    FUSION_DISTRIBUTION_ID IS NULL;
@@ -194,6 +196,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID    = p_run_id
+                    AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_rc := SQL%ROWCOUNT;
@@ -212,6 +215,7 @@
                                    RESULTS_UPDATED_DATE = SYSDATE,
                                    LAST_UPDATED_DATE    = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    TFM_SEQUENCE_ID = l_dff_seq
                             AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                             l_rc := SQL%ROWCOUNT;
@@ -229,6 +233,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    ASSET_NUMBER = l_rows(i).BUSINESS_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -252,6 +257,7 @@
                            RESULTS_UPDATED_DATE = SYSDATE,
                            LAST_UPDATED_DATE    = SYSDATE
                     WHERE  RUN_ID    = p_run_id
+                    AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                     AND    RECON_KEY = l_rows(i).RECORD_KEY
                     AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                     l_hdr_failed := l_hdr_failed + SQL%ROWCOUNT;
@@ -291,6 +297,7 @@
                    AND    ROWNUM = 1) || '~' || bk.BOOK_TYPE_CODE,
                bk.LAST_UPDATED_DATE  = SYSDATE
         WHERE  bk.RUN_ID     = p_run_id
+        AND    (p_work_queue_id IS NULL OR bk.WORK_QUEUE_ID = p_work_queue_id)
         AND    bk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
@@ -323,6 +330,7 @@
                     AND    ROWNUM = 1)),
                bk.LAST_UPDATED_DATE = SYSDATE
         WHERE  bk.RUN_ID     = p_run_id
+        AND    (p_work_queue_id IS NULL OR bk.WORK_QUEUE_ID = p_work_queue_id)
         AND    bk.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
@@ -342,6 +350,7 @@
         SET    asn.TFM_STATUS        = 'LOADED',
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID     = p_run_id
+        AND    (p_work_queue_id IS NULL OR asn.WORK_QUEUE_ID = p_work_queue_id)
         AND    asn.TFM_STATUS = 'GENERATED'
         AND    asn.FUSION_DISTRIBUTION_ID IS NOT NULL
         AND    EXISTS (
@@ -373,6 +382,7 @@
                     AND    ROWNUM = 1)),
                asn.LAST_UPDATED_DATE = SYSDATE
         WHERE  asn.RUN_ID     = p_run_id
+        AND    (p_work_queue_id IS NULL OR asn.WORK_QUEUE_ID = p_work_queue_id)
         AND    asn.TFM_STATUS = 'GENERATED'
         AND    EXISTS (
             SELECT 1 FROM DMT_FA_ASSET_HDR_TFM_TBL hdr
@@ -1125,7 +1135,7 @@
             p_package        => C_PKG,
             p_procedure      => C_PROC);
 
-        APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id);
+        APPLY_CONTRACT_V1_ASSETS(p_run_id, TO_CHAR(p_load_ess_id), p_import_ess_id, p_work_queue_id);
 
         -- Backlog #748: PrepareMassAdditions ended ERROR/WARNING -- each asset's
         -- real error is in that job's log, not in the interface tables.

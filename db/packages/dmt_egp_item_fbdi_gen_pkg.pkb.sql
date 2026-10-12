@@ -986,14 +986,14 @@
 
         -- Mark items TFM rows as GENERATED (only this batch's rows).
         -- Work-queue-ID core (2026-07-20): stamp WORK_QUEUE_ID = the generating child
-        -- work-queue item's id (DMT_LOADER_PKG.g_work_queue_id) so reconcile can scope
+        -- work-queue item's id (DMT_LOADER_PKG.g_gen_queue_id, #777) so reconcile can scope
         -- its sweep to only this item's rows. NULL is left when no item context is set
         -- (standalone/legacy callers) -- WORK_QUEUE_ID stays nullable this phase.
         IF l_item_count > 0 THEN
             UPDATE DMT_EGP_ITEM_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_csv_id,
-                   WORK_QUEUE_ID     = DMT_LOADER_PKG.g_work_queue_id,
+                   WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                    LAST_UPDATED_DATE = l_now
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));
@@ -1004,7 +1004,7 @@
             UPDATE DMT_EGP_ITEM_CAT_TFM_TBL
             SET    TFM_STATUS        = 'GENERATED',
                    FBDI_CSV_ID       = l_cat_csv_id,
-                   WORK_QUEUE_ID     = DMT_LOADER_PKG.g_work_queue_id,
+                   WORK_QUEUE_ID     = DMT_LOADER_PKG.g_gen_queue_id,
                    LAST_UPDATED_DATE = l_now
             WHERE  RUN_ID = p_run_id AND TFM_STATUS = 'STAGED'
             AND    (p_batch_id IS NULL OR BATCH_ID = TO_NUMBER(p_batch_id));

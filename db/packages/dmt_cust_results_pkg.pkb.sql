@@ -324,6 +324,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_rc := SQL%ROWCOUNT;
@@ -339,6 +340,7 @@
                                        RESULTS_UPDATED_DATE = SYSDATE,
                                        LAST_UPDATED_DATE    = SYSDATE
                                 WHERE  RUN_ID    = p_run_id
+                                AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                                 AND    TFM_SEQUENCE_ID = l_dff_seq
                                 AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                                 l_rc := SQL%ROWCOUNT;
@@ -353,6 +355,7 @@
                                    RESULTS_UPDATED_DATE = SYSDATE,
                                    LAST_UPDATED_DATE    = SYSDATE
                             WHERE  RUN_ID    = p_run_id
+                            AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                             AND    PARTY_ORIG_SYSTEM_REFERENCE = l_rows(i).BUSINESS_KEY
                             AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                             l_rc := SQL%ROWCOUNT;
@@ -386,6 +389,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -404,6 +408,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -417,6 +422,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -435,6 +441,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -448,6 +455,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -466,6 +474,7 @@
                                RESULTS_UPDATED_DATE     = SYSDATE,
                                LAST_UPDATED_DATE        = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -479,6 +488,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -497,6 +507,7 @@
                                RESULTS_UPDATED_DATE   = SYSDATE,
                                LAST_UPDATED_DATE      = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -510,6 +521,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -528,6 +540,7 @@
                                RESULTS_UPDATED_DATE     = SYSDATE,
                                LAST_UPDATED_DATE        = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -541,6 +554,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
@@ -559,6 +573,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_loaded := l_loaded + SQL%ROWCOUNT;
@@ -572,6 +587,7 @@
                                RESULTS_UPDATED_DATE = SYSDATE,
                                LAST_UPDATED_DATE    = SYSDATE
                         WHERE  RUN_ID    = p_run_id
+                        AND    (p_work_queue_id IS NULL OR WORK_QUEUE_ID = p_work_queue_id)
                         AND    RECON_KEY = l_rows(i).RECORD_KEY
                         AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
                         l_failed := l_failed + SQL%ROWCOUNT;
