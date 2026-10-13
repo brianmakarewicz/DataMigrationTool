@@ -4,7 +4,7 @@
   "seed_sha256": "abdd1ae2822bbd2d78826d15f611a84abb06aa7253d0d831971cbfb52a9d84f7",
   "target": "local",
   "created": "2026-10-13 11:13",
-  "note": "Combined write-once baseline minted 2026-10-10 16:37 with deploy_scenario.py from the committed seed on main 07c19c9 (seed sha 6980291d, identical to RegressionTest261010161342). 356 STG rows in 79 tables, 0 duplicates. Per object its STG rows are identical (business columns; run status, SYSDATE dates and the per-scenario lot/serial interface numbers and good serial key ignored) to the newest proven scenario: ARInvoices = RegressionTest261009074409 (#721); Projects + ProjectBudgets = RegressionTest261009073748 (#727); Assets = RegressionTest261009080330 (#732, outcomes corrected in #738); MiscReceipts + Item Categories = RegressionTest261009113635 (#732); Grants and every other object = RegressionTest261010161342 (#739). Expected outcomes = the previous baseline RegressionTest261008213401 (including the #715 Customers Locations outcomes) with AR Lines/Distributions from 261009074409, the five Projects/ProjectBudgets sub-objects from 261009073748, the three Assets sub-objects from 261009080330 as corrected by #738, Inventory Transactions/Lots/Serials and Item Categories from 261009113635, and the fifteen Grants sub-objects (six new award child types) from 261010161342: 60 sub-objects, 301 rows, each mapped to exactly one STG row. Unlisted by design: Contract Agreement rows sharing the PO tables, 4 MiscReceipts transactions with no SOURCE_ID, the scenario-derived good serial key. Older scenarios are kept untouched.",
+  "note": "Combined write-once baseline minted 2026-10-13 11:13 with deploy_scenario.py from the committed seed (seed sha abdd1ae2) on branch test-data-gap-closure off main 282f939. 365 STG rows in 79 tables, 0 duplicates. It is RegressionTest261010163656 plus nine rows, every other row unchanged: SupplierAddresses RT-ADDR-BAD2-NOPURPOSE (all purpose flags N), SupplierSites RT-SITE-BAD2-FOB (FOB code that does not exist) and SupplierContacts RT-CON-BAD2-NOCONTACT (UPDATE of a contact the supplier does not have), each on the GOOD supplier so DMT validation passes and Fusion rejects it (backlog #781); GLBalances RT-JNL-CG1 (two lines), a valid-only journal in Corporate Primary Ledger, which GLBalances loads as its own zip, Journal Import run and import group (backlog #782); Workers RT-WKR-XG2 with its name, work relationship and assignment, whose only defect is the worker's birth date after its start date (backlog #783); run 413 showed HCM Data Loader reports that error on the WorkTerms record (Assignment row), and the worker, name and work relationship quote it. Expected outcomes = RegressionTest261010163656's plus those rows: 63 sub-objects. Older scenarios are kept untouched.",
   "expected_outcomes_note": "Per-scenario expected outcome of listed rows, read by scripts/dmt_regression_run.py. Key = DMT_RECORD_DETAIL_V.SUB_OBJECT; rows keyed by the STG SOURCE_ID. Outcomes: LOADED; FAILED (its own real Fusion error); FAILED_WITH_DOCUMENT (FAILED because Fusion rejected its whole document; ERROR_TEXT must contain 'Rejected with document:', design section 5). Rows not listed fall back to the BAD key-marker rule. A sub-object may give 'key_col' (an STG column) when its SOURCE_ID is a parent link rather than its own key (MiscReceipts lots/serials).",
   "expected_outcomes": {
     "RegressionTest2610071705": {
@@ -10682,7 +10682,7 @@
           "RT-RT-WKR-G1": "LOADED",
           "RT-RT-WKR-B1": "FAILED",
           "RT-RT-WKR-XG1": "FAILED_WITH_DOCUMENT",
-          "RT-RT-WKR-XG2": "FAILED"
+          "RT-RT-WKR-XG2": "FAILED_WITH_DOCUMENT"
         }
       },
       "Person Names": {
@@ -10714,7 +10714,7 @@
           "RT-ET-RT-WKR-G1B": "LOADED",
           "RT-ET-RT-WKR-BASG": "FAILED",
           "RT-ET-RT-WKR-XG1": "FAILED_WITH_DOCUMENT",
-          "RT-ET-RT-WKR-XG2": "FAILED_WITH_DOCUMENT"
+          "RT-ET-RT-WKR-XG2": "FAILED"
         }
       },
       "Salaries": {
