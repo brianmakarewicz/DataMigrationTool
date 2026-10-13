@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-13 — before local regression: new test data
+
+**What is being tested.** The local regression is about to run on current origin/main, commit 55cf865 (55cf865a8aef9378727bc0f1f912bd5571574369), against the new baseline RegressionTest261013111321 from PR #758. ATP stays on 7b9a864 until this passes locally and is promoted.
+
+**What changed in the test data.**
+- Supplier Addresses, Supplier Sites and Supplier Contacts each gained a bad record that Oracle itself rejects, rather than one our own validation catches first (#781).
+- GL Balances gained a valid-only journal in a second ledger, so valid journals now actually load (#782).
+- Documents with a valid parent and one bad child showed that Oracle rejects the whole document for Requisitions, Purchase Orders, Inventory Receipts, Projects and Employees, so "child fails while the parent loads" is not applicable for those objects (#784).
+- A new Employees case with a bad birth date shows up as a rejection caused by a child record (#783).
+
+**Backlog.** Items #781, #782, #783 and #784 stay IN TEST, each now noting that this full regression is under way. The counts table now reads 488 items: 367 resolved, 4 in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
 ## 2026-10-11 — after ATP regression: batch promoted
 
 **Result.** Main commit 7b9a864 is now on ATP. Local regression run 412, against the baseline RegressionTest261010163656, passed with no new failures (the 7 failures it shows are the known ones), and the local click-through passed 68 of 68 pages. The ATP deploy was clean: the gate passed and ATP has 0 invalid objects. ATP regression run 183, using prefix 93433 (the highest prefix used plus one), passed with no new failures (the same 7 known ones), and the ATP click-through passed 68 of 68 pages.
