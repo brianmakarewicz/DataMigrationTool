@@ -477,6 +477,26 @@ def main():
             'Y', 'RT-ADDR-BAD1'
         )
     """, label="BAD Address: non-existent supplier [BAD-UPS]")
+
+    # BAD (backlog #781): a Fusion rejection, not a DMT one. The supplier is the
+    # GOOD supplier loaded earlier in the same run, so DMT validation passes; every
+    # address purpose flag is N, which Supplier Import rejects with "At least one of
+    # the following must be Y: ORDERING_PURPOSE_FLAG, REMIT_TO_PURPOSE_FLAG,
+    # RFQ_OR_BIDDING_PURPOSE_FLAG." (seen on the pod in POZ_SUPPLIER_INT_REJECTIONS,
+    # read-only query 2026-10-13). Expected: FAILED with that [FUSION_ERROR].
+    run_sql(cur, """
+        INSERT INTO DMT_POZ_SUP_ADDR_STG_TBL (
+            IMPORT_ACTION, VENDOR_NAME, PARTY_SITE_NAME,
+            COUNTRY, ADDRESS_LINE1, CITY, STATE, POSTAL_CODE,
+            RFQ_OR_BIDDING_PURPOSE_FLAG, ORDERING_PURPOSE_FLAG, REMIT_TO_PURPOSE_FLAG,
+            SOURCE_ID
+        ) VALUES (
+            'CREATE', 'RT Supplier Good-1', 'RT Good-1 BAD No Purpose',
+            'US', '101 Good St', 'New York', 'NY', '10001',
+            'N', 'N', 'N',
+            'RT-ADDR-BAD2-NOPURPOSE'
+        )
+    """, label="BAD Address: no purpose flag set, rejected by Fusion [BAD-FUSION]")
     tag_scenario(cur, "DMT_POZ_SUP_ADDR_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -516,6 +536,25 @@ def main():
             'RT-SITE-BAD1', 'Y', 'Y', 'RT-SITE-BAD1'
         )
     """, {"bu": BU}, label="BAD Site: non-existent supplier [BAD-UPS]")
+
+    # BAD (backlog #781): a Fusion rejection, not a DMT one. GOOD supplier and its
+    # GOOD address, a new site code (10 characters, so the 5-digit run prefix keeps
+    # it within the 15-character limit), and an FOB code that does not exist.
+    # Supplier Import rejects it with "You must provide a valid value.
+    # [FOB_LOOKUP_CODE]" (seen on the pod, read-only query 2026-10-13).
+    run_sql(cur, """
+        INSERT INTO DMT_POZ_SUP_SITE_STG_TBL (
+            IMPORT_ACTION, VENDOR_NAME,
+            PROCUREMENT_BUSINESS_UNIT_NAME, PARTY_SITE_NAME,
+            VENDOR_SITE_CODE, PURCHASING_SITE_FLAG, PAY_SITE_FLAG,
+            FOB_LOOKUP_CODE, SOURCE_ID
+        ) VALUES (
+            'CREATE', 'RT Supplier Good-1',
+            :bu, 'RT Good-1 HQ',
+            'RT-SBADFOB', 'Y', 'Y',
+            'RT INVALID FOB', 'RT-SITE-BAD2-FOB'
+        )
+    """, {"bu": BU}, label="BAD Site: invalid FOB code, rejected by Fusion [BAD-FUSION]")
 
     # Pre-existing site for Allied Manufacturing
     run_sql(cur, """
@@ -611,6 +650,22 @@ def main():
             'Y', 'RT-CON-BAD1'
         )
     """, label="BAD Contact: non-existent supplier [BAD-UPS]")
+
+    # BAD (backlog #781): a Fusion rejection, not a DMT one. GOOD supplier, but the
+    # row UPDATEs a contact the supplier does not have, so Supplier Import cannot
+    # derive the contact and rejects the row (POZ_IMP_INVALID_CONT_ERROR / the
+    # contact-not-found message on the pod). Expected: FAILED with its [FUSION_ERROR].
+    run_sql(cur, """
+        INSERT INTO DMT_POZ_SUP_CONTACTS_STG_TBL (
+            IMPORT_ACTION, VENDOR_NAME,
+            FIRST_NAME, LAST_NAME, EMAIL_ADDRESS,
+            SOURCE_ID
+        ) VALUES (
+            'UPDATE', 'RT Supplier Good-1',
+            'Nobody', 'BADMissing', 'nobody.badmissing@good1.test',
+            'RT-CON-BAD2-NOCONTACT'
+        )
+    """, label="BAD Contact: update of a contact that does not exist [BAD-FUSION]")
     tag_scenario(cur, "DMT_POZ_SUP_CONTACTS_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -1622,6 +1677,43 @@ def main():
               "dr": dr, "cr": cr, "ref4": ref4, "ref10": ref10,
               "period": period, "sid": f"RT-GL-{ref4}-{seg3}"},
         label=f"{'GOOD' if 'BAD' not in ref4 else 'BAD'} GL: {ref4} seg3={seg3}")
+
+    # GOOD-only journal load (backlog #782). The load above is all-or-nothing, so
+    # its GOOD journals never load. GLBalances splits its load by LEDGER_NAME
+    # (DMT_CEMLI_SPLIT_CFG): each ledger gets its own zip, its own Journal Import
+    # run and its own import group (GROUP_ID~LEDGER_NAME), inside the same work
+    # item. This valid-only journal therefore goes to a second ledger,
+    # Corporate Primary Ledger (chart 21, USD, 04-26 open, fin_impl has its data
+    # access set), on balancing segment 402 accounts that Spreadsheet/Adjustment
+    # journals loaded to in that ledger (402-40-11200 / 402-40-12110; read-only
+    # queries 2026-10-13). Expected: both lines LOADED.
+    for seg3, dr, cr, ref10 in [
+        ("11200", 750.00, None, "RT good corporate journal - debit"),
+        ("12110", None, 750.00, "RT good corporate journal - credit"),
+    ]:
+        run_sql(cur, """
+            INSERT INTO DMT_GL_INTERFACE_STG_TBL (
+                JOURNAL_STATUS, LEDGER_NAME, ACCOUNTING_DATE,
+                CURRENCY_CODE, ACTUAL_FLAG,
+                USER_JE_CATEGORY_NAME, USER_JE_SOURCE_NAME,
+                SEGMENT1, SEGMENT2, SEGMENT3,
+                SEGMENT4, SEGMENT5, SEGMENT6,
+                ENTERED_DR, ENTERED_CR,
+                REFERENCE1, REFERENCE4, REFERENCE10,
+                PERIOD_NAME, SOURCE_ID
+            ) VALUES (
+                'NEW', 'Corporate Primary Ledger', :adt,
+                'USD', 'A',
+                'Adjustment', 'Spreadsheet',
+                '402', '40', :seg3,
+                '000', '000', '000',
+                :dr, :cr,
+                'RT-JNL-CG1', 'RT-JNL-CG1', :ref10,
+                '04-26', :sid
+            )
+        """, {"adt": date(2026, 4, 1), "seg3": seg3, "dr": dr, "cr": cr,
+              "ref10": ref10, "sid": f"RT-GL-RT-JNL-CG1-{seg3}"},
+        label=f"GOOD GL (own ledger load): RT-JNL-CG1 seg3={seg3}")
     tag_scenario(cur, "DMT_GL_INTERFACE_STG_TBL", scenario_id)
 
     # ====================================================================
@@ -3536,6 +3628,13 @@ def main():
         ("RT-WKR-G1", "HIRE",      "1985/03/15", "GOOD Worker: RT-WKR-G1 (HIRE)"),
         ("RT-WKR-B1", "TERMINATE", None,         "BAD Worker: TERMINATE action [BAD-REQ]"),
         ("RT-WKR-XG1", "HIRE",     "1986/04/16", "Cross-grain Worker: RT-WKR-XG1 (only the email is bad)"),
+        # Shape (a), backlog #783: the Worker record itself is the only bad grain.
+        # Its date of birth is after its start date, which HCM Data Loader rejects
+        # on the Worker line (PER_CORE_BIRTH_DT_LT_START_DT, "You need to enter a
+        # date of birth that's before the start date of the person record.").
+        # Its name, work relationship and assignment are valid and must land
+        # FAILED quoting the worker's error.
+        ("RT-WKR-XG2", "HIRE",     "2027/05/05", "Cross-grain Worker: RT-WKR-XG2 (only the worker's birth date is bad)"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_WORKER_STG_TBL (
@@ -3573,6 +3672,17 @@ def main():
             'RT-WKR-XG1-NME', 'NEW'
         )
     """, label="Cross-grain Worker name: Xavier Grain")
+    run_sql(cur, """
+        INSERT INTO DMT_PERSON_NAME_STG_TBL (
+            PERSON_NUMBER, EFFECTIVE_START_DATE, NAME_TYPE,
+            LEGISLATION_CODE, LAST_NAME, FIRST_NAME,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG2', '2026/01/01', 'GLOBAL',
+            'US', 'Grain', 'Yvonne',
+            'RT-WKR-XG2-NME', 'NEW'
+        )
+    """, label="Cross-grain Worker name: Yvonne Grain (valid, rejected with RT-WKR-XG2)")
     # The cross-grain worker's only defect: an EmailType that is not a valid code.
     run_sql(cur, """
         INSERT INTO DMT_PERSON_EMAIL_STG_TBL (
@@ -3617,6 +3727,17 @@ def main():
             'RT-WKR-XG1-WR', 'NEW'
         )
     """, label="Work relationship for cross-grain worker RT-WKR-XG1")
+    run_sql(cur, """
+        INSERT INTO DMT_WORK_REL_STG_TBL (
+            PERSON_NUMBER, DATE_START, EFFECTIVE_START_DATE,
+            LEGAL_EMPLOYER_NAME, ACTION_CODE, WORKER_TYPE, PRIMARY_FLAG,
+            SOURCE_ID, STG_STATUS
+        ) VALUES (
+            'RT-WKR-XG2', '2026/01/01', '2026/01/01',
+            'US1 Legal Entity', 'HIRE', 'E', 'Y',
+            'RT-WKR-XG2-WR', 'NEW'
+        )
+    """, label="Work relationship for cross-grain worker RT-WKR-XG2")
     # The generator now keys the Assignment SourceSystemId off the source
     # ASSIGNMENT_NUMBER (|| '_ASG'), NOT the person, so distinct assignment
     # numbers are distinct HDL records. RT-WKR-G1 gets TWO assignments to prove
@@ -3633,6 +3754,7 @@ def main():
         ("RT-WKR-G1",   "ET-RT-WKR-G1B", "ACTIVE_PROCESS", "US1 Business Unit", "N", "2026/02/01", "GOOD Assignment: RT-WKR-G1 (second — proves multiple assignments/person, staggered date)"),
         ("RT-WKR-BASG", "ET-RT-WKR-BASG", "ACTIVE_PROCESS", "NONEXISTENT BU",  "Y", "2026/01/01", "BAD Assignment: invalid BU + distinct person [BAD-LKP]"),
         ("RT-WKR-XG1",  "ET-RT-WKR-XG1", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "Cross-grain Assignment: valid, rejected with RT-WKR-XG1's Worker document"),
+        ("RT-WKR-XG2",  "ET-RT-WKR-XG2", "ACTIVE_PROCESS", "US1 Business Unit", "Y", "2026/01/01", "Cross-grain Assignment: valid, rejected with RT-WKR-XG2's Worker document"),
     ]:
         run_sql(cur, """
             INSERT INTO DMT_ASSIGNMENT_STG_TBL (
