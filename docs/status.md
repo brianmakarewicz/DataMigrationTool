@@ -1,5 +1,15 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-13 — after ATP regression: new test data promoted
+
+**Result.** Main commit 55cf865 is now on ATP. The ATP deploy was clean, with 0 invalid objects. The new baseline RegressionTest261013111321 was loaded onto ATP from the same committed seed, and its row counts match local exactly (365 rows each, no duplicates). ATP regression run 184, using prefix 93436, passed with no new failures (the same 7 known ones), every one of the 319 listed expected outcomes was met, and 0 rows are unaccounted. Its per-object counts are identical to local run 414.
+
+**What the new test data now proves.** Supplier Addresses, Supplier Sites and Supplier Contacts each have a bad record that Oracle itself rejects. GL Balances now loads its valid journals (2 of 2). Employees shows two different rejections caused by a child record (a bad email and a bad birth date).
+
+**Not done.** The ATP click-through for run 184 did not run: the session stopped the promotion script for low memory right after the regression finished. It needs a rerun with `python scripts/ci_promote.py clickthrough-atp --run-id 184`.
+
+**Backlog.** Items #781, #782, #783 and #784 are now RESOLVED. The counts table reads 488 items: 371 resolved, none in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
 ## 2026-10-13 — after local regression / before ATP regression
 
 **Local result.** Local regression run 414 on main 55cf865 (plus docs-only commits), against the new baseline RegressionTest261013111321, passed with no new failures; the 7 failures it shows are the known ones. The local click-through passed 68 of 68 pages; its first attempt failed only at login and passed on the retry.
