@@ -1,5 +1,13 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-13 — after local regression / before ATP regression
+
+**Local result.** Local regression run 414 on main 55cf865 (plus docs-only commits), against the new baseline RegressionTest261013111321, passed with no new failures; the 7 failures it shows are the known ones. The local click-through passed 68 of 68 pages; its first attempt failed only at login and passed on the retry.
+
+**ATP next.** The ATP deploy of 55cf865 is under way. When it finishes, the new baseline RegressionTest261013111321 is loaded onto ATP from the same committed seed, and then the ATP regression and the ATP click-through run.
+
+**Backlog.** Items #781, #782, #783 and #784 stay IN TEST, each now noting that local run 414 passed and ATP is pending. The counts table is unchanged at 488 items: 367 resolved, 4 in test, none in progress, 56 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
 ## 2026-10-13 — before local regression: new test data
 
 **What is being tested.** The local regression is about to run on current origin/main, commit 55cf865 (55cf865a8aef9378727bc0f1f912bd5571574369), against the new baseline RegressionTest261013111321 from PR #758. ATP stays on 7b9a864 until this passes locally and is promoted.
