@@ -78,6 +78,16 @@ failed (the rows carry no cost). A reconcile-only rerun left every TFM row byte-
 regression harness 0 failures (its only review items are the pre-existing "no REST lookup
 configured" notes for this object); Playwright click-through PASS.
 
+## Known gap: lots and serials without their own Fusion id (owner rule 2026-10-19, backlog #789)
+
+A row is LOADED only when it carries its own row-grain Fusion id (canonical definition:
+`docs/DMT_DESIGN.html`, Overview status table, LOADED row). Confirmation from the import report
+or from the parent transaction's id is not enough. The upload test of 2026-10-19 (backlog #786,
+`docs/findings/upload_tests_786.md`) found two MiscReceipts rows in the current baseline, one lot
+and one serial, that are LOADED without a Fusion id of their own. Under the rule those rows are
+not LOADED and MiscReceipts does not pass until the reconciler captures a real id for each lot
+and serial row, or leaves the row not LOADED. This is a gap to fix, not an exception.
+
 ## Rejected transaction carries its error to its lots and serials (2026-10-08, backlog #167)
 
 A transaction and its lot/serial detail stand or fall together. When Fusion rejects a
