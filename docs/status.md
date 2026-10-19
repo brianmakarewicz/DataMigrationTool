@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — FBDI upload now covers every generated FBDI file (backlog #792, PR #767)
+
+**Result.** Every FBDI file our generators write can now be uploaded through Smart Upload in FBDI format. The only exception is PlanningBudgets' EPM file, which is out of scope. Newly covered: AR distributions, both Assets files, the three MiscReceipts files, the other 13 Grants award files, the two Blanket PO files and the Contracts header file.
+
+**How.** Uploads now route by file name through a new registry table with one row per pair of FBDI file and staging object. The column positions are stored per file in a second new table. One file can therefore feed two staging tables: the Assets mass-additions file loads both the asset header and the asset book. Several layouts can also feed one staging table, so standard, blanket and contract POs each load the shared PO tables with their own layout. A new CI checker fails whenever a generator writes a file that is not registered.
+
+**Proof on local.** I deployed twice and got 0 invalid objects both times. The rebuilt FBDIFormat.zip (57 files, built from the current regression baseline) loaded 311 rows with 0 errors. Every row count matched the baseline, and so did every mapped value. I also uploaded the real files the generators wrote in runs 414 and 415 for all 22 new files, and each one staged exactly the rows its generator wrote. ATP is not touched: this ships in the promotion bundled with #790.
+
+**Follow-up.** An uploaded Assets distribution row has no asset number, and uploaded MiscReceipts lots and serials have no link to their parent transaction, because the files do not carry those links. The values load, but the link has to be resolved after upload.
+
+**Owner decisions pending.** None new.
+
 ## 2026-10-19 — #787 fix in progress, then promotion and the upload test (backlog #786, #787)
 
 **Before any regression or ATP run.** The owner approved the #787 fix and the Fusion demo password has been rotated and verified for all six demo users. Root cause of #787 reproduced on local: the dictionary had 0 of 5,109 FBDI positions; running the FBDI metadata seed set 3,049, and running the object registry seed next (whose SEED_DICTIONARY deletes and rebuilds the dictionary) put them back to 0. Plan: fix the deploy's seed order on branch fix/787-fbdi-positions-seed-order, deploy to local, prove the positions survive, run the full local regression and click-through, promote to ATP with ci_promote, then run the upload test on ATP. Owner changed the upload test design today: per format one zip of all objects, one scenario, one run (like the regression), instead of one scenario per object.
