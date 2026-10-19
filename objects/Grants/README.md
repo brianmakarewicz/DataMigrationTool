@@ -123,6 +123,12 @@ schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
   already LOADED from `GMS_AWARD_HEADERS_B`. One success line matches one TFM row (lowest
   TFM_SEQUENCE_ID still waiting), so two identical rows need two lines. A child with no line of
   its own stays GENERATED and ends UNACCOUNTED in the shared sweep.
+- **Owner rule 2026-10-19: a success line alone is no longer enough.** A row is LOADED only
+  when it carries its own row-grain Fusion id (canonical definition: `docs/DMT_DESIGN.html`,
+  Overview status table, LOADED row). The eight child types above that are still set LOADED from
+  their success line without an id of their own (about 30 rows in the current baseline) are a
+  known gap, not an exception: they do not count as LOADED and Grants does not pass until their
+  ids are captured (backlog #765 for the report work, #789 for the rule).
 - **Child rejected under a LOADED award.** It keeps its own `[FUSION_ERROR]`; the award stays
   LOADED and no sibling is quoted (`PROPAGATE_DOCUMENT_ERRORS` skips awards whose header is
   LOADED). Fusion never produced this on the pod: probes 77141 / 77142 (2026-10-09, standalone,
@@ -206,8 +212,9 @@ child lane with a LOADED row.
 - **Live section-7 standard violations in Grants code (pre-existing; logged per the "README Known Issues" rule, 2026-10-07):**
   - Eight award child types (personnel, funding, funding allocation, budget period, org credit,
     project, funding source, project funding source) are set LOADED on their own success line in the
-    job's Award Batch Import Report (backlog #568), but still without their own `FUSION_*_ID` (the
-    "LOADED carries its Fusion id" rule). The other six types store their own id since backlog #671;
+    job's Award Batch Import Report (backlog #568), but still without their own `FUSION_*_ID`. Under
+    the owner rule of 2026-10-19 such rows are not LOADED and Grants does not pass until the ids are
+    captured (backlog #789). The other six types store their own id since backlog #671;
     extending report V4 to the remaining eight base tables is backlog #765.
   - `bip/Grants/` holds more than one data model (V1 + V2 recon, `GRANTS_DM`, `GRANTS_CMP_DM`); the contract's
     "one data model per folder" conflicts with the never-overwrite BIP versioning rule (V2 deployed alongside V1).

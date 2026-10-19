@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — owner decision: a row is LOADED only with its own Fusion id (backlog #789)
+
+**Decision.** The owner decided the open question from the upload test: a GOOD row that Fusion accepted but that has no Fusion id of its own does not count as passing. A row is LOADED only when it carries its own row-grain Fusion id, and confirmation from an import report or from a parent's id alone is not enough. Such a row is not LOADED and its object does not pass. The design document used to accept a row confirmed only by its own success line in an import report, and that allowance is now removed.
+
+**Documentation changed (no code).** The rule is now written once in docs/DMT_DESIGN.html, in the Overview status table under LOADED. The cross-grain checklist (the shape where a child is rejected under a LOADED parent), the coding standard on what a reconciler may write, the canonical per-object recipe (its reconcile step and its test step) and the Fusion-id source map rows for Grants and MiscReceipts now point to it. objects/Grants/README.md and objects/MiscReceipts/README.md name their affected rows as known gaps.
+
+**Rows affected today.** 30 Grants child rows across eight award child types (backlog #765) and 2 MiscReceipts rows, one lot and one serial. They are gaps to fix, not exceptions, so Grants and MiscReceipts do not pass until their ids are captured.
+
+**Backlog.** New item #789 (P1, still open) covers the code work: the Grants and MiscReceipts reconcilers must capture a real row-grain id or leave the row not LOADED, and the regression and upload test checks must fail any LOADED row without its own id. #765 now points to the rule and to #789. The counts table reads 493 items: 371 resolved, none in test, 1 in progress, 60 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
+**Owner decisions still pending.** (1) Approve rotating the Fusion demo password, then rerun the upload test with --skip-done. (2) Approve the #787 fix, which changes the seed order or SEED_DICTIONARY and then needs a deploy.
+
 ## 2026-10-19 — after ATP upload test runs (backlog #786): blocked on the Fusion password
 
 **Result.** The new upload test works. Suppliers in the header format went through page 25 of ATP app 500 into the new scenario UPL-HDR-Suppliers-2610191717 and staged exactly. Its run 185 (prefix 93437, synced first and checked against local afterwards) halted at preflight because Fusion refused the BIP login, so all 3 rows are unaccounted and the test correctly reports FAIL. Every demo user now gets a steady HTTP 401 with the saved password while the pod is up, so the demo password has expired on Oracle's side. No further run was submitted. Rotating the password needs the owner's approval.
