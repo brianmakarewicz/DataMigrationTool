@@ -71,6 +71,21 @@ AS
     );
     TYPE t_col_map_tab IS TABLE OF t_col_map_rec INDEX BY PLS_INTEGER;
 
+    -- Backlog #790 (per-row rejection helpers below).
+    -- Date/timestamp columns of one file: the parser column (COLnnn)
+    -- and the staging column it loads into.
+    TYPE t_date_col_rec IS RECORD (
+        col_ref     VARCHAR2(10),
+        column_name VARCHAR2(128),
+        data_type   VARCHAR2(128),
+        date_mask   VARCHAR2(30)        -- FBDI file's DATE_MASK; NULL = the header loader's formats
+    );
+    TYPE t_date_col_tab IS TABLE OF t_date_col_rec INDEX BY PLS_INTEGER;
+
+    C_DATE_FORMATS CONSTANT VARCHAR2(100) :=
+        'YYYY/MM/DD HH24:MI:SS, YYYY/MM/DD, YYYY-MM-DD HH24:MI:SS or YYYY-MM-DD';
+
+
     -- ============================================================
     -- SHARED HELPERS
     -- ============================================================
@@ -216,6 +231,161 @@ AS
     END ensure_err_log_table;
 
     -- ============================================================
+    -- PER-ROW REJECTION HELPERS (backlog #790), shared by the header
+    -- loader (fast_load_from_blob) and the FBDI loader
+    -- (fbdi_load_from_blob) so both formats treat a bad row the same:
+    -- the good rows stage, each bad row is rejected into
+    -- DMT_UPLOAD_ERROR_TBL with a readable error, nothing is silently
+    -- dropped or blanked.
+    -- ============================================================
+
+    -- SELECT-list conversion of a DATE/TIMESTAMP column. The accepted
+    -- formats are tried in turn; a value that matches none of them gives
+    -- NULL here, and bad_date_pred finds exactly those rows so the
+    -- loader rejects them instead of staging a blank date.
+    FUNCTION date_expr (p_col_ref   IN VARCHAR2,
+                        p_data_type IN VARCHAR2,
+                        p_mask      IN VARCHAR2 DEFAULT NULL) RETURN VARCHAR2
+    IS
+    BEGIN
+        -- An FBDI file's own mask (DMT_UPLOAD_FBDI_FILE_TBL.DATE_MASK, CHECK-
+        -- constrained to two fixed masks, backlog #792) when given.
+        IF p_mask IS NOT NULL AND p_data_type = 'DATE' THEN
+            RETURN 'TO_DATE(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''' || p_mask || ''')';
+        ELSIF p_mask IS NOT NULL AND p_data_type LIKE 'TIMESTAMP%' THEN
+            RETURN 'COALESCE('
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''' || p_mask || '.FF''), '
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''' || p_mask || '''))';
+        ELSIF p_data_type = 'DATE' THEN
+            RETURN 'COALESCE('
+                || 'TO_DATE(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
+                || 'TO_DATE(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
+                || 'TO_DATE(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''), '
+                || 'TO_DATE(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD''))';
+        ELSIF p_data_type LIKE 'TIMESTAMP%' THEN
+            RETURN 'COALESCE('
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS.FF''), '
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
+                || 'TO_TIMESTAMP(' || p_col_ref || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''))';
+        END IF;
+        RETURN p_col_ref;
+    END date_expr;
+
+    -- True (as SQL) when the value is present but is not a valid date.
+    FUNCTION bad_date_pred (p_col IN t_date_col_rec) RETURN VARCHAR2
+    IS
+    BEGIN
+        RETURN '(' || p_col.col_ref || ' IS NOT NULL AND '
+            || date_expr(p_col.col_ref, p_col.data_type, p_col.date_mask) || ' IS NULL)';
+    END bad_date_pred;
+
+    -- Rejects every row whose date/timestamp value is not a valid date.
+    -- DML error logging cannot catch these (the conversion runs in the
+    -- SELECT list, where a failure would abort the whole statement), so
+    -- the rows are found first, written to DMT_UPLOAD_ERROR_TBL with
+    -- their line number, and x_exclude returns the predicate the INSERT
+    -- must leave out (WHERE NOT (...)). x_rejected = distinct bad rows.
+    PROCEDURE reject_bad_dates (
+        p_blob        IN  BLOB,
+        p_skip_rows   IN  PLS_INTEGER,
+        p_cols        IN  t_date_col_tab,
+        p_log_id      IN  NUMBER,
+        p_batch_tag   IN  VARCHAR2,
+        x_exclude     OUT VARCHAR2,
+        x_rejected    OUT PLS_INTEGER
+    )
+    IS
+        l_from VARCHAR2(400) := ' FROM TABLE(APEX_DATA_PARSER.PARSE('
+                             || '   p_content   => :blob,'
+                             || '   p_file_name => ''upload.csv'','
+                             || '   p_skip_rows => ' || TO_CHAR(p_skip_rows) || '))';
+    BEGIN
+        x_rejected := 0;
+        FOR i IN 1 .. p_cols.COUNT LOOP
+            x_exclude := x_exclude || CASE WHEN x_exclude IS NOT NULL THEN ' OR ' END
+                      || bad_date_pred(p_cols(i));
+            -- Section-7 carve-out (see STANDARDS NOTE at top of body): the
+            -- column name was DBMS_ASSERT.SIMPLE_SQL_NAME-checked by the
+            -- caller and col_ref is the loader's own COLnnn; log id, batch
+            -- tag and the BLOB are bound.
+            EXECUTE IMMEDIATE
+                'INSERT INTO DMT_UPLOAD_ERROR_TBL '
+             || '  (LOG_ID, ROW_NUMBER, COLUMN_NAME, ERROR_TYPE, ERROR_MESSAGE, RAW_VALUE, BATCH_TAG) '
+             || 'SELECT :log_id, LINE_NUMBER, ''' || p_cols(i).column_name || ''', ''TYPE_MISMATCH'', '
+             || '  ''Line '' || LINE_NUMBER || '', column ' || p_cols(i).column_name || ': "'' '
+             || '  || SUBSTR(' || p_cols(i).col_ref || ', 1, 100) || ''" is not a valid date (expected '
+             || NVL(p_cols(i).date_mask, C_DATE_FORMATS) || '). The row was not loaded.'', '
+             || '  SUBSTR(' || p_cols(i).col_ref || ', 1, 4000), :batch_tag'
+             || l_from
+             || ' WHERE ' || bad_date_pred(p_cols(i))
+                USING p_log_id, p_batch_tag, p_blob;
+        END LOOP;
+        IF x_exclude IS NOT NULL THEN
+            -- Section-7 carve-out (see STANDARDS NOTE at top of body): as above.
+            EXECUTE IMMEDIATE 'SELECT COUNT(*)' || l_from || ' WHERE ' || x_exclude
+                INTO x_rejected USING p_blob;
+        END IF;
+        COMMIT;
+    END reject_bad_dates;
+
+    -- Copies the rows the DML error log caught for this load into
+    -- DMT_UPLOAD_ERROR_TBL (for the Upload Errors region), then clears
+    -- them from ERR$_<table>. Returns how many there were.
+    PROCEDURE copy_dml_errors (
+        p_err_table  IN  VARCHAR2,
+        p_log_id     IN  NUMBER,
+        p_batch_tag  IN  VARCHAR2,
+        p_loader     IN  VARCHAR2,
+        x_count      OUT PLS_INTEGER
+    )
+    IS
+    BEGIN
+        -- Section-7 carve-out (see STANDARDS NOTE at top of body): the only
+        -- interpolated identifier is the SIMPLE_SQL_NAME-checked ERR$_ table;
+        -- log id, batch tag, loader label and tag are bound.
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM ' || p_err_table || ' WHERE ORA_ERR_TAG$ = :tag'
+            INTO x_count
+            USING TO_CHAR(p_log_id);
+        IF x_count > 0 THEN
+            EXECUTE IMMEDIATE
+                'INSERT INTO DMT_UPLOAD_ERROR_TBL '
+             || '  (LOG_ID, ROW_NUMBER, COLUMN_NAME, ERROR_TYPE, ERROR_MESSAGE, RAW_VALUE, BATCH_TAG) '
+             || 'SELECT :log_id, ROWNUM, NULL, '
+             || '  :loader || '' (ORA-'' || ORA_ERR_NUMBER$ || '')'', '
+             || '  SUBSTR(ORA_ERR_MESG$, 1, 4000), '
+             || '  ORA_ERR_TAG$, '
+             || '  :batch_tag '
+             || 'FROM ' || p_err_table
+             || ' WHERE ORA_ERR_TAG$ = :tag'
+                USING p_log_id, p_loader, p_batch_tag, TO_CHAR(p_log_id);
+            EXECUTE IMMEDIATE
+                'DELETE FROM ' || p_err_table || ' WHERE ORA_ERR_TAG$ = :tag'
+                USING TO_CHAR(p_log_id);
+            COMMIT;
+        END IF;
+    END copy_dml_errors;
+
+    -- A file whose layout does not fit its name is rejected as a whole:
+    -- one visible row in DMT_UPLOAD_ERROR_TBL, nothing staged.
+    PROCEDURE reject_layout (
+        p_log_id     IN  NUMBER,
+        p_batch_tag  IN  VARCHAR2,
+        p_message    IN  VARCHAR2
+    )
+    IS
+    BEGIN
+        log_row_error(
+            p_log_id        => p_log_id,
+            p_row_number    => 1,
+            p_column_name   => NULL,
+            p_error_type    => 'LAYOUT',
+            p_error_message => SUBSTR(p_message, 1, 4000),
+            p_batch_tag     => p_batch_tag);
+    END reject_layout;
+
+    -- ============================================================
     -- FAST LOADER: APEX_DATA_PARSER path
     -- Single INSERT...SELECT with LOG ERRORS INTO for per-row
     -- error capture. Good rows commit; bad rows land in
@@ -253,6 +423,10 @@ AS
         l_col_key      VARCHAR2(128);
         l_err_table    VARCHAR2(128);
         l_err_count    PLS_INTEGER := 0;
+        l_date_cols    t_date_col_tab;          -- backlog #790: bad dates are rejected rows
+        l_exclude      VARCHAR2(32767);
+        l_date_bad     PLS_INTEGER := 0;
+        l_named_count  PLS_INTEGER := 0;
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
@@ -295,41 +469,46 @@ AS
                     l_select_list := l_select_list || ', ';
                 END IF;
                 l_col_list    := l_col_list    || DBMS_ASSERT.SIMPLE_SQL_NAME(l_col_key);
-                -- DATE/TIMESTAMP columns are converted explicitly so the load does
-                -- not depend on the session NLS date format. Both the FBDI
-                -- generators and this package's proprietary CSV writer emit dates
-                -- as YYYY/MM/DD[ HH24:MI:SS], so parse that first and fall back to
-                -- the ISO form; a bad value still lands in the DML error log.
-                IF l_col_type = 'DATE' THEN
-                    l_select_list := l_select_list
-                        || 'COALESCE('
-                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
-                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
-                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''), '
-                        || 'TO_DATE(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD''))';
-                ELSIF l_col_type LIKE 'TIMESTAMP%' THEN
-                    l_select_list := l_select_list
-                        || 'COALESCE('
-                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS.FF''), '
-                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD HH24:MI:SS''), '
-                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY-MM-DD HH24:MI:SS''), '
-                        || 'TO_TIMESTAMP(COL' || LPAD(i, 3, '0') || ' DEFAULT NULL ON CONVERSION ERROR, ''YYYY/MM/DD''))';
-                ELSE
-                    l_select_list := l_select_list || 'COL' || LPAD(i, 3, '0');
+                -- DATE/TIMESTAMP columns are converted explicitly (date_expr) so the
+                -- load does not depend on the session NLS date format. A value that
+                -- is not a valid date is a rejected row (reject_bad_dates), never a
+                -- silently blank date (backlog #790).
+                IF l_col_type = 'DATE' OR l_col_type LIKE 'TIMESTAMP%' THEN
+                    l_date_cols(l_date_cols.COUNT + 1).col_ref := 'COL' || LPAD(i, 3, '0');
+                    l_date_cols(l_date_cols.COUNT).column_name := DBMS_ASSERT.SIMPLE_SQL_NAME(l_col_key);
+                    l_date_cols(l_date_cols.COUNT).data_type   := l_col_type;
                 END IF;
+                l_select_list := l_select_list || date_expr('COL' || LPAD(i, 3, '0'), l_col_type);
             ELSIF l_col_key IS NOT NULL THEN
                 l_warnings := l_warnings || 'Column "' || l_col_key || '" skipped. ';
             END IF;
         END LOOP;
 
-        IF l_map_count = 0 THEN
-            p_error_msg := 'No CSV headers matched uploadable columns for ' || p_object_code || '. ' || l_warnings;
+        -- Backlog #790: a file whose columns are mostly not this object's is the
+        -- wrong file for its name. Reject it visibly instead of staging rows that
+        -- carry only the few columns that happen to share a name.
+        FOR i IN 1 .. l_header_count LOOP
+            IF l_headers(i) IS NOT NULL THEN
+                l_named_count := l_named_count + 1;
+            END IF;
+        END LOOP;
+        IF l_map_count = 0 OR l_map_count * 2 < l_named_count THEN
+            p_error_msg := 'Wrong layout: only ' || l_map_count || ' of the ' || l_named_count
+                        || ' columns in ' || p_file_label || ' are columns of ' || p_object_code
+                        || ' (' || p_staging_table || '), so the file was not loaded. '
+                        || 'Check that the file is the right one for its name. ' || l_warnings;
+            p_error_msg := SUBSTR(p_error_msg, 1, 4000);
+            reject_layout(p_log_id, p_batch_tag, p_error_msg);
+            p_rows_errored := 1;
             RETURN;
         END IF;
 
         -- Ensure DML error log table exists for this staging table
         l_err_table := 'ERR$_' || p_staging_table;
         ensure_err_log_table(p_staging_table);
+
+        -- Rows with a value that is not a valid date are rejected first.
+        reject_bad_dates(p_blob, 1, l_date_cols, p_log_id, p_batch_tag, l_exclude, l_date_bad);
 
         -- Build INSERT...SELECT with LOG ERRORS INTO.
         -- Good rows insert normally; bad rows (type conversion, constraint
@@ -344,6 +523,7 @@ AS
                  '   p_content   => :blob,' ||
                  '   p_file_name => ''upload.csv'',' ||
                  '   p_skip_rows => 1))' ||
+                 CASE WHEN l_exclude IS NOT NULL THEN ' WHERE NOT (' || l_exclude || ')' END ||
                  ' LOG ERRORS INTO ' || l_err_table ||
                  ' (''' || p_log_id || ''') REJECT LIMIT UNLIMITED';
 
@@ -358,44 +538,12 @@ AS
         p_rows_loaded := SQL%ROWCOUNT;
         COMMIT;
 
-        -- Check for rejected rows in the DML error log
-        -- Section-7 carve-out (see STANDARDS NOTE at top of body): l_err_table
-        -- is the SIMPLE_SQL_NAME-checked ERR$_<staging table>; the tag is bound.
-        EXECUTE IMMEDIATE
-            'SELECT COUNT(*) FROM ' || l_err_table ||
-            ' WHERE ORA_ERR_TAG$ = :tag'
-            INTO l_err_count
-            USING TO_CHAR(p_log_id);
-
-        IF l_err_count > 0 THEN
-            p_rows_errored := l_err_count;
-
-            -- Copy per-row errors into DMT_UPLOAD_ERROR_TBL for the UI
-            -- Section-7 carve-out (see STANDARDS NOTE at top of body): the only
-            -- interpolated identifier is the SIMPLE_SQL_NAME-checked l_err_table;
-            -- log id, batch tag, and tag are all bound.
-            EXECUTE IMMEDIATE
-                'INSERT INTO DMT_UPLOAD_ERROR_TBL '
-             || '  (LOG_ID, ROW_NUMBER, COLUMN_NAME, ERROR_TYPE, ERROR_MESSAGE, RAW_VALUE, BATCH_TAG) '
-             || 'SELECT :log_id, ROWNUM, NULL, '
-             || '  ''FAST_LOADER (ORA-'' || ORA_ERR_NUMBER$ || '')'', '
-             || '  SUBSTR(ORA_ERR_MESG$, 1, 4000), '
-             || '  ORA_ERR_TAG$, '
-             || '  :batch_tag '
-             || 'FROM ' || l_err_table
-             || ' WHERE ORA_ERR_TAG$ = :tag'
-                USING p_log_id, p_batch_tag, TO_CHAR(p_log_id);
-            COMMIT;
-
-            -- Clean up the DML error log for this batch
-            -- Section-7 carve-out (see STANDARDS NOTE at top of body):
-            -- l_err_table is SIMPLE_SQL_NAME-checked; the tag is bound.
-            EXECUTE IMMEDIATE
-                'DELETE FROM ' || l_err_table || ' WHERE ORA_ERR_TAG$ = :tag'
-                USING TO_CHAR(p_log_id);
-            COMMIT;
-
-            p_error_msg := p_rows_loaded || ' loaded, ' || l_err_count
+        -- Rows the DML error log caught (number, length, constraint) go to the
+        -- Upload Errors region next to the bad-date rows found above.
+        copy_dml_errors(l_err_table, p_log_id, p_batch_tag, 'FAST_LOADER', l_err_count);
+        p_rows_errored := l_err_count + l_date_bad;
+        IF p_rows_errored > 0 THEN
+            p_error_msg := p_rows_loaded || ' loaded, ' || p_rows_errored
                         || ' rejected. Filter Upload Errors by Load ID: ' || p_batch_tag;
         END IF;
 
@@ -410,7 +558,7 @@ AS
 
         DMT_UTIL_PKG.LOG(
             p_message   => 'Fast loader complete: ' || p_rows_loaded || ' rows inserted, '
-                           || l_err_count || ' rejected for ' || p_object_code,
+                           || p_rows_errored || ' rejected for ' || p_object_code,
             p_package   => C_PKG,
             p_procedure => 'fast_load_from_blob'
         );
@@ -1179,12 +1327,23 @@ AS
         p_log_id        IN  NUMBER,
         p_rows_loaded   OUT NUMBER,
         p_rows_errored  OUT NUMBER,
-        p_error_msg     OUT VARCHAR2
+        p_error_msg     OUT VARCHAR2,
+        p_batch_tag     IN  VARCHAR2 DEFAULT NULL
     )
     IS
         l_col_list     VARCHAR2(32767);
         l_select_list  VARCHAR2(32767);
         l_col_count    PLS_INTEGER := 0;
+        -- Backlog #790: per-row rejection like the header loader.
+        l_date_cols    t_date_col_tab;
+        l_exclude      VARCHAR2(32767);
+        l_date_bad     PLS_INTEGER := 0;
+        l_err_table    VARCHAR2(128);
+        l_err_count    PLS_INTEGER := 0;
+        l_expected     NUMBER;
+        l_fields       DBMS_SQL.VARCHAR2_TABLE;
+        l_field_count  PLS_INTEGER;
+        l_first_error  VARCHAR2(4000);
         l_sql          VARCHAR2(32767);
         l_over_limit   VARCHAR2(4000);   -- columns past the APEX_DATA_PARSER COL300 cap
         -- APEX_DATA_PARSER exposes at most COL001..COL300, so a column the FBDI
@@ -1217,27 +1376,49 @@ AS
             IF l_col_types.EXISTS(p_col_name) THEN
                 l_type := l_col_types(p_col_name);
             END IF;
-            -- Plain conversions (no DEFAULT ... ON CONVERSION ERROR): this path
-            -- has no LOG ERRORS clause, so an unparseable date must still raise
-            -- and fail the load exactly as the old implicit cast did under the
-            -- removed ALTER SESSION format — only the parse format is now pinned.
-            IF l_type = 'DATE' THEN
-                RETURN 'TO_DATE(' || l_col || ', ''' || l_date_fmt || ''')';
-            ELSIF l_type LIKE 'TIMESTAMP%' THEN
-                RETURN 'TO_TIMESTAMP(' || l_col || ', ''' || l_timestamp_fmt || ''')';
-            ELSE
-                RETURN l_col;
+            -- Backlog #790: the same conversion as the header loader, with this
+            -- file's DATE_MASK (backlog #792). A value that is not a valid date
+            -- is a rejected row (reject_bad_dates), never a statement failure
+            -- and never a silently blank date.
+            IF l_type = 'DATE' OR l_type LIKE 'TIMESTAMP%' THEN
+                l_date_cols(l_date_cols.COUNT + 1).col_ref := l_col;
+                l_date_cols(l_date_cols.COUNT).column_name := p_col_name;
+                l_date_cols(l_date_cols.COUNT).data_type   := l_type;
+                l_date_cols(l_date_cols.COUNT).date_mask   := l_date_fmt;
             END IF;
+            RETURN date_expr(l_col, l_type, l_date_fmt);
         END select_expr;
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
 
-        -- Backlog #792: the file's date mask and distinct-rows flag.
-        SELECT DATE_MASK, DATE_MASK || '.FF', DISTINCT_ROWS_FLAG
-        INTO   l_date_fmt, l_timestamp_fmt, l_distinct
+        -- Backlog #792: the file's date mask and distinct-rows flag; backlog #790:
+        -- the number of fields every row of the file's Oracle template has. A
+        -- child file with a parent link (#793) arrives here already rewritten by
+        -- link_fbdi_parents to LINK_POSITION fields (the template's slots plus the
+        -- link), so that is the count it must have.
+        SELECT DATE_MASK, DATE_MASK || '.FF', DISTINCT_ROWS_FLAG,
+               NVL(LINK_POSITION, FBDI_COLUMN_COUNT)
+        INTO   l_date_fmt, l_timestamp_fmt, l_distinct, l_expected
         FROM   DMT_UPLOAD_FBDI_FILE_TBL
         WHERE  FBDI_FILE_ID = p_fbdi_file_id;
+
+        -- Backlog #790: a file whose rows do not have the template's number of
+        -- fields is the wrong file for its name (wrong column count or order).
+        -- Reject it visibly instead of staging values in the wrong columns.
+        IF l_expected IS NOT NULL THEN
+            read_csv_headers(p_blob, l_fields, l_field_count, l_first_error);
+            IF l_first_error IS NULL AND l_field_count <> l_expected THEN
+                p_error_msg := 'Wrong layout: the first row of ' || p_file_label || ' has '
+                            || l_field_count || ' fields, but the Oracle FBDI template for '
+                            || p_object_code || ' has ' || l_expected
+                            || ', so the file was not loaded. Check that the file is the right one '
+                            || 'for its name and was saved from the current template.';
+                reject_layout(p_log_id, p_batch_tag, p_error_msg);
+                p_rows_errored := 1;
+                RETURN;
+            END IF;
+        END IF;
 
         -- Backlog #76: load the staging table's column data types up front so the
         -- SELECT list can state an explicit date/timestamp mask per column.
@@ -1330,10 +1511,16 @@ AS
             RETURN;
         END IF;
 
-        -- Backlog #76: DATE/TIMESTAMP columns are now converted with an explicit
-        -- TO_DATE/TO_TIMESTAMP mask in the SELECT list built above (select_expr),
-        -- so the load no longer depends on a session NLS format set via
-        -- ALTER SESSION.
+        -- Backlog #76: DATE/TIMESTAMP columns are converted with explicit masks
+        -- in the SELECT list built above (select_expr), so the load does not
+        -- depend on a session NLS format set via ALTER SESSION.
+
+        -- Backlog #790: bad-date rows are rejected first; the INSERT then logs
+        -- every other bad row (number, length) into ERR$_<table> instead of
+        -- failing the whole file, exactly like the header loader.
+        l_err_table := 'ERR$_' || p_staging_table;
+        ensure_err_log_table(p_staging_table);
+        reject_bad_dates(p_blob, 0, l_date_cols, p_log_id, p_batch_tag, l_exclude, l_date_bad);
 
         -- Build and execute: INSERT INTO staging (cols) SELECT COLnnn FROM APEX_DATA_PARSER
         -- p_skip_rows => 0 because FBDI CSVs have no header row
@@ -1347,7 +1534,10 @@ AS
                  ' FROM TABLE(APEX_DATA_PARSER.PARSE(' ||
                  '   p_content   => :blob,' ||
                  '   p_file_name => ''upload.csv'',' ||
-                 '   p_skip_rows => 0))';
+                 '   p_skip_rows => 0))' ||
+                 CASE WHEN l_exclude IS NOT NULL THEN ' WHERE NOT (' || l_exclude || ')' END ||
+                 ' LOG ERRORS INTO ' || l_err_table ||
+                 ' (''' || p_log_id || ''') REJECT LIMIT UNLIMITED';
 
         DMT_UTIL_PKG.LOG(
             p_message   => 'FBDI loader: executing INSERT...SELECT for ' || p_object_code
@@ -1360,8 +1550,16 @@ AS
         p_rows_loaded := SQL%ROWCOUNT;
         COMMIT;
 
+        copy_dml_errors(l_err_table, p_log_id, p_batch_tag, 'FBDI_LOADER', l_err_count);
+        p_rows_errored := l_err_count + l_date_bad;
+        IF p_rows_errored > 0 THEN
+            p_error_msg := p_rows_loaded || ' loaded, ' || p_rows_errored
+                        || ' rejected. Filter Upload Errors by Load ID: ' || p_batch_tag;
+        END IF;
+
         IF l_over_limit IS NOT NULL THEN
-            p_error_msg := 'Loaded; columns past CSV slot ' || C_MAX_PARSER_COL
+            p_error_msg := CASE WHEN p_error_msg IS NOT NULL THEN p_error_msg || ' ' END
+                        || 'Loaded; columns past CSV slot ' || C_MAX_PARSER_COL
                         || ' not supported by the parser and skipped: ' || l_over_limit;
         END IF;
 
@@ -1379,6 +1577,15 @@ AS
         WHEN OTHERS THEN
             p_error_msg := 'FBDI loader failed: ' || SQLERRM;
             p_rows_errored := 1;
+            -- Visible in the Upload Errors region too, like the header loader.
+            log_row_error(
+                p_log_id        => p_log_id,
+                p_row_number    => -1,
+                p_column_name   => NULL,
+                p_error_type    => 'FBDI_LOADER',
+                p_error_message => SUBSTR('FBDI loader failed for ' || p_object_code || ': ' || SQLERRM, 1, 4000),
+                p_raw_value     => SUBSTR(l_sql, 1, 4000),
+                p_batch_tag     => p_batch_tag);
             DMT_UTIL_PKG.LOG_ERROR(
                 p_message   => 'FBDI loader failed for ' || p_object_code || '. SQL: ' || SUBSTR(l_sql, 1, 500),
                 p_sqlerrm   => SQLERRM,
@@ -1743,7 +1950,10 @@ AS
                     p_log_id        => l_log_id,
                     p_rows_loaded   => l_rows_loaded,
                     p_rows_errored  => l_rows_errored,
-                    p_error_msg     => l_file_error
+                    p_error_msg     => l_file_error,
+                    -- Backlog #790: same Load ID format as the header loader (scenario~stamp~file)
+                    p_batch_tag     => NVL(p_scenario_name, 'none') || '~'
+                                       || TO_CHAR(SYSTIMESTAMP, 'YYMMDDHH24MISS') || '~' || l_file_name
                 );
 
                 -- Tag newly inserted rows with scenario ID
@@ -2102,7 +2312,10 @@ AS
                         p_log_id        => l_log_id,
                         p_rows_loaded   => l_rows_loaded,
                         p_rows_errored  => l_rows_errored,
-                        p_error_msg     => l_file_error
+                        p_error_msg     => l_file_error,
+                        -- Backlog #790: same Load ID format as the header loader (scenario~stamp~file)
+                        p_batch_tag     => NVL(p_scenario_name, 'none') || '~'
+                                           || TO_CHAR(SYSTIMESTAMP, 'YYMMDDHH24MISS') || '~' || l_file_name
                     );
 
                     -- Section-7 carve-out (see STANDARDS NOTE at top of body):

@@ -26,6 +26,7 @@ begin
 	"PARENT_VALUE_POSITION" NUMBER,
 	"PARENT_OBJECT_CODE" VARCHAR2(50),
 	"PARENT_KEY_COLUMN" VARCHAR2(128),
+	"FBDI_COLUMN_COUNT" NUMBER,
 	"CREATED_DATE" TIMESTAMP (6) DEFAULT SYSTIMESTAMP,
 	 CONSTRAINT "DMT_UPLOAD_FBDI_FILE_PK" PRIMARY KEY ("FBDI_FILE_ID") USING INDEX ENABLE,
 	 CONSTRAINT "DMT_UPLOAD_FBDI_FILE_UK1" UNIQUE ("FBDI_CSV_FILENAME", "OBJECT_CODE") USING INDEX ENABLE,
@@ -74,6 +75,13 @@ exception when others then
 end;
 /
 
+-- Backlog #790: fields per row of the file's Oracle template (existing databases).
+begin
+  execute immediate 'ALTER TABLE "DMT_UPLOAD_FBDI_FILE_TBL" ADD ("FBDI_COLUMN_COUNT" NUMBER)';
+exception when others then if sqlcode not in (-1430) then raise; end if;
+end;
+/
+
 begin
   execute immediate 'ALTER TABLE "DMT_UPLOAD_FBDI_FILE_TBL" ADD CONSTRAINT "DMT_UPLOAD_FBDI_FILE_FK1"
     FOREIGN KEY ("OBJECT_CODE") REFERENCES "DMT_UPLOAD_OBJECT_TBL" ("OBJECT_CODE") ENABLE';
@@ -102,3 +110,4 @@ COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_KEY_POSITION" IS 'Key slot 
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_VALUE_POSITION" IS 'Slot in PARENT_FBDI_FILENAME whose value becomes the link.';
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_OBJECT_CODE" IS 'Parent staging object loaded from the same upload: the link value is the STG_SEQUENCE_ID of its latest row in the scenario whose PARENT_KEY_COLUMN equals the key.';
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_KEY_COLUMN" IS 'Key column of the PARENT_OBJECT_CODE staging table.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."FBDI_COLUMN_COUNT" IS 'Fields in every row of the Oracle FBDI template for this file (what the FBDI generator writes). The FBDI upload rejects a file whose first row has a different count (wrong layout, backlog #790).';

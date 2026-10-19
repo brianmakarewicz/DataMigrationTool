@@ -117,22 +117,27 @@ def render():
                      'when matched then update set t."FBDI_POSITION" = s.fbdi_position;\n')
 
     # 2) file registry
+    # FBDI_COLUMN_COUNT (backlog #790): the field count of every row of the file's Oracle
+    # template; the loader rejects a file whose first row has a different count.
+    extra = LINK_COLS + ['fbdi_column_count']
     reg = [tuple([q(x.file), q(x.object), str(x.load_order), q('Y' if x.distinct else 'N'), q(x.date_mask)]
-                 + link_values(x)) for x in FILES]
-    upd = ',\n'.join(f'                             t."{c.upper()}" = s.{c}' for c in LINK_COLS)
-    parts.append("-- 2) FBDI file routing registry: one row per (file, staging object).")
+                 + link_values(x) + [str(len(x.cols))]) for x in FILES]
+    upd = ',\n'.join(f'                             t."{c.upper()}" = s.{c}' for c in extra)
+    parts.append("-- 2) FBDI file routing registry: one row per (file, staging object). FBDI_COLUMN_COUNT is\n"
+                 "--    the field count of every row of the file's Oracle template; the loader rejects a\n"
+                 "--    file whose first row has a different count (backlog #790).")
     parts.append('merge into "DMT_UPLOAD_FBDI_FILE_TBL" t\nusing (\n'
                  + union(reg, ['fbdi_csv_filename', 'object_code', 'load_order',
-                               'distinct_rows_flag', 'date_mask'] + LINK_COLS)
+                               'distinct_rows_flag', 'date_mask'] + extra)
                  + '\n) s\non (t."FBDI_CSV_FILENAME" = s.fbdi_csv_filename and t."OBJECT_CODE" = s.object_code)\n'
                  'when matched then update set t."LOAD_ORDER" = s.load_order,\n'
                  '                             t."DISTINCT_ROWS_FLAG" = s.distinct_rows_flag,\n'
                  '                             t."DATE_MASK" = s.date_mask,\n'
                  + upd + '\n'
                  'when not matched then insert ("FBDI_CSV_FILENAME", "OBJECT_CODE", "LOAD_ORDER", '
-                 '"DISTINCT_ROWS_FLAG", "DATE_MASK", ' + ', '.join(f'"{c.upper()}"' for c in LINK_COLS) + ')\n'
+                 '"DISTINCT_ROWS_FLAG", "DATE_MASK", ' + ', '.join(f'"{c.upper()}"' for c in extra) + ')\n'
                  '     values (s.fbdi_csv_filename, s.object_code, s.load_order, s.distinct_rows_flag, '
-                 's.date_mask, ' + ', '.join(f's.{c}' for c in LINK_COLS) + ');\n')
+                 's.date_mask, ' + ', '.join(f's.{c}' for c in extra) + ');\n')
     parts.append("-- Registry rows the maps no longer hold (their positions go with them, ON DELETE CASCADE).")
     parts.append('delete from "DMT_UPLOAD_FBDI_FILE_TBL" t\nwhere not exists (\n  select 1 from (\n'
                  + union([(q(x.file), q(x.object)) for x in FILES], ['fbdi_csv_filename', 'object_code'], indent='    ')

@@ -732,6 +732,7 @@ page 25 (
                     l_summary      CLOB;
                     l_has_stg      NUMBER := 0;
                     l_has_fbdi     NUMBER := 0;
+                    l_bad_files    NUMBER := 0;
                 BEGIN
                     SELECT filename INTO l_filename
                     FROM apex_application_temp_files
@@ -800,8 +801,23 @@ page 25 (
                             IF l_error_msg IS NOT NULL THEN
                                 APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
                             ELSE
-                                APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
-                                    SUBSTR(l_summary, 1, 2000);
+                                -- Backlog #788: a file that failed or rejected rows is
+                                -- never shown as plain success. The good rows of the
+                                -- batch are already staged; the notification says which
+                                -- files had problems and where the errors are.
+                                SELECT COUNT(*) INTO l_bad_files FROM dmt_upload_log_tbl
+                                WHERE  batch_id = l_batch_id
+                                AND    (status <> 'COMPLETED' OR NVL(rows_errored, 0) > 0);
+                                IF l_bad_files > 0 THEN
+                                    APEX_ERROR.ADD_ERROR(
+                                        p_message          => l_bad_files || ' file(s) in this upload failed or had '
+                                                              || 'rejected rows; see Upload Errors below. '
+                                                              || SUBSTR(l_summary, 1, 1800),
+                                        p_display_location => 'INLINE_IN_NOTIFICATION');
+                                ELSE
+                                    APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                        SUBSTR(l_summary, 1, 2000);
+                                END IF;
                             END IF;
                 
                         ELSIF l_has_fbdi > 0 THEN
@@ -815,8 +831,23 @@ page 25 (
                             IF l_error_msg IS NOT NULL THEN
                                 APEX_ERROR.ADD_ERROR(p_message => l_error_msg, p_display_location => 'INLINE_IN_NOTIFICATION');
                             ELSE
-                                APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
-                                    SUBSTR(l_summary, 1, 2000);
+                                -- Backlog #788: a file that failed or rejected rows is
+                                -- never shown as plain success. The good rows of the
+                                -- batch are already staged; the notification says which
+                                -- files had problems and where the errors are.
+                                SELECT COUNT(*) INTO l_bad_files FROM dmt_upload_log_tbl
+                                WHERE  batch_id = l_batch_id
+                                AND    (status <> 'COMPLETED' OR NVL(rows_errored, 0) > 0);
+                                IF l_bad_files > 0 THEN
+                                    APEX_ERROR.ADD_ERROR(
+                                        p_message          => l_bad_files || ' file(s) in this upload failed or had '
+                                                              || 'rejected rows; see Upload Errors below. '
+                                                              || SUBSTR(l_summary, 1, 1800),
+                                        p_display_location => 'INLINE_IN_NOTIFICATION');
+                                ELSE
+                                    APEX_APPLICATION.G_PRINT_SUCCESS_MESSAGE :=
+                                        SUBSTR(l_summary, 1, 2000);
+                                END IF;
                             END IF;
                 
                         ELSE
