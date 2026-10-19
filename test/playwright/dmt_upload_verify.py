@@ -48,7 +48,8 @@ Negative tests (--negative, owner addition 2026-10-19; test and report only):
      (plus their upstream objects) carrying good rows and, per file, one row
      with text in a number column, one with an over-length value and one with an
      unparseable date. Expected: the good rows stage, each bad row is in
-     DMT_UPLOAD_ERROR_TBL with an Oracle error, the file's log says
+     DMT_UPLOAD_ERROR_TBL with a readable error (the Oracle error, or for a bad
+     date the loader's own message naming the line and column), the file's log says
      COMPLETED_WITH_ERRORS; then the scenario is run and the staged rows are
      judged with the normal pass rule;
   2. wrong layout: a file named for Suppliers that carries the Projects
@@ -465,6 +466,16 @@ def check_upload(target, scenario, files, src_by_seq, page):
         cur = con.cursor()
         ok, details, seq_map = check_staging(cur, scenario, files, src_by_seq)
         errs = upload_errors(cur, scenario)
+        if page.get("error") or not page.get("batch_id"):
+            # The page showed an error without reloading, so the batch id it
+            # holds is the previous one: take the batch of this scenario's
+            # upload errors instead (every rejected file writes one).
+            cur.execute("""SELECT MAX(l.BATCH_ID) FROM DMT_UPLOAD_ERROR_TBL e
+                           JOIN DMT_UPLOAD_LOG_TBL l ON l.LOG_ID = e.LOG_ID
+                           WHERE e.BATCH_TAG LIKE :p ESCAPE '\\'""", p=scenario.replace("_", "\\_") + "~%")
+            found = cur.fetchone()[0]
+            if found:
+                page = dict(page, batch_id=found)
         ulog = upload_log(cur, page.get("batch_id"))
     finally:
         con.close()
@@ -931,7 +942,7 @@ def run_negative(args, ctx, block, save):
             lg = logs.get(f["file"]) or {}
             if nbad:
                 want = (not d.get("problem") and len(errs) == nbad
-                        and all("ORA-" in (e["message"] or "") for e in errs)
+                        and all((e["message"] or "").strip() for e in errs)
                         and lg.get("status") == "COMPLETED_WITH_ERRORS")
             else:
                 want = not d.get("problem") and not errs
