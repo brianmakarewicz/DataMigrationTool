@@ -1,5 +1,11 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — #787 fix in progress, then promotion and the upload test (backlog #786, #787)
+
+**Before any regression or ATP run.** The owner approved the #787 fix and the Fusion demo password has been rotated and verified for all six demo users. Root cause of #787 reproduced on local: the dictionary had 0 of 5,109 FBDI positions; running the FBDI metadata seed set 3,049, and running the object registry seed next (whose SEED_DICTIONARY deletes and rebuilds the dictionary) put them back to 0. Plan: fix the deploy's seed order on branch fix/787-fbdi-positions-seed-order, deploy to local, prove the positions survive, run the full local regression and click-through, promote to ATP with ci_promote, then run the upload test on ATP. Owner changed the upload test design today: per format one zip of all objects, one scenario, one run (like the regression), instead of one scenario per object.
+
+**Owner decisions pending.** None new. Decided today: a GOOD row is LOADED only with its own Fusion id, so the Grants child rows and the 2 MiscReceipts rows without an id count as failures in the upload test.
+
 ## 2026-10-19 — owner decision: a row is LOADED only with its own Fusion id (backlog #789)
 
 **Decision.** The owner decided the open question from the upload test: a GOOD row that Fusion accepted but that has no Fusion id of its own does not count as passing. A row is LOADED only when it carries its own row-grain Fusion id, and confirmation from an import report or from a parent's id alone is not enough. Such a row is not LOADED and its object does not pass. The design document used to accept a row confirmed only by its own success line in an import report, and that allowance is now removed.

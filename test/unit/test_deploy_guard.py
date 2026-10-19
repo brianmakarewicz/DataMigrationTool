@@ -442,5 +442,20 @@ check(cp.deploy_db.__defaults__ is not None
       and 'deploy_db("atp")' in (REPO / "scripts" / "ci_promote.py").read_text(encoding="utf-8"),
       "#780: deploy-local and deploy-prod (ATP) both use deploy_db, so both recompile before counting")
 
+# 11. Backlog #787: deploy_db runs the seeds in db/install.sql order, so the
+# dictionary rebuild (dmt_upload_object_tbl.sql -> SEED_DICTIONARY) runs BEFORE
+# the FBDI-position and required-field seeds instead of wiping them afterwards.
+script = scripts_seen[-1]
+pos = {n: script.find(f"/db/seed/{n}.sql") for n in
+       ("dmt_upload_object_tbl", "dmt_upload_fbdi_metadata", "dmt_upload_dict_required")}
+check(all(v > 0 for v in pos.values())
+      and pos["dmt_upload_object_tbl"] < pos["dmt_upload_fbdi_metadata"] < pos["dmt_upload_dict_required"],
+      "#787: deploy_db runs the object registry seed (SEED_DICTIONARY) before the FBDI-position and required-field seeds")
+seeds = cp.seed_order()
+check(len(seeds) == len(set(seeds)) == len(list((REPO / "db" / "seed").glob("*.sql"))),
+      "#787: seed_order lists every db/seed file exactly once (unlisted seeds are appended, none dropped)")
+check(script.find("/db/seed/") > script.rfind("/db/procedures/") if "/db/procedures/" in script else True,
+      "#787: seeds still run after tables, packages, views and procedures")
+
 print(f"TEST_DEPLOY_GUARD: {passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
