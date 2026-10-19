@@ -13,7 +13,11 @@ What it proves, with a fake cursor:
   * a run with no BAD rows is not a pass;
   * the FBDI format is not applicable to HCM objects or the four objects with no
     FBDI mapping, and is "partial" when any staging table has no FBDI file;
-  * values are written the same way for the file and for the staged read-back.
+  * values are written the same way for the file and for the staged read-back;
+  * one zip for many objects writes one file per staging table (a table shared
+    by several objects carries all their rows) and keeps each object's rows for
+    judging; the negative test's bad rows break one value each; the
+    ready-for-functional-testing rule.
 
     python test/unit/test_upload_verify.py
 
@@ -103,6 +107,56 @@ check("no FBDI mapping", uv.fbdi_applicability(reg, "Assets", ["Assets"], {"Asse
 check("partial mapping", (uv.fbdi_applicability(reg, "Obj", ["Obj"], {"Obj": {"DMT_X_STG_TBL": [1]}}) or "")
       .startswith("partial"))
 check("full mapping applies", uv.fbdi_applicability(reg, "Obj", ["Obj"], {"Obj": {"DMT_H_STG_TBL": [1]}}) is None)
+
+# one zip for many objects: a staging table shared by several objects is ONE file
+class PlanReg:
+    upload = {"DMT_PO_H_STG_TBL": {"object_code": "PO_H", "csv": "DMT_PO_H_STG_TBL.csv", "fbdi": None, "order": 2},
+              "DMT_SUP_STG_TBL": {"object_code": "SUP", "csv": "DMT_SUP_STG_TBL.csv", "fbdi": None, "order": 1}}
+    dict_cols = {"PO_H": ["STYLE", "AMT"], "SUP": ["NAME"]}
+    dict_fbdi = {}
+
+
+src = {"Suppliers": {"DMT_SUP_STG_TBL": [{"STG_SEQUENCE_ID": 1, "NAME": "A"}]},
+       "PurchaseOrders": {"DMT_PO_H_STG_TBL": [{"STG_SEQUENCE_ID": 10, "STYLE": "STD", "AMT": 5}]},
+       "BlanketPOs": {"DMT_PO_H_STG_TBL": [{"STG_SEQUENCE_ID": 11, "STYLE": "BPA", "AMT": None}]}}
+files, manifest = uv.plan_files(PlanReg(), "header", ["Suppliers", "PurchaseOrders", "BlanketPOs"], src)
+po = [f for f in files if f["stg"] == "DMT_PO_H_STG_TBL"]
+check("shared staging table is one file", len(files) == 2 and len(po) == 1)
+check("shared file holds every object's rows", po[0]["source_seqs"] == [10, 11]
+      and po[0]["objects"] == ["PurchaseOrders", "BlanketPOs"])
+check("files follow the registry load order", [f["stg"] for f in files] == ["DMT_SUP_STG_TBL", "DMT_PO_H_STG_TBL"])
+check("manifest keeps each object's own rows for judging",
+      {(m["object"], tuple(m["source_seqs"])) for m in manifest}
+      == {("Suppliers", (1,)), ("PurchaseOrders", (10,)), ("BlanketPOs", (11,))})
+check("header file renders all rows", uv.render("header", po[0]["layout"], po[0]["rows"]).decode().splitlines()
+      == ["STYLE,AMT", "STD,5", "BPA,"])
+
+
+# negative test 1: three bad copies of the first row, one bad value each
+class TypeCursor(FakeCursor):
+    pass
+
+
+types = [("STYLE", "VARCHAR2", 30), ("AMT", "NUMBER", None), ("NOTE", "VARCHAR2", 5), ("D", "DATE", None)]
+PlanReg.dict_cols["PO_H"] = ["STYLE", "AMT", "NOTE", "D"]
+f = dict(po[0], raw_rows=[])
+uv.add_bad_rows(TypeCursor(types), PlanReg(), "header", f)
+kinds = {b["kind"]: b["column"] for b in f["bad"]}
+check("bad columns: number, text (columns already in the file first), date",
+      kinds == {"number": "AMT", "length": "STYLE", "date": "D"})
+check("a needed column is added to the header file", f["layout"] == ["STYLE", "AMT", "D"])
+check("bad rows carry one bad value each", [r["AMT"] for r in f["raw_rows"]][0] == "NOT_A_NUMBER"
+      and len(f["raw_rows"][1]["STYLE"]) == 40 and f["raw_rows"][2]["D"] == "NOT-A-DATE"
+      and f["raw_rows"][1]["AMT"] == "5")
+check("good row count excludes the bad rows", f["rows_in_file"] == 2)
+
+# readiness: header PASS and (FBDI PASS or not applicable)
+rd = uv.readiness([{"object": "A", "format": "header", "verdict": "PASS"},
+                   {"object": "A", "format": "fbdi", "verdict": "NOT APPLICABLE"},
+                   {"object": "B", "format": "header", "verdict": "PASS"},
+                   {"object": "B", "format": "fbdi", "verdict": "FAIL"},
+                   {"object": "C", "format": "header", "verdict": "PASS"}])
+check("ready rule", rd["A"] == "yes" and rd["B"].startswith("no") and rd["C"].startswith("not yet"))
 
 # value formatting
 check("date", uv.fmt(datetime.datetime(2026, 1, 2)) == "2026/01/02")

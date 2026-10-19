@@ -1,4 +1,4 @@
-// dmt_upload_verify.js — browser half of the per-object upload test (backlog #786).
+// dmt_upload_verify.js — browser half of the upload test (backlog #786).
 //
 // Driven by test/playwright/dmt_upload_verify.py, which builds the upload files,
 // checks what landed in staging, runs the pipeline and judges every row. This
@@ -16,7 +16,8 @@
 //   DMT2_UI_BASE, DMT2_UI_APP, DMT2_UI_APPID, DMT2_UI_USER, DMT2_UI_PASS
 //   DMT2_PW_NODE_MODULES  node_modules folder that has 'playwright'
 //   DMT2_UPL_JOBS         JSON file: [{ "scenario": "...", "description": "...",
-//                                       "file": "C:/.../UPL-HDR-Suppliers-2610191200.zip" }]
+//                                       "file": "C:/.../UPL-HDR-2610191200.zip" }]
+//                         (several jobs run in one browser session, e.g. the negative tests)
 //   DMT2_UPL_SHOTS        folder for a screenshot after each upload (optional)
 // Output: one JSON object on stdout: { login, jobs: [{ scenario, scenarioCreated,
 //   scenarioMessage, uploaded, successMessage, errorMessage, batchId, shot }] }.
