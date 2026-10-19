@@ -66,6 +66,11 @@ NEW_FILES = [
 #   SOURCE_LINE_ID (backlog #137 / #218), not the lot TFM row's own staged values.
 DERIVED = {('InvTransactionLotsInterface.csv', 'INV_TRX_LOTS'):
            {'INVENTORY_LOT_INTERFACE_NUMBER', 'SOURCE_LINE_ID'}}
+# The TFM rows a generated file actually holds, where FBDI_CSV_ID alone says more:
+# FaMassAdditions.csv is the asset header INNER JOIN the book, so a book whose header
+# is not in the file is not in it either (the generator still stamps the book's id).
+TFM_IN_FILE = {('FaMassAdditions.csv', 'FA_ASSET_BOOK'):
+               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = :id)'}
 
 
 def connect():
@@ -211,6 +216,7 @@ def leg2(cur, conn, failures):
             failures.append(f"generated zip: {line.strip()}")
     sg = scenario_id(cur, GEN_SCN)
     reg, poscols = file_registry(cur)
+    filt = {(x.file, x.object): x.row_filter for x in FILES}
     print("   staged rows vs the TFM rows each generated file carried (every mapped column):")
     for fid, fn, oc, st, dist in reg:
         if fn not in picked:
@@ -218,8 +224,12 @@ def leg2(cur, conn, failures):
         csv_id, run_id, lines = picked[fn]
         tfm = st.replace('_STG_TBL', '_TFM_TBL')
         cols = [c for c in poscols.get(fid, []) if c not in DERIVED.get((fn, oc), set())]
-        a = rows(cur, tfm, cols, 'fbdi_csv_id = :id', {'id': csv_id}, dist == 'Y', date_only=True)
-        b = rows(cur, st, cols, 'scenario_id = :scn', {'scn': sg}, dist == 'Y', date_only=True)
+        extra = TFM_IN_FILE.get((fn, oc))
+        a = rows(cur, tfm, cols, 'fbdi_csv_id = :id' + (f' and {extra}' if extra else ''),
+                 {'id': csv_id}, dist == 'Y', date_only=True)
+        rf = filt.get((fn, oc))   # the shared PO staging tables: this file's style only
+        b = rows(cur, st, cols, 'scenario_id = :scn' + (f' and ({rf})' if rf else ''),
+                 {'scn': sg}, dist == 'Y', date_only=True)
         if dist != 'Y' and len(b) != lines:
             failures.append(f"{fn}->{oc}: file has {lines} rows, staged {len(b)}")
         ok = a == b and len(b) > 0
