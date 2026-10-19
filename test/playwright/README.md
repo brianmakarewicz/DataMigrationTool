@@ -170,6 +170,37 @@ Playwright drill logs in via `apex.submit('LOGIN')` and runs the full sweep.
 | `scripts/dmt_apex_smoke.py` | No-browser HTTP sweep + exhaustive link crawl. Same URL knob. |
 | `scripts/dmt_apex_playwright_gate.py` | Fast CI gate — a couple of pages only. |
 | `test/playwright/dmt_console_verify.py` | This — full browser drill + verify/action links. |
+| `test/playwright/dmt_upload_verify.py` | Per-object upload test (backlog #786), below. |
 
-All three resolve their target from the same base URL, so retargeting the suite
+All of them resolve their target from the same base URL, so retargeting the suite
 is one URL change.
+
+## Per-object upload test — `dmt_upload_verify.py` (backlog #786)
+
+Answers "is this object ready for functional testing?": its header-format files
+and (where it applies) its Oracle FBDI files upload through Smart Upload (page
+25), and the uploaded data, run through the pipeline, gives every GOOD row
+LOADED with a Fusion id, every BAD row FAILED with a real error, and nothing
+unaccounted.
+
+For each object and format it reads the object's rows (plus the rows of the
+objects it depends on) from the current regression baseline scenario, writes a
+zip, and in a real browser (`dmt_upload_verify.js`) creates a new scenario on
+page 14 (`UPL-HDR-<Object>-<yymmddHHMM>` or `UPL-FBDI-...`) and uploads the zip
+into it on page 25. It then checks every staged value against the file, syncs
+the prefix (`scripts/ci_promote.py sync_prefix_for`), submits the objects with
+`DMT_SCHEDULER_PKG.SUBMIT_OBJECTS`, waits (one run at a time), checks the
+prefix against the other instance, and judges every row. GOOD and BAD come from
+the regression's own verdict for the same source row in the baseline run.
+
+```
+python test/playwright/dmt_upload_verify.py --target atp --objects Suppliers --formats header \
+    --json-out docs/findings/upload_verify_atp_<date>.json --md-out docs/findings/upload_verify_atp_<date>.md
+python test/playwright/dmt_upload_verify.py --target atp --objects all --formats header,fbdi \
+    --json-out <path> --md-out <path> [--upload-only] [--skip-done]
+```
+
+`--upload-only` stops after the staging check. `--skip-done` keeps the finished
+entries of an existing `--json-out` file and runs the rest; an entry that was
+only uploaded is run on the scenario it already uploaded (nothing is uploaded
+twice). A failed upload is never run. Exit 0 = no FAIL entry.
