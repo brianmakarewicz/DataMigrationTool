@@ -396,6 +396,10 @@ prompt == Tables ==
 @@tables/dmt_upload_error_tbl.sql
 @@tables/dmt_upload_log_tbl.sql
 @@tables/dmt_upload_object_tbl.sql
+-- FBDI upload routing registry + per-file positions (backlog #792); after the
+-- object registry they reference.
+@@tables/dmt_upload_fbdi_file_tbl.sql
+@@tables/dmt_upload_fbdi_pos_tbl.sql
 @@tables/dmt_w2_bal_dtl_stg_tbl.sql
 @@tables/dmt_w2_bal_dtl_tfm_tbl.sql
 @@tables/dmt_w2_bal_stg_tbl.sql

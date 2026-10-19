@@ -82,9 +82,9 @@ AS
 
     -- FBDI ZIP upload: unpack a Fusion FBDI zip file and load the
     -- headerless, position-based CSVs into staging tables.
-    -- Routes each CSV by matching its filename to
-    -- DMT_UPLOAD_OBJECT_TBL.FBDI_CSV_FILENAME.
-    -- Column mapping is positional (COLUMN_ORDER from DMT_UPLOAD_DICT_TBL).
+    -- Routes each CSV by its filename through DMT_UPLOAD_FBDI_FILE_TBL to
+    -- every staging object registered for it (backlog #792).
+    -- Column mapping is positional, per file (DMT_UPLOAD_FBDI_POS_TBL).
     PROCEDURE UPLOAD_FBDI_ZIP (
         p_file_name       IN  VARCHAR2,
         p_batch_id        IN  NUMBER   DEFAULT NULL,
@@ -112,7 +112,7 @@ AS
     -- Oracle FBDI CSVs (named by the FBDI convention, headerless,
     -- positional). Each member file is routed by its filename:
     --   * matches DMT_UPLOAD_OBJECT_TBL.CSV_FILENAME       -> proprietary loader
-    --   * else matches DMT_UPLOAD_OBJECT_TBL.FBDI_CSV_FILENAME -> FBDI loader
+    --   * else matches DMT_UPLOAD_FBDI_FILE_TBL.FBDI_CSV_FILENAME -> FBDI loader
     --   * else                                             -> skipped with a warning
     -- Parent-before-child order (DISPLAY_ORDER) is honoured across
     -- the whole mixed bundle. Reuses the proprietary and FBDI

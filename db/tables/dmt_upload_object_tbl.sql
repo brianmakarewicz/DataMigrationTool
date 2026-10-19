@@ -36,5 +36,5 @@ COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."STAGING_TABLE" IS 'Target staging tab
 COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."CSV_FILENAME" IS 'Expected filename in ZIP bundle, e.g. POZ_SUPPLIERS.csv';
 COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."PARENT_OBJECT_CODE" IS 'Parent object code for child objects. NULL for top-level objects.';
 COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."IS_ACTIVE" IS 'Y = available for upload, N = disabled';
-COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."FBDI_CSV_FILENAME" IS 'CSV filename inside FBDI zip files (from CTL INFILE directive). Used for FBDI zip upload routing.';
+COMMENT ON COLUMN "DMT_UPLOAD_OBJECT_TBL"."FBDI_CSV_FILENAME" IS 'First FBDI CSV file name of the object, kept for the per-object test tooling. FBDI upload routing reads DMT_UPLOAD_FBDI_FILE_TBL (backlog #792), not this column.';
 COMMENT ON TABLE "DMT_UPLOAD_OBJECT_TBL"  IS 'Upload object registry. Maps object codes to staging tables and APEX pages. Drives select lists and ZIP bundle routing.';

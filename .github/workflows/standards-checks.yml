@@ -62,3 +62,7 @@ jobs:
       - name: WORK_QUEUE_ID stamped at FBDI generation; reconcilers scope by work item (backlog 777)
         if: always()
         run: python scripts/check_work_queue_id_at_generation.py
+
+      - name: Every generated FBDI file is registered for FBDI upload (backlog 792)
+        if: always()
+        run: python scripts/check_fbdi_upload_mappings.py
