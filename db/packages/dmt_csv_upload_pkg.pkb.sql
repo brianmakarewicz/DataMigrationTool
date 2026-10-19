@@ -37,9 +37,10 @@ AS
     --     DMT_UPLOAD_OBJECT_TBL.STAGING_TABLE per object code; one
     --     upload loader serves every object's staging table.
     --   * The column list is registry data — the uploadable columns
-    --     and their FBDI positions are read from DMT_UPLOAD_DICT_TBL
-    --     per object, so the INSERT ... SELECT column/select lists
-    --     cannot be fixed at compile time.
+    --     are read from DMT_UPLOAD_DICT_TBL per object and the FBDI
+    --     positions from DMT_UPLOAD_FBDI_POS_TBL per FBDI file, so the
+    --     INSERT ... SELECT column/select lists cannot be fixed at
+    --     compile time.
     -- Safeguards that keep this carve-out from swallowing the rule,
     -- identical in posture to the queue engine's:
     --   * EVERY identifier (staging table, each mapped column, and the
@@ -51,8 +52,10 @@ AS
     --     max-sequence watermark on the scenario-tag UPDATEs and the
     --     error-log tag reads.
     --   * Inputs come only from the seeded, PR-reviewed upload registry
-    --     tables (DMT_UPLOAD_OBJECT_TBL / DMT_UPLOAD_DICT_TBL), never
-    --     from user input.
+    --     tables (DMT_UPLOAD_OBJECT_TBL / DMT_UPLOAD_DICT_TBL /
+    --     DMT_UPLOAD_FBDI_FILE_TBL / DMT_UPLOAD_FBDI_POS_TBL), never
+    --     from user input. The FBDI date mask placed in the TO_DATE
+    --     text is CHECK-constrained to two fixed masks.
     -- Each dynamic-SQL site below is tagged "Section-7 carve-out (see
     -- note above)". The runtime-DDL ban still applies in full: the
     -- ERR$_ table DDL in ensure_err_log_table is a known section-7
@@ -1159,13 +1162,17 @@ AS
     -- FBDI POSITIONAL LOADER (private)
     -- ============================================================
     -- Loads a headerless, position-based FBDI CSV into a staging
-    -- table. Column mapping is purely positional: column 1 in the
-    -- CSV maps to the first non-admin column in DMT_UPLOAD_DICT_TBL
-    -- (ordered by COLUMN_ORDER), column 2 to the second, etc.
+    -- table. Column mapping is purely positional and keyed per FBDI
+    -- file (backlog #792): p_fbdi_file_id names one (file, staging
+    -- object) pair in DMT_UPLOAD_FBDI_FILE_TBL, whose positions in
+    -- DMT_UPLOAD_FBDI_POS_TBL say which CSV slot fills which staging
+    -- column, whose DATE_MASK parses its dates, and whose
+    -- DISTINCT_ROWS_FLAG loads one row per distinct set of values.
     -- ============================================================
     PROCEDURE fbdi_load_from_blob (
         p_blob          IN  BLOB,
         p_file_label    IN  VARCHAR2,
+        p_fbdi_file_id  IN  NUMBER,
         p_object_code   IN  VARCHAR2,
         p_staging_table IN  VARCHAR2,
         p_batch_id      IN  NUMBER,
@@ -1190,10 +1197,12 @@ AS
         TYPE t_type_map IS TABLE OF VARCHAR2(128) INDEX BY VARCHAR2(128);
         l_col_types    t_type_map;
 
-        -- Explicit masks matching the FBDI CSV date conventions (identical to the
-        -- formats the removed ALTER SESSION statements used).
-        c_date_fmt      CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS';
-        c_timestamp_fmt CONSTANT VARCHAR2(30) := 'YYYY/MM/DD HH24:MI:SS.FF';
+        -- Explicit masks matching the file's FBDI date convention: the file
+        -- registry's DATE_MASK (CHECK-constrained to two fixed masks; the
+        -- generators write YYYY/MM/DD, Grants and Billing Events MM/DD/YYYY).
+        l_date_fmt      VARCHAR2(30);
+        l_timestamp_fmt VARCHAR2(33);
+        l_distinct      VARCHAR2(1);
 
         -- Returns the SELECT-list expression for a mapped staging column: a bare
         -- COLnnn reference for most types, or an explicit TO_DATE/TO_TIMESTAMP
@@ -1213,9 +1222,9 @@ AS
             -- and fail the load exactly as the old implicit cast did under the
             -- removed ALTER SESSION format — only the parse format is now pinned.
             IF l_type = 'DATE' THEN
-                RETURN 'TO_DATE(' || l_col || ', ''' || c_date_fmt || ''')';
+                RETURN 'TO_DATE(' || l_col || ', ''' || l_date_fmt || ''')';
             ELSIF l_type LIKE 'TIMESTAMP%' THEN
-                RETURN 'TO_TIMESTAMP(' || l_col || ', ''' || c_timestamp_fmt || ''')';
+                RETURN 'TO_TIMESTAMP(' || l_col || ', ''' || l_timestamp_fmt || ''')';
             ELSE
                 RETURN l_col;
             END IF;
@@ -1223,6 +1232,12 @@ AS
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
+
+        -- Backlog #792: the file's date mask and distinct-rows flag.
+        SELECT DATE_MASK, DATE_MASK || '.FF', DISTINCT_ROWS_FLAG
+        INTO   l_date_fmt, l_timestamp_fmt, l_distinct
+        FROM   DMT_UPLOAD_FBDI_FILE_TBL
+        WHERE  FBDI_FILE_ID = p_fbdi_file_id;
 
         -- Backlog #76: load the staging table's column data types up front so the
         -- SELECT list can state an explicit date/timestamp mask per column.
@@ -1244,30 +1259,26 @@ AS
         -- column with no FBDI_POSITION is a slot the generator never fills, so
         -- it is left out of the INSERT entirely.
         --
-        -- The presence of at least one seeded FBDI_POSITION for the object is
-        -- what makes it loadable in FBDI format. If NONE of the object's
-        -- columns has a position (HDL objects, or unseeded objects), we fall
-        -- back to strict sequential mapping so a same-order CSV still loads,
-        -- rather than silently mapping nothing.
+        -- The presence of at least one seeded position for the (file, object)
+        -- pair (DMT_UPLOAD_FBDI_POS_TBL, backlog #792) is what makes it
+        -- loadable in FBDI format. If the pair has NO position (a registered
+        -- but unmapped file), we fall back to strict sequential mapping so a
+        -- same-order CSV still loads, rather than silently mapping nothing.
         DECLARE
             l_has_positions PLS_INTEGER;
         BEGIN
             SELECT COUNT(*)
             INTO   l_has_positions
-            FROM   DMT_UPLOAD_DICT_TBL
-            WHERE  OBJECT_CODE     = p_object_code
-            AND    IS_ADMIN_COLUMN = 'N'
-            AND    FBDI_POSITION IS NOT NULL;
+            FROM   DMT_UPLOAD_FBDI_POS_TBL
+            WHERE  FBDI_FILE_ID = p_fbdi_file_id;
 
             IF l_has_positions > 0 THEN
                 -- Position-driven: only the columns the generator writes.
                 FOR c IN (
                     SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER(COLUMN_NAME)) AS COLUMN_NAME,
                            FBDI_POSITION
-                    FROM   DMT_UPLOAD_DICT_TBL
-                    WHERE  OBJECT_CODE     = p_object_code
-                    AND    IS_ADMIN_COLUMN = 'N'
-                    AND    FBDI_POSITION IS NOT NULL
+                    FROM   DMT_UPLOAD_FBDI_POS_TBL
+                    WHERE  FBDI_FILE_ID = p_fbdi_file_id
                     ORDER BY FBDI_POSITION
                 ) LOOP
                     -- Slots past 300 are unreachable via APEX_DATA_PARSER; record
@@ -1332,7 +1343,7 @@ AS
         -- the BLOB is bound (USING p_blob).
         l_sql := 'INSERT INTO ' || p_staging_table ||
                  ' (' || l_col_list || ')' ||
-                 ' SELECT ' || l_select_list ||
+                 ' SELECT ' || CASE WHEN l_distinct = 'Y' THEN 'DISTINCT ' END || l_select_list ||
                  ' FROM TABLE(APEX_DATA_PARSER.PARSE(' ||
                  '   p_content   => :blob,' ||
                  '   p_file_name => ''upload.csv'',' ||
@@ -1439,26 +1450,22 @@ AS
                 l_file_name := SUBSTR(l_file_name, INSTR(l_file_name, '/', -1) + 1);
             END IF;
 
-            -- Route by FBDI_CSV_FILENAME (not CSV_FILENAME)
+            -- Route by file name through the FBDI file registry (backlog #792):
+            -- a file may feed several staging objects (each with its own
+            -- positions), loaded in LOAD_ORDER; several files may feed one
+            -- staging object (PO Order / Blanket / Contract layouts).
             l_matched := FALSE;
-            BEGIN
-                SELECT OBJECT_CODE, STAGING_TABLE
-                INTO   l_object_code, l_staging_table
-                FROM   DMT_UPLOAD_OBJECT_TBL
-                WHERE  UPPER(FBDI_CSV_FILENAME) = UPPER(l_file_name)
-                AND    IS_ACTIVE = 'Y';
-                l_matched := TRUE;
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    DECLARE l_msg VARCHAR2(500) := 'SKIPPED: ' || l_file_name || ' (no FBDI filename match)' || CHR(10);
-                    BEGIN DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg); END;
-                WHEN TOO_MANY_ROWS THEN
-                    DECLARE l_msg VARCHAR2(500) := 'SKIPPED (multi-match): ' || l_file_name || CHR(10);
-                    BEGIN DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg); END;
-            END;
-
-            IF l_matched THEN
-                l_staging_table := DBMS_ASSERT.SIMPLE_SQL_NAME(l_staging_table);
+            FOR m IN (
+                SELECT f.FBDI_FILE_ID, o.OBJECT_CODE, o.STAGING_TABLE
+                FROM   DMT_UPLOAD_FBDI_FILE_TBL f
+                JOIN   DMT_UPLOAD_OBJECT_TBL o ON o.OBJECT_CODE = f.OBJECT_CODE
+                WHERE  UPPER(f.FBDI_CSV_FILENAME) = UPPER(l_file_name)
+                AND    o.IS_ACTIVE = 'Y'
+                ORDER BY f.LOAD_ORDER, o.DISPLAY_ORDER
+            ) LOOP
+                l_matched       := TRUE;
+                l_object_code   := m.OBJECT_CODE;
+                l_staging_table := DBMS_ASSERT.SIMPLE_SQL_NAME(m.STAGING_TABLE);
                 l_file_blob := APEX_ZIP.GET_FILE_CONTENT(
                     p_zipped_blob => p_zip_blob, p_file_name => l_files(i));
 
@@ -1481,6 +1488,7 @@ AS
                 fbdi_load_from_blob(
                     p_blob          => l_file_blob,
                     p_file_label    => l_file_name,
+                    p_fbdi_file_id  => m.FBDI_FILE_ID,
                     p_object_code   => l_object_code,
                     p_staging_table => l_staging_table,
                     p_batch_id      => l_batch_id,
@@ -1525,6 +1533,11 @@ AS
                     l_msg := l_msg || CHR(10);
                     DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg);
                 END;
+            END LOOP;
+
+            IF NOT l_matched THEN
+                DECLARE l_msg VARCHAR2(500) := 'SKIPPED: ' || l_file_name || ' (no FBDI filename match)' || CHR(10);
+                BEGIN DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg); END;
             END IF;
         END LOOP;
 
@@ -1598,7 +1611,8 @@ AS
     -- ============================================================
     -- One ZIP, mixed formats. Each member CSV is routed by filename:
     --   * matches CSV_FILENAME      -> proprietary CSV (header-driven) loader
-    --   * matches FBDI_CSV_FILENAME -> FBDI (headerless, positional) loader
+    --   * matches DMT_UPLOAD_FBDI_FILE_TBL -> FBDI (headerless, positional)
+    --     loader, once per staging object the file feeds (backlog #792)
     --   * neither                   -> skipped with a warning line
     -- The whole bundle is loaded in DISPLAY_ORDER (parents before
     -- children) regardless of member order in the zip, and regardless
@@ -1643,7 +1657,9 @@ AS
             file_label    VARCHAR2(500),
             object_code   VARCHAR2(50),
             staging_table VARCHAR2(128),
-            format        VARCHAR2(12)   -- 'PROPRIETARY' or 'FBDI'
+            format        VARCHAR2(12),  -- 'PROPRIETARY' or 'FBDI'
+            fbdi_file_id  NUMBER,        -- FBDI: the (file, object) pair (backlog #792)
+            load_order    NUMBER         -- FBDI: order within one file's objects
         );
         TYPE t_plan_tab IS TABLE OF t_plan_rec INDEX BY PLS_INTEGER;
         l_plan       t_plan_tab;
@@ -1712,26 +1728,7 @@ AS
                 WHEN TOO_MANY_ROWS THEN NULL;
             END;
 
-            -- Else try FBDI filename.
-            IF l_format IS NULL THEN
-                BEGIN
-                    SELECT OBJECT_CODE, STAGING_TABLE, NVL(DISPLAY_ORDER, 0)
-                    INTO   l_object_code, l_staging_table, l_disp_order
-                    FROM   DMT_UPLOAD_OBJECT_TBL
-                    WHERE  UPPER(FBDI_CSV_FILENAME) = UPPER(l_file_name)
-                    AND    IS_ACTIVE = 'Y';
-                    l_format := 'FBDI';
-                EXCEPTION
-                    WHEN NO_DATA_FOUND THEN NULL;
-                    WHEN TOO_MANY_ROWS THEN NULL;
-                END;
-            END IF;
-
-            IF l_format IS NULL THEN
-                l_skipped := l_skipped + 1;
-                append_summary('SKIPPED: ' || l_file_name
-                    || ' (unrecognized file — no proprietary or FBDI filename match)' || CHR(10));
-            ELSE
+            IF l_format = 'PROPRIETARY' THEN
                 l_plan_count := l_plan_count + 1;
                 l_plan(l_plan_count).display_order := l_disp_order;
                 l_plan(l_plan_count).zip_index     := i;
@@ -1739,15 +1736,48 @@ AS
                 l_plan(l_plan_count).object_code   := l_object_code;
                 l_plan(l_plan_count).staging_table := l_staging_table;
                 l_plan(l_plan_count).format        := l_format;
+                l_plan(l_plan_count).load_order    := 0;
+            ELSE
+                -- Else the FBDI file registry (backlog #792): one plan entry per
+                -- staging object the file feeds, each with its own positions.
+                FOR m IN (
+                    SELECT f.FBDI_FILE_ID, f.LOAD_ORDER, o.OBJECT_CODE, o.STAGING_TABLE,
+                           NVL(o.DISPLAY_ORDER, 0) AS DISPLAY_ORDER
+                    FROM   DMT_UPLOAD_FBDI_FILE_TBL f
+                    JOIN   DMT_UPLOAD_OBJECT_TBL o ON o.OBJECT_CODE = f.OBJECT_CODE
+                    WHERE  UPPER(f.FBDI_CSV_FILENAME) = UPPER(l_file_name)
+                    AND    o.IS_ACTIVE = 'Y'
+                    ORDER BY f.LOAD_ORDER, o.DISPLAY_ORDER
+                ) LOOP
+                    l_format := 'FBDI';
+                    l_plan_count := l_plan_count + 1;
+                    l_plan(l_plan_count).display_order := m.DISPLAY_ORDER;
+                    l_plan(l_plan_count).zip_index     := i;
+                    l_plan(l_plan_count).file_label    := l_file_name;
+                    l_plan(l_plan_count).object_code   := m.OBJECT_CODE;
+                    l_plan(l_plan_count).staging_table := m.STAGING_TABLE;
+                    l_plan(l_plan_count).format        := 'FBDI';
+                    l_plan(l_plan_count).fbdi_file_id  := m.FBDI_FILE_ID;
+                    l_plan(l_plan_count).load_order    := m.LOAD_ORDER;
+                END LOOP;
+            END IF;
+
+            IF l_format IS NULL THEN
+                l_skipped := l_skipped + 1;
+                append_summary('SKIPPED: ' || l_file_name
+                    || ' (unrecognized file — no proprietary or FBDI filename match)' || CHR(10));
             END IF;
         END LOOP;
 
-        -- Sort the plan by DISPLAY_ORDER (ascending) — insertion sort, small N.
+        -- Sort the plan by DISPLAY_ORDER, then a file's LOAD_ORDER (ascending) —
+        -- stable insertion sort, small N.
         FOR i IN 2 .. l_plan_count LOOP
             l_tmp := l_plan(i);
             DECLARE j PLS_INTEGER := i - 1;
             BEGIN
-                WHILE j >= 1 AND l_plan(j).display_order > l_tmp.display_order LOOP
+                WHILE j >= 1 AND (l_plan(j).display_order > l_tmp.display_order
+                                  OR (l_plan(j).display_order = l_tmp.display_order
+                                      AND l_plan(j).load_order > l_tmp.load_order)) LOOP
                     l_plan(j + 1) := l_plan(j);
                     j := j - 1;
                 END LOOP;
@@ -1807,6 +1837,7 @@ AS
                     fbdi_load_from_blob(
                         p_blob          => l_file_blob,
                         p_file_label    => l_file_name,
+                        p_fbdi_file_id  => l_plan(i).fbdi_file_id,
                         p_object_code   => l_object_code,
                         p_staging_table => l_staging_table,
                         p_batch_id      => l_batch_id,

@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """
-Build the two DMT2 upload test zips from the RegressionTest scenario (scenario_id 1)
-staging data, so both reproduce the regression set in either upload format.
+Build the two DMT2 upload test zips from the current regression baseline scenario
+(scripts/regression_scenario.json "current_scenario") staging data, so both
+reproduce the regression set in either upload format.
 
 Outputs (in this directory):
   regressionProprietary.zip
@@ -9,10 +10,13 @@ Outputs (in this directory):
       real staging-column names. Only populated columns are emitted (SOURCE_ID
       is always included). Loadable by the proprietary/header path.
   FBDIFormat.zip
-      The FBDI-named, headerless, positional CSVs for the FBDI objects in the
-      regression set, laid out exactly as the pipeline's FBDI generators emit
-      (column N = the staging column at FBDI position N, per fbdi_column_maps).
-      Loadable by the FBDI path.
+      Every FBDI file the pipeline's generators write (fbdi_column_maps.FILES),
+      headerless and positional, laid out exactly as the generators emit
+      (column N = the staging column at FBDI position N), dates in the file's
+      own date format. Rows per file follow the file's row_filter (PO Order /
+      Blanket / Contract split the shared PO staging tables by style); a file fed
+      by two objects (Assets FaMassAdditions.csv) is one row per driver row
+      joined to the other object. Loadable by the FBDI path.
 
 Both are loadable by DMT_CSV_UPLOAD_PKG.UPLOAD_ZIP_AUTO (auto-detect).
 
@@ -21,16 +25,19 @@ Usage:
 Reads the local Docker DB (dmt_owner). Read-only against the DB.
 """
 import csv
+import datetime
 import io
+import json
 import os
 import zipfile
 
 import oracledb
 
-from fbdi_column_maps import MAPS
+from fbdi_column_maps import FILES, MDY
 
-SCENARIO_ID = 1
 HERE = os.path.dirname(os.path.abspath(__file__))
+SCENARIO_JSON = os.path.join(HERE, '..', '..', 'scripts', 'regression_scenario.json')
+SCENARIO_ID = None   # resolved in main() from regression_scenario.json
 
 # Staging admin/infrastructure columns never emitted as business data.
 ADMIN = {'STG_SEQUENCE_ID', 'STAGE_DATE', 'STG_STATUS', 'ERROR_TEXT',
@@ -44,27 +51,38 @@ def connect():
     return conn
 
 
-def fmt(v):
-    """Render a value the way the FBDI generators do (dates YYYY/MM/DD)."""
+def fmt(v, date_mask=None):
+    """Render a value the way the FBDI generators do: dates YYYY/MM/DD, or
+    MM/DD/YYYY for a file whose date_mask says so (Grants, Billing Events)."""
     if v is None:
         return ''
-    import datetime
+    d = '%m/%d/%Y' if date_mask == MDY else '%Y/%m/%d'
     if isinstance(v, datetime.datetime):
-        # match generator date formatting; most generators use YYYY/MM/DD
         if v.hour or v.minute or v.second:
-            return v.strftime('%Y/%m/%d %H:%M:%S')
-        return v.strftime('%Y/%m/%d')
+            return v.strftime(d + ' %H:%M:%S')
+        return v.strftime(d)
     if isinstance(v, datetime.date):
-        return v.strftime('%Y/%m/%d')
+        return v.strftime(d)
     return str(v)
 
 
-def object_rows(cur, staging_table, columns):
-    """Return scenario-1 rows for the given columns, ordered by STG_SEQUENCE_ID."""
+def current_scenario_id(cur):
+    name = json.load(open(SCENARIO_JSON, encoding='utf-8'))['current_scenario']
+    cur.execute("select scenario_id from dmt_scenario_tbl where scenario_name = :1", [name])
+    row = cur.fetchone()
+    if not row:
+        raise SystemExit(f"regression scenario {name} not found on this database")
+    return row[0], name
+
+
+def object_rows(cur, staging_table, columns, row_filter=None):
+    """Return the scenario's rows for the given columns, ordered by STG_SEQUENCE_ID,
+    narrowed by an FBDI file's row_filter (which may reference :scn)."""
     col_sql = ", ".join(f'"{c}"' for c in columns)
+    where = 'scenario_id = :scn' + (f' and ({row_filter})' if row_filter else '')
     cur.execute(
         f'select {col_sql} from {staging_table} '
-        f'where scenario_id = :1 order by stg_sequence_id', [SCENARIO_ID])
+        f'where {where} order by stg_sequence_id', scn=SCENARIO_ID)
     return cur.fetchall()
 
 
@@ -107,47 +125,58 @@ def build_proprietary(cur, out_path):
 
 
 def build_fbdi(cur, out_path):
-    """FBDI-named headerless positional CSVs for regression FBDI objects."""
-    cur.execute("select object_code, staging_table, fbdi_csv_filename, nvl(display_order,0) "
-                "from dmt_upload_object_tbl where fbdi_csv_filename is not null "
-                "order by display_order")
-    fbdi_objs = cur.fetchall()
+    """Every FBDI file of fbdi_column_maps.FILES, headerless and positional."""
+    cur.execute("select object_code, staging_table from dmt_upload_object_tbl")
+    stg_of = dict(cur.fetchall())
+    groups = {}
+    for x in FILES:
+        groups.setdefault(x.file, []).append(x)
     written = []
     with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as z:
-        for oc, st, fbdi_fn, _do in fbdi_objs:
-            if oc not in MAPS:
-                continue
-            _fn, colmap = MAPS[oc]
-            width = len(colmap)
-            # Which staging columns exist, and at which position
-            stg_cols = set(table_columns(cur, st))
-            # Fetch the distinct staging columns we need
-            needed = [c for c in colmap if c and c in stg_cols]
-            if not needed:
-                continue
-            rows = object_rows(cur, st, needed)
+        for fname, entries in groups.items():
+            first = entries[0]
+            colmap = first.cols
+            if first.driver:
+                # One file row per driver row, joined to the other object(s) on the key.
+                drv_obj, key = first.driver
+                per_obj = {}
+                for x in entries:
+                    st = stg_of[x.object]
+                    have = set(table_columns(cur, st))
+                    cols = list(dict.fromkeys([key] + [c for c in colmap if c and c in have]))
+                    per_obj[x.object] = [dict(zip(cols, r)) for r in object_rows(cur, st, cols, x.row_filter)]
+                lookup = {o: {r[key]: r for r in rows} for o, rows in per_obj.items() if o != drv_obj}
+                rows = []
+                for d in per_obj[drv_obj]:
+                    merged = {}
+                    for o in lookup:
+                        merged.update(lookup[o].get(d[key], {}))
+                    merged.update(d)
+                    rows.append(merged)
+            else:
+                st = stg_of[first.object]
+                have = set(table_columns(cur, st))
+                cols = [c for c in colmap if c and c in have]
+                if not cols:
+                    continue
+                rows = [dict(zip(cols, r)) for r in object_rows(cur, st, cols, first.row_filter)]
             if not rows:
                 continue
-            # value lookup per row keyed by column name
             buf = io.StringIO()
             w = csv.writer(buf, lineterminator='\n', quoting=csv.QUOTE_ALL)
             for r in rows:
-                valof = dict(zip(needed, r))
-                line = []
-                for c in colmap:
-                    if c and c in valof:
-                        line.append(fmt(valof[c]))
-                    else:
-                        line.append('')   # EMPTY / constant / non-STG slot
-                w.writerow(line)
-            z.writestr(fbdi_fn, buf.getvalue())
-            written.append((oc, fbdi_fn, len(rows), width))
+                w.writerow([fmt(r.get(c), first.date_mask) if c else '' for c in colmap])
+            z.writestr(fname, buf.getvalue())
+            written.append((', '.join(x.object for x in entries), fname, len(rows), len(colmap)))
     return written
 
 
 def main():
+    global SCENARIO_ID
     conn = connect()
     cur = conn.cursor()
+    SCENARIO_ID, name = current_scenario_id(cur)
+    print(f"source scenario: {name} (scenario_id {SCENARIO_ID})")
     prop_path = os.path.join(HERE, 'regressionProprietary.zip')
     fbdi_path = os.path.join(HERE, 'FBDIFormat.zip')
 
@@ -159,7 +188,7 @@ def main():
         print(f"    {oc:22} {fn:35} rows={nrows} cols={ncols}")
     print(f"\nFBDIFormat.zip: {len(fbdi)} CSVs")
     for oc, fn, nrows, ncols in fbdi:
-        print(f"    {oc:22} {fn:35} rows={nrows} width={ncols}")
+        print(f"    {fn:36} {oc:28} rows={nrows} width={ncols}")
     conn.close()
 
 

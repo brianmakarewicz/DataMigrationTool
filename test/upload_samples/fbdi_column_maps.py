@@ -19,13 +19,42 @@ Derived by reading the pipeline FBDI generator packages
 generated CSVs stored in DMT_FBDI_CSV_TBL for run 167 (column counts and
 sample values matched exactly for the supplier family and items).
 
-Only the ~24 FBDI (.csv) objects appear here. HDL (.dat) objects are out of
+Only the FBDI (.csv) objects appear here. HDL (.dat) objects are out of
 scope for the FBDI format and are covered by the proprietary format only.
+
+Two views of the same layouts (backlog #792):
+  * FILES -- the upload routing registry, one FbdiFile per (FBDI file name,
+    staging object) pair. One file can feed several staging objects (Assets
+    FaMassAdditions.csv = asset header joined to asset book), and one staging
+    object can be fed by several files with different layouts (the PO header
+    and line staging tables take PoHeadersInterfaceOrder/Blanket/Contract.csv).
+    Positions are keyed per file, never per staging table. Seeded into
+    DMT_UPLOAD_FBDI_FILE_TBL + DMT_UPLOAD_FBDI_POS_TBL, which the FBDI upload
+    router (DMT_CSV_UPLOAD_PKG) reads.
+  * MAPS -- {object_code: (file, cols)}, the first FILES entry of each object.
+    Kept for the per-object tooling (test/playwright/dmt_upload_verify.py) and
+    the legacy FBDI_CSV_FILENAME / FBDI_POSITION columns, seeded from the same
+    module, which the router no longer reads.
+
+Regenerate the seed after any change here:
+    python test/upload_samples/gen_fbdi_metadata_seed.py
+scripts/check_fbdi_upload_mappings.py fails when a generated FBDI file is not
+registered here or the committed seed is out of date.
 """
+
+from collections import namedtuple
 
 
 def rng(prefix, a, b):
     return [f"{prefix}{i}" for i in range(a, b + 1)]
+
+
+def _layout(width, slots):
+    """A file layout of `width` slots from {1-based slot: staging column}."""
+    cols = [None] * width
+    for pos, name in slots.items():
+        cols[pos - 1] = name
+    return cols
 
 
 MAPS = {}
@@ -586,6 +615,324 @@ exp += ['CONTRACT_NUMBER', 'CONTRACT_NAME', 'CONTRACT_ID', 'FUNDING_SOURCE_NUMBE
 MAPS['PJC_EXPENDITURES'] = ('PjcTxnXfaceStageAll.csv', exp)
 
 
+# ======================= backlog #792: the remaining generated files =======================
+# Derived the same way (reading each generator's SELECT / af() calls slot by slot); a
+# generator value with no staging column of that name is a None slot (synthetic keys:
+# the Assets MASS_ADDITION_ID and the serials' parent link columns).
+
+# ---------------- AR Invoices distributions (RaInterfaceDistributionsAll.csv) ----------------
+ra_dist = _layout(140, {1: 'ORG_ID', 2: 'ACCOUNT_CLASS', 3: 'AMOUNT', 4: 'PERCENT',
+    5: 'ACCTD_AMOUNT', 6: 'INTERFACE_LINE_CONTEXT', 7: 'INTERFACE_LINE_ATTRIBUTE1',
+    8: 'INTERFACE_LINE_ATTRIBUTE2', 9: 'INTERFACE_LINE_ATTRIBUTE3', 10: 'INTERFACE_LINE_ATTRIBUTE4',
+    11: 'INTERFACE_LINE_ATTRIBUTE5', 12: 'INTERFACE_LINE_ATTRIBUTE6',
+    13: 'INTERFACE_LINE_ATTRIBUTE7', 14: 'INTERFACE_LINE_ATTRIBUTE8',
+    15: 'INTERFACE_LINE_ATTRIBUTE9', 16: 'INTERFACE_LINE_ATTRIBUTE10',
+    17: 'INTERFACE_LINE_ATTRIBUTE11', 18: 'INTERFACE_LINE_ATTRIBUTE12',
+    19: 'INTERFACE_LINE_ATTRIBUTE13', 20: 'INTERFACE_LINE_ATTRIBUTE14',
+    21: 'INTERFACE_LINE_ATTRIBUTE15', 22: 'SEGMENT1', 23: 'SEGMENT2', 24: 'SEGMENT3', 25: 'SEGMENT4',
+    26: 'SEGMENT5', 27: 'SEGMENT6', 28: 'SEGMENT7', 29: 'SEGMENT8', 30: 'SEGMENT9', 31: 'SEGMENT10',
+    32: 'SEGMENT11', 33: 'SEGMENT12', 34: 'SEGMENT13', 35: 'SEGMENT14', 36: 'SEGMENT15',
+    37: 'SEGMENT16', 38: 'SEGMENT17', 39: 'SEGMENT18', 40: 'SEGMENT19', 41: 'SEGMENT20',
+    42: 'SEGMENT21', 43: 'SEGMENT22', 44: 'SEGMENT23', 45: 'SEGMENT24', 46: 'SEGMENT25',
+    47: 'SEGMENT26', 48: 'SEGMENT27', 49: 'SEGMENT28', 50: 'SEGMENT29', 51: 'SEGMENT30',
+    52: 'COMMENTS', 83: 'ATTRIBUTE_CATEGORY', 84: 'ATTRIBUTE1', 85: 'ATTRIBUTE2', 86: 'ATTRIBUTE3',
+    87: 'ATTRIBUTE4', 88: 'ATTRIBUTE5', 89: 'ATTRIBUTE6', 90: 'ATTRIBUTE7', 91: 'ATTRIBUTE8',
+    92: 'ATTRIBUTE9', 93: 'ATTRIBUTE10', 94: 'ATTRIBUTE11', 95: 'ATTRIBUTE12', 96: 'ATTRIBUTE13',
+    97: 'ATTRIBUTE14', 98: 'ATTRIBUTE15', 99: 'BU_NAME'})
+MAPS['RA_DISTS'] = ('RaInterfaceDistributionsAll.csv', ra_dist)
+
+# ---------------- Assets (FaMassAdditions.csv = header JOIN book, one row per asset-book) ----------
+# Slot 1 is the book TFM id (MASS_ADDITION_ID, synthetic). The header columns load into
+# DMT_FA_ASSET_HDR_STG_TBL (one row per distinct header, see FILES) and the book columns
+# into DMT_FA_ASSET_BOOK_STG_TBL; each staging object takes the slots whose column it has.
+fa_add = _layout(425, {2: 'BOOK_TYPE_CODE', 4: 'ASSET_NUMBER', 5: 'DESCRIPTION', 6: 'TAG_NUMBER',
+    7: 'MANUFACTURER_NAME', 8: 'SERIAL_NUMBER', 9: 'MODEL_NUMBER', 10: 'ASSET_TYPE', 11: 'COST',
+    12: 'DATE_PLACED_IN_SERVICE', 13: 'PRORATE_CONVENTION_CODE', 14: 'CURRENT_UNITS',
+    15: 'ASSET_CATEGORY_SEGMENT1', 16: 'ASSET_CATEGORY_SEGMENT2', 17: 'ASSET_CATEGORY_SEGMENT3',
+    18: 'ASSET_CATEGORY_SEGMENT4', 19: 'ASSET_CATEGORY_SEGMENT5', 20: 'ASSET_CATEGORY_SEGMENT6',
+    21: 'ASSET_CATEGORY_SEGMENT7', 25: 'PARENT_ASSET_NUMBER', 38: 'PROPERTY_TYPE_CODE',
+    39: 'PROPERTY_1245_1250_CODE', 40: 'IN_USE_FLAG', 41: 'OWNED_LEASED', 42: 'NEW_USED',
+    50: 'SALVAGE_VALUE', 52: 'YTD_DEPRN', 53: 'DEPRN_RESERVE', 54: 'BONUS_YTD_DEPRN',
+    55: 'BONUS_DEPRN_RESERVE', 58: 'DEPRECIATION_METHOD', 59: 'LIFE_IN_MONTHS', 101: 'ATTRIBUTE1',
+    102: 'ATTRIBUTE2', 103: 'ATTRIBUTE3', 104: 'ATTRIBUTE4', 105: 'ATTRIBUTE5', 106: 'ATTRIBUTE6',
+    107: 'ATTRIBUTE7', 108: 'ATTRIBUTE8', 109: 'ATTRIBUTE9', 110: 'ATTRIBUTE10', 111: 'ATTRIBUTE11',
+    112: 'ATTRIBUTE12', 113: 'ATTRIBUTE13', 114: 'ATTRIBUTE14', 115: 'ATTRIBUTE15',
+    141: 'ATTRIBUTE_CATEGORY', 245: 'DEPRN_START_DATE'})
+# FaMassaddDistributions.csv: slot 1 = the book's MASS_ADDITION_ID (synthetic, no staging
+# column), slot 2 = UNITS_ASSIGNED (the generator writes it as UNITS).
+fa_dist = _layout(66, {2: 'UNITS_ASSIGNED', 4: 'LOCATION_SEGMENT1', 5: 'LOCATION_SEGMENT2',
+    6: 'LOCATION_SEGMENT3', 7: 'LOCATION_SEGMENT4', 8: 'LOCATION_SEGMENT5', 9: 'LOCATION_SEGMENT6',
+    10: 'LOCATION_SEGMENT7', 11: 'EXPENSE_ACCOUNT_SEGMENT1', 12: 'EXPENSE_ACCOUNT_SEGMENT2',
+    13: 'EXPENSE_ACCOUNT_SEGMENT3', 14: 'EXPENSE_ACCOUNT_SEGMENT4', 15: 'EXPENSE_ACCOUNT_SEGMENT5',
+    16: 'EXPENSE_ACCOUNT_SEGMENT6', 17: 'EXPENSE_ACCOUNT_SEGMENT7', 18: 'EXPENSE_ACCOUNT_SEGMENT8',
+    19: 'EXPENSE_ACCOUNT_SEGMENT9', 20: 'EXPENSE_ACCOUNT_SEGMENT10'})
+
+# ---------------- MiscReceipts (InvTransactionsInterface / Lots / Serials) ----------------
+inv_trx = _layout(273, {1: 'ORGANIZATION_NAME', 2: 'TRANSACTION_GROUP_ID',
+    3: 'TRANSACTION_GROUP_SEQ', 4: 'TRANSACTION_BATCH_ID', 5: 'TRANSACTION_BATCH_SEQ',
+    6: 'PROCESS_FLAG', 7: 'INVENTORY_ITEM', 8: 'ITEM_NUMBER', 9: 'REVISION',
+    10: 'INV_LOTSERIAL_INTERFACE_NUM', 11: 'SUBINVENTORY_CODE', 12: 'LOCATOR_NAME',
+    13: 'LOC_SEGMENT1', 14: 'LOC_SEGMENT2', 15: 'LOC_SEGMENT3', 16: 'LOC_SEGMENT4',
+    17: 'LOC_SEGMENT5', 18: 'LOC_SEGMENT6', 19: 'LOC_SEGMENT7', 20: 'LOC_SEGMENT8',
+    21: 'LOC_SEGMENT9', 22: 'LOC_SEGMENT10', 23: 'LOC_SEGMENT11', 24: 'LOC_SEGMENT12',
+    25: 'LOC_SEGMENT13', 26: 'LOC_SEGMENT14', 27: 'LOC_SEGMENT15', 28: 'LOC_SEGMENT16',
+    29: 'LOC_SEGMENT17', 30: 'LOC_SEGMENT18', 31: 'LOC_SEGMENT19', 32: 'LOC_SEGMENT20',
+    33: 'TRANSACTION_QUANTITY', 34: 'TRANSACTION_UOM', 35: 'TRANSACTION_UNIT_OF_MEASURE',
+    36: 'RESERVATION_QUANTITY', 37: 'TRANSACTION_DATE', 38: 'TRANSACTION_SOURCE_TYPE_NAME',
+    39: 'TRANSACTION_TYPE_NAME', 40: 'TRANSFER_ORGANIZATION_TYPE', 41: 'TRANSFER_ORGANIZATION_NAME',
+    42: 'TRANSFER_SUBINVENTORY', 43: 'XFER_LOC_SEGMENT1', 44: 'XFER_LOC_SEGMENT2',
+    45: 'XFER_LOC_SEGMENT3', 46: 'XFER_LOC_SEGMENT4', 47: 'XFER_LOC_SEGMENT5',
+    48: 'XFER_LOC_SEGMENT6', 49: 'XFER_LOC_SEGMENT7', 50: 'XFER_LOC_SEGMENT8',
+    51: 'XFER_LOC_SEGMENT9', 52: 'XFER_LOC_SEGMENT10', 53: 'XFER_LOC_SEGMENT11',
+    54: 'XFER_LOC_SEGMENT12', 55: 'XFER_LOC_SEGMENT13', 56: 'XFER_LOC_SEGMENT14',
+    57: 'XFER_LOC_SEGMENT15', 58: 'XFER_LOC_SEGMENT16', 59: 'XFER_LOC_SEGMENT17',
+    60: 'XFER_LOC_SEGMENT18', 61: 'XFER_LOC_SEGMENT19', 62: 'XFER_LOC_SEGMENT20',
+    63: 'PRIMARY_QUANTITY', 64: 'SECONDARY_TRANSACTION_QUANTITY', 65: 'SECONDARY_UOM_CODE',
+    66: 'SECONDARY_UNIT_OF_MEASURE', 67: 'SOURCE_CODE', 68: 'SOURCE_HEADER_ID', 69: 'SOURCE_LINE_ID',
+    70: 'TRANSACTION_SOURCE_NAME', 71: 'DSP_SEGMENT1', 72: 'DSP_SEGMENT2', 73: 'DSP_SEGMENT3',
+    74: 'DSP_SEGMENT4', 75: 'DSP_SEGMENT5', 76: 'DSP_SEGMENT6', 77: 'DSP_SEGMENT7',
+    78: 'DSP_SEGMENT8', 79: 'DSP_SEGMENT9', 80: 'DSP_SEGMENT10', 81: 'DSP_SEGMENT11',
+    82: 'DSP_SEGMENT12', 83: 'DSP_SEGMENT13', 84: 'DSP_SEGMENT14', 85: 'DSP_SEGMENT15',
+    86: 'DSP_SEGMENT16', 87: 'DSP_SEGMENT17', 88: 'DSP_SEGMENT18', 89: 'DSP_SEGMENT19',
+    90: 'DSP_SEGMENT20', 91: 'DSP_SEGMENT21', 92: 'DSP_SEGMENT22', 93: 'DSP_SEGMENT23',
+    94: 'DSP_SEGMENT24', 95: 'DSP_SEGMENT25', 96: 'DSP_SEGMENT26', 97: 'DSP_SEGMENT27',
+    98: 'DSP_SEGMENT28', 99: 'DSP_SEGMENT29', 100: 'DSP_SEGMENT30', 101: 'TRANSACTION_ACTION_NAME',
+    102: 'TRANSACTION_MODE', 103: 'LOCK_FLAG', 104: 'TRANSACTION_REFERENCE', 105: 'REASON_NAME',
+    106: 'CURRENCY_NAME', 107: 'CURRENCY_CODE', 108: 'CURRENCY_CONVERSION_TYPE',
+    109: 'CURRENCY_CONVERSION_RATE', 110: 'CURRENCY_CONVERSION_DATE', 111: 'TRANSACTION_COST',
+    112: 'TRANSFER_COST', 113: 'NEW_AVERAGE_COST', 114: 'VALUE_CHANGE', 115: 'PERCENTAGE_CHANGE',
+    116: 'DST_SEGMENT1', 117: 'DST_SEGMENT2', 118: 'DST_SEGMENT3', 119: 'DST_SEGMENT4',
+    120: 'DST_SEGMENT5', 121: 'DST_SEGMENT6', 122: 'DST_SEGMENT7', 123: 'DST_SEGMENT8',
+    124: 'DST_SEGMENT9', 125: 'DST_SEGMENT10', 126: 'DST_SEGMENT11', 127: 'DST_SEGMENT12',
+    128: 'DST_SEGMENT13', 129: 'DST_SEGMENT14', 130: 'DST_SEGMENT15', 131: 'DST_SEGMENT16',
+    132: 'DST_SEGMENT17', 133: 'DST_SEGMENT18', 134: 'DST_SEGMENT19', 135: 'DST_SEGMENT20',
+    136: 'DST_SEGMENT21', 137: 'DST_SEGMENT22', 138: 'DST_SEGMENT23', 139: 'DST_SEGMENT24',
+    140: 'DST_SEGMENT25', 141: 'DST_SEGMENT26', 142: 'DST_SEGMENT27', 143: 'DST_SEGMENT28',
+    144: 'DST_SEGMENT29', 145: 'DST_SEGMENT30', 146: 'LOCATION_TYPE', 147: 'EMPLOYEE_CODE',
+    148: 'RECEIVING_DOCUMENT', 149: 'LINE_ITEM_NUM', 150: 'SHIPMENT_NUMBER',
+    151: 'TRANSPORTATION_COST', 152: 'CONTAINERS', 153: 'WAYBILL_AIRBILL',
+    154: 'EXPECTED_ARRIVAL_DATE', 155: 'REQUIRED_FLAG', 156: 'SHIPPABLE_FLAG',
+    157: 'SHIPPED_QUANTITY', 158: 'VALIDATION_REQUIRED', 159: 'NEGATIVE_REQ_FLAG',
+    160: 'OWNING_TP_TYPE', 161: 'TRANSFER_OWNING_TP_TYPE', 162: 'OWNING_ORGANIZATION_NAME',
+    163: 'XFR_OWNING_ORGANIZATION_NAME', 164: 'TRANSFER_PERCENTAGE', 165: 'PLANNING_TP_TYPE',
+    166: 'TRANSFER_PLANNING_TP_TYPE', 167: 'ROUTING_REVISION', 168: 'ROUTING_REVISION_DATE',
+    169: 'ALTERNATE_BOM_DESIGNATOR', 170: 'ALTERNATE_ROUTING_DESIGNATOR', 171: 'ORGANIZATION_TYPE',
+    172: 'USSGL_TRANSACTION_CODE', 173: 'WIP_ENTITY_TYPE', 174: 'SCHEDULE_UPDATE_CODE',
+    175: 'SETUP_TEARDOWN_CODE', 176: 'PRIMARY_SWITCH', 177: 'MRP_CODE', 178: 'OPERATION_SEQ_NUM',
+    179: 'WIP_SUPPLY_TYPE', 180: 'RELIEVE_RESERVATIONS_FLAG', 181: 'RELIEVE_HIGH_LEVEL_RSV_FLAG',
+    182: 'TRANSFER_PRICE', 183: 'BUILD_BREAK_TO_UOM', 184: 'BUILD_BREAK_TO_UNIT_OF_MEASURE',
+    185: 'ATTRIBUTE_CATEGORY', 186: 'ATTRIBUTE1', 187: 'ATTRIBUTE2', 188: 'ATTRIBUTE3',
+    189: 'ATTRIBUTE4', 190: 'ATTRIBUTE5', 191: 'ATTRIBUTE6', 192: 'ATTRIBUTE7', 193: 'ATTRIBUTE8',
+    194: 'ATTRIBUTE9', 195: 'ATTRIBUTE10', 196: 'ATTRIBUTE11', 197: 'ATTRIBUTE12',
+    198: 'ATTRIBUTE13', 199: 'ATTRIBUTE14', 200: 'ATTRIBUTE15', 201: 'ATTRIBUTE16',
+    202: 'ATTRIBUTE17', 203: 'ATTRIBUTE18', 204: 'ATTRIBUTE19', 205: 'ATTRIBUTE20',
+    206: 'ATTRIBUTE_NUMBER1', 207: 'ATTRIBUTE_NUMBER2', 208: 'ATTRIBUTE_NUMBER3',
+    209: 'ATTRIBUTE_NUMBER4', 210: 'ATTRIBUTE_NUMBER5', 211: 'ATTRIBUTE_NUMBER6',
+    212: 'ATTRIBUTE_NUMBER7', 213: 'ATTRIBUTE_NUMBER8', 214: 'ATTRIBUTE_NUMBER9',
+    215: 'ATTRIBUTE_NUMBER10', 216: 'ATTRIBUTE_DATE1', 217: 'ATTRIBUTE_DATE2',
+    218: 'ATTRIBUTE_DATE3', 219: 'ATTRIBUTE_DATE4', 220: 'ATTRIBUTE_DATE5',
+    221: 'ATTRIBUTE_TIMESTAMP1', 222: 'ATTRIBUTE_TIMESTAMP2', 223: 'ATTRIBUTE_TIMESTAMP3',
+    224: 'ATTRIBUTE_TIMESTAMP4', 225: 'ATTRIBUTE_TIMESTAMP5', 226: 'TRANSACTION_COST_IDENTIFIER',
+    227: 'DEFAULT_TAXATION_COUNTRY', 228: 'DOCUMENT_SUB_TYPE', 229: 'TRX_BUSINESS_CATEGORY',
+    230: 'USER_DEFINED_FISC_CLASS', 231: 'TAX_INVOICE_NUMBER', 232: 'TAX_INVOICE_DATE',
+    233: 'PRODUCT_CATEGORY', 234: 'PRODUCT_TYPE', 235: 'ASSESSABLE_VALUE',
+    236: 'TAX_CLASSIFICATION_CODE', 237: 'EXEMPT_CERTIFICATE_NUMBER', 238: 'EXEMPT_REASON_CODE',
+    239: 'INTENDED_USE', 240: 'FIRST_PTY_NUMBER', 241: 'THIRD_PTY_NUMBER',
+    242: 'FINAL_DISCHARGE_LOC_CODE', 243: 'CATEGORY_NAME', 244: 'OWNING_ORGANIZATION_ID',
+    245: 'XFR_OWNING_ORGANIZATION_ID', 246: 'PRC_BU_NAME', 247: 'VENDOR_NAME', 248: 'VENDOR_NUMBER',
+    249: 'CONSIGNMENT_AGREEMENT_NUM', 250: 'USE_CURRENT_COST', 251: 'EXTERNAL_SYSTEM_PACKING_UNIT',
+    252: 'TRANSFER_LOCATOR_NAME', 253: 'INV_PROJECT', 254: 'INV_TASK', 255: 'COUNTRY_OF_ORIGIN_NAME',
+    256: 'TRANSFER_INV_PROJECT', 257: 'TRANSFER_INV_TASK'})
+MAPS['INV_TRX'] = ('InvTransactionsInterface.csv', inv_trx)
+inv_lot = _layout(9, {1: 'INVENTORY_LOT_INTERFACE_NUMBER', 2: 'INVENTORY_SERIAL_INTERFACE_NUM',
+    3: 'SOURCE_CODE', 4: 'SOURCE_LINE_ID', 5: 'LOT_NUMBER', 6: 'DESCRIPTION',
+    7: 'LOT_EXPIRATION_DATE', 8: 'TRANSACTION_QUANTITY', 9: 'PRIMARY_QUANTITY'})
+MAPS['INV_TRX_LOTS'] = ('InvTransactionLotsInterface.csv', inv_lot)
+# Serials slots 1-3 are the parent transaction's link values, not serial staging columns.
+inv_ser = _layout(5, {4: 'FM_SERIAL_NUMBER', 5: 'TO_SERIAL_NUMBER'})
+MAPS['INV_TRX_SERIALS'] = ('InvSerialNumbersInterface.csv', inv_ser)
+
+# ---------------- Blanket POs and Contracts (own layouts, PO staging tables) ----------------
+# Slot 8 carries STYLE_DISPLAY_NAME ('Blanket Purchase Agreement' / 'Contract Purchase
+# Agreement'), which is how the BlanketPOs and Contracts transforms pick their rows out of
+# the shared PO staging tables -- the uploaded file sets it, no extra column is needed.
+bpa_h = _layout(122, {1: 'INTERFACE_HEADER_KEY', 2: 'ACTION', 3: 'BATCH_ID',
+    4: 'INTERFACE_SOURCE_CODE', 5: 'APPROVAL_ACTION', 6: 'DOCUMENT_NUM', 7: 'DOCUMENT_TYPE_CODE',
+    8: 'STYLE_DISPLAY_NAME', 9: 'PRC_BU_NAME', 10: 'AGENT_NAME', 11: 'CURRENCY_CODE', 12: 'COMMENTS',
+    13: 'VENDOR_NAME', 14: 'VENDOR_NUM', 15: 'VENDOR_SITE_CODE', 16: 'VENDOR_CONTACT',
+    17: 'VENDOR_DOC_NUM', 18: 'FOB', 19: 'FREIGHT_CARRIER', 20: 'FREIGHT_TERMS', 21: 'PAY_ON_CODE',
+    22: 'PAYMENT_TERMS', 23: 'ORIGINATOR_ROLE', 24: 'CHANGE_ORDER_DESC',
+    25: 'ACCEPTANCE_REQUIRED_FLAG', 26: 'ACCEPTANCE_WITHIN_DAYS', 27: 'SUPPLIER_NOTIF_METHOD',
+    28: 'FAX', 29: 'EMAIL_ADDRESS', 30: 'CONFIRMING_ORDER_FLAG', 36: 'NOTE_TO_VENDOR',
+    37: 'NOTE_TO_RECEIVER', 47: 'ATTRIBUTE_CATEGORY', 48: 'ATTRIBUTE1', 49: 'ATTRIBUTE2',
+    50: 'ATTRIBUTE3', 51: 'ATTRIBUTE4', 52: 'ATTRIBUTE5', 53: 'ATTRIBUTE6', 54: 'ATTRIBUTE7',
+    55: 'ATTRIBUTE8', 56: 'ATTRIBUTE9', 57: 'ATTRIBUTE10', 58: 'ATTRIBUTE11', 59: 'ATTRIBUTE12',
+    60: 'ATTRIBUTE13', 61: 'ATTRIBUTE14', 62: 'ATTRIBUTE15', 63: 'ATTRIBUTE16', 64: 'ATTRIBUTE17',
+    65: 'ATTRIBUTE18', 66: 'ATTRIBUTE19', 67: 'ATTRIBUTE20', 68: 'ATTRIBUTE_DATE1',
+    69: 'ATTRIBUTE_DATE2', 70: 'ATTRIBUTE_DATE3', 71: 'ATTRIBUTE_DATE4', 72: 'ATTRIBUTE_DATE5',
+    73: 'ATTRIBUTE_DATE6', 74: 'ATTRIBUTE_DATE7', 75: 'ATTRIBUTE_DATE8', 76: 'ATTRIBUTE_DATE9',
+    77: 'ATTRIBUTE_DATE10', 78: 'ATTRIBUTE_NUMBER1', 79: 'ATTRIBUTE_NUMBER2',
+    80: 'ATTRIBUTE_NUMBER3', 81: 'ATTRIBUTE_NUMBER4', 82: 'ATTRIBUTE_NUMBER5',
+    83: 'ATTRIBUTE_NUMBER6', 84: 'ATTRIBUTE_NUMBER7', 85: 'ATTRIBUTE_NUMBER8',
+    86: 'ATTRIBUTE_NUMBER9', 87: 'ATTRIBUTE_NUMBER10', 88: 'ATTRIBUTE_TIMESTAMP1',
+    89: 'ATTRIBUTE_TIMESTAMP2', 90: 'ATTRIBUTE_TIMESTAMP3', 91: 'ATTRIBUTE_TIMESTAMP4',
+    92: 'ATTRIBUTE_TIMESTAMP5', 93: 'ATTRIBUTE_TIMESTAMP6', 94: 'ATTRIBUTE_TIMESTAMP7',
+    95: 'ATTRIBUTE_TIMESTAMP8', 96: 'ATTRIBUTE_TIMESTAMP9', 97: 'ATTRIBUTE_TIMESTAMP10',
+    98: 'AGENT_EMAIL_ADDRESS', 99: 'MODE_OF_TRANSPORT', 100: 'SERVICE_LEVEL'})
+bpa_l = _layout(108, {1: 'INTERFACE_LINE_KEY', 2: 'INTERFACE_HEADER_KEY', 3: 'ACTION', 4: 'LINE_NUM',
+    5: 'LINE_TYPE', 6: 'ITEM', 7: 'ITEM_DESCRIPTION', 8: 'ITEM_REVISION', 9: 'CATEGORY',
+    11: 'UNIT_OF_MEASURE', 12: 'UNIT_PRICE', 16: 'NEGOTIATED_BY_PREPARER_FLAG', 17: 'NOTE_TO_VENDOR',
+    18: 'NOTE_TO_RECEIVER', 23: 'LINE_ATTRIBUTE_CATEGORY_LINES', 24: 'LINE_ATTRIBUTE1',
+    25: 'LINE_ATTRIBUTE2', 26: 'LINE_ATTRIBUTE3', 27: 'LINE_ATTRIBUTE4', 28: 'LINE_ATTRIBUTE5',
+    29: 'LINE_ATTRIBUTE6', 30: 'LINE_ATTRIBUTE7', 31: 'LINE_ATTRIBUTE8', 32: 'LINE_ATTRIBUTE9',
+    33: 'LINE_ATTRIBUTE10', 34: 'LINE_ATTRIBUTE11', 35: 'LINE_ATTRIBUTE12', 36: 'LINE_ATTRIBUTE13',
+    37: 'LINE_ATTRIBUTE14', 38: 'LINE_ATTRIBUTE15', 39: 'ATTRIBUTE16', 40: 'ATTRIBUTE17',
+    41: 'ATTRIBUTE18', 42: 'ATTRIBUTE19', 43: 'ATTRIBUTE20', 44: 'ATTRIBUTE_DATE1',
+    45: 'ATTRIBUTE_DATE2', 46: 'ATTRIBUTE_DATE3', 47: 'ATTRIBUTE_DATE4', 48: 'ATTRIBUTE_DATE5',
+    49: 'ATTRIBUTE_DATE6', 50: 'ATTRIBUTE_DATE7', 51: 'ATTRIBUTE_DATE8', 52: 'ATTRIBUTE_DATE9',
+    53: 'ATTRIBUTE_DATE10', 54: 'ATTRIBUTE_NUMBER1', 55: 'ATTRIBUTE_NUMBER2',
+    56: 'ATTRIBUTE_NUMBER3', 57: 'ATTRIBUTE_NUMBER4', 58: 'ATTRIBUTE_NUMBER5',
+    59: 'ATTRIBUTE_NUMBER6', 60: 'ATTRIBUTE_NUMBER7', 61: 'ATTRIBUTE_NUMBER8',
+    62: 'ATTRIBUTE_NUMBER9', 63: 'ATTRIBUTE_NUMBER10', 64: 'ATTRIBUTE_TIMESTAMP1',
+    65: 'ATTRIBUTE_TIMESTAMP2', 66: 'ATTRIBUTE_TIMESTAMP3', 67: 'ATTRIBUTE_TIMESTAMP4',
+    68: 'ATTRIBUTE_TIMESTAMP5', 69: 'ATTRIBUTE_TIMESTAMP6', 70: 'ATTRIBUTE_TIMESTAMP7',
+    71: 'ATTRIBUTE_TIMESTAMP8', 72: 'ATTRIBUTE_TIMESTAMP9', 73: 'ATTRIBUTE_TIMESTAMP10'})
+cpa_h = _layout(106, {1: 'INTERFACE_HEADER_KEY', 2: 'ACTION', 3: 'BATCH_ID',
+    4: 'INTERFACE_SOURCE_CODE', 5: 'APPROVAL_ACTION', 6: 'DOCUMENT_NUM', 7: 'DOCUMENT_TYPE_CODE',
+    8: 'STYLE_DISPLAY_NAME', 9: 'PRC_BU_NAME', 10: 'AGENT_NAME', 11: 'CURRENCY_CODE', 12: 'COMMENTS',
+    13: 'VENDOR_NAME', 14: 'VENDOR_NUM', 15: 'VENDOR_SITE_CODE', 16: 'VENDOR_CONTACT',
+    17: 'VENDOR_DOC_NUM', 18: 'FOB', 19: 'FREIGHT_CARRIER', 20: 'FREIGHT_TERMS', 21: 'PAY_ON_CODE',
+    22: 'PAYMENT_TERMS', 23: 'ORIGINATOR_ROLE', 24: 'CHANGE_ORDER_DESC',
+    25: 'ACCEPTANCE_REQUIRED_FLAG', 26: 'ACCEPTANCE_WITHIN_DAYS', 27: 'SUPPLIER_NOTIF_METHOD',
+    28: 'FAX', 29: 'EMAIL_ADDRESS', 30: 'CONFIRMING_ORDER_FLAG', 36: 'NOTE_TO_VENDOR',
+    37: 'NOTE_TO_RECEIVER', 44: 'ATTRIBUTE_CATEGORY', 45: 'ATTRIBUTE1', 46: 'ATTRIBUTE2',
+    47: 'ATTRIBUTE3', 48: 'ATTRIBUTE4', 49: 'ATTRIBUTE5', 50: 'ATTRIBUTE6', 51: 'ATTRIBUTE7',
+    52: 'ATTRIBUTE8', 53: 'ATTRIBUTE9', 54: 'ATTRIBUTE10', 55: 'ATTRIBUTE11', 56: 'ATTRIBUTE12',
+    57: 'ATTRIBUTE13', 58: 'ATTRIBUTE14', 59: 'ATTRIBUTE15', 60: 'ATTRIBUTE16', 61: 'ATTRIBUTE17',
+    62: 'ATTRIBUTE18', 63: 'ATTRIBUTE19', 64: 'ATTRIBUTE20', 65: 'ATTRIBUTE_DATE1',
+    66: 'ATTRIBUTE_DATE2', 67: 'ATTRIBUTE_DATE3', 68: 'ATTRIBUTE_DATE4', 69: 'ATTRIBUTE_DATE5',
+    70: 'ATTRIBUTE_DATE6', 71: 'ATTRIBUTE_DATE7', 72: 'ATTRIBUTE_DATE8', 73: 'ATTRIBUTE_DATE9',
+    74: 'ATTRIBUTE_DATE10', 75: 'ATTRIBUTE_NUMBER1', 76: 'ATTRIBUTE_NUMBER2',
+    77: 'ATTRIBUTE_NUMBER3', 78: 'ATTRIBUTE_NUMBER4', 79: 'ATTRIBUTE_NUMBER5',
+    80: 'ATTRIBUTE_NUMBER6', 81: 'ATTRIBUTE_NUMBER7', 82: 'ATTRIBUTE_NUMBER8',
+    83: 'ATTRIBUTE_NUMBER9', 84: 'ATTRIBUTE_NUMBER10', 85: 'ATTRIBUTE_TIMESTAMP1',
+    86: 'ATTRIBUTE_TIMESTAMP2', 87: 'ATTRIBUTE_TIMESTAMP3', 88: 'ATTRIBUTE_TIMESTAMP4',
+    89: 'ATTRIBUTE_TIMESTAMP5', 90: 'ATTRIBUTE_TIMESTAMP6', 91: 'ATTRIBUTE_TIMESTAMP7',
+    92: 'ATTRIBUTE_TIMESTAMP8', 93: 'ATTRIBUTE_TIMESTAMP9', 94: 'ATTRIBUTE_TIMESTAMP10',
+    95: 'AGENT_EMAIL_ADDRESS', 96: 'MODE_OF_TRANSPORT', 97: 'SERVICE_LEVEL',
+    99: 'BUYER_MANAGED_TRANSPORT_FLAG'})
+
+# ---------------- Grants (the other 13 award files) ----------------
+gms_funding = _layout(10, {1: 'AWARD_NUMBER', 2: 'BUDGET_PERIOD_NAME', 3: 'FUNDING_SOURCE_NAME',
+    4: 'ISSUE_TYPE', 5: 'ISSUE_NUMBER', 6: 'ISSUE_DATE', 7: 'ISSUE_DESCRIPTION',
+    8: 'DIRECT_FUNDING_AMOUNT', 9: 'INDIRECT_FUNDING_AMOUNT', 10: 'FUNDING_SOURCE_NUMBER'})
+MAPS['GMS_AWD_FUNDING'] = ('GmsAwardFundingInterface.csv', gms_funding)
+gms_projects = _layout(56, {1: 'AWARD_NUMBER', 2: 'FUNDING_SOURCE_NAME', 3: 'PROJECT_NUMBER',
+    4: 'AWARD_PRJ_BRD_SCHEDULE', 5: 'FIXED_DATE', 6: 'ATTRIBUTE_CATEGORY', 7: 'ATTRIBUTE1',
+    8: 'ATTRIBUTE2', 9: 'ATTRIBUTE3', 10: 'ATTRIBUTE4', 11: 'ATTRIBUTE5', 12: 'ATTRIBUTE6',
+    13: 'ATTRIBUTE7', 14: 'ATTRIBUTE8', 15: 'ATTRIBUTE9', 16: 'ATTRIBUTE10', 17: 'ATTRIBUTE11',
+    18: 'ATTRIBUTE12', 19: 'ATTRIBUTE13', 20: 'ATTRIBUTE14', 21: 'ATTRIBUTE15', 22: 'ATTRIBUTE16',
+    23: 'ATTRIBUTE17', 24: 'ATTRIBUTE18', 25: 'ATTRIBUTE19', 26: 'ATTRIBUTE20',
+    27: 'ATTRIBUTE_NUMBER1', 28: 'ATTRIBUTE_NUMBER2', 29: 'ATTRIBUTE_NUMBER3',
+    30: 'ATTRIBUTE_NUMBER4', 31: 'ATTRIBUTE_NUMBER5', 32: 'ATTRIBUTE_NUMBER6',
+    33: 'ATTRIBUTE_NUMBER7', 34: 'ATTRIBUTE_NUMBER8', 35: 'ATTRIBUTE_NUMBER9',
+    36: 'ATTRIBUTE_NUMBER10', 37: 'ATTRIBUTE_DATE1', 38: 'ATTRIBUTE_DATE2', 39: 'ATTRIBUTE_DATE3',
+    40: 'ATTRIBUTE_DATE4', 41: 'ATTRIBUTE_DATE5', 42: 'ATTRIBUTE_DATE6', 43: 'ATTRIBUTE_DATE7',
+    44: 'ATTRIBUTE_DATE8', 45: 'ATTRIBUTE_DATE9', 46: 'ATTRIBUTE_DATE10', 47: 'ATTRIBUTE_TIMESTAMP1',
+    48: 'ATTRIBUTE_TIMESTAMP2', 49: 'ATTRIBUTE_TIMESTAMP3', 50: 'ATTRIBUTE_TIMESTAMP4',
+    51: 'ATTRIBUTE_TIMESTAMP5', 52: 'ATTRIBUTE_TIMESTAMP6', 53: 'ATTRIBUTE_TIMESTAMP7',
+    54: 'ATTRIBUTE_TIMESTAMP8', 55: 'ATTRIBUTE_TIMESTAMP9', 56: 'ATTRIBUTE_TIMESTAMP10'})
+MAPS['GMS_AWD_PROJECTS'] = ('GmsAwardProjectsInterface.csv', gms_projects)
+gms_fund_src = _layout(8, {1: 'AWARD_NUMBER', 2: 'FUNDING_SOURCE_NAME', 3: 'FUNDING_SOURCE_NUMBER',
+    4: 'COST_SHARE_REQ_BY_SPONSOR', 5: 'COST_SHARE_APPROVED_BY_EMAIL',
+    6: 'COST_SHARE_APPROVED_BY_NAME', 7: 'COST_SHARE_APPROVED_BY_NUMBER',
+    8: 'COST_SHARE_APPROVAL_DATE'})
+MAPS['GMS_AWD_FUND_SRC'] = ('GmsAwardFundSrcInterface.csv', gms_fund_src)
+gms_prj_fund_src = _layout(5, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'FUNDING_SOURCE_NAME',
+    4: 'FUNDING_SOURCE_NUMBER', 5: 'ENABLE_BURDENING_FLAG'})
+MAPS['GMS_AWD_PRJ_FUND_SRC'] = ('GmsAwardPrjFundSrcInterface.csv', gms_prj_fund_src)
+gms_keywords = _layout(3, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'KEYWORD_NAME'})
+MAPS['GMS_AWD_KEYWORDS'] = ('GmsAwardKeywordsInterface.csv', gms_keywords)
+gms_budget_periods = _layout(4, {1: 'AWARD_NUMBER', 2: 'BUDGET_PERIOD', 3: 'START_DATE',
+    4: 'END_DATE'})
+MAPS['GMS_AWD_BDGT_PRDS'] = ('GmsAwardBdgtPeriodsInterface.csv', gms_budget_periods)
+gms_certs = _layout(13, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'CERTIFICATION_NAME',
+    4: 'CERTIFICATION_DATE', 5: 'CERTIFIED_BY', 6: 'CERT_STATUS', 7: 'APPROVAL_DATE',
+    8: 'EXPIRATION_DATE', 9: 'EXPEDITED_REVIEW', 10: 'FULL_REVIEW', 11: 'ASSURANCE_NUMBER',
+    12: 'EXEMPTION_NUMBER', 13: 'COMMENTS'})
+MAPS['GMS_AWD_CERTS'] = ('GmsAwardCertsInterface.csv', gms_certs)
+gms_cfdas = _layout(2, {1: 'AWARD_NUMBER', 2: 'CFDA'})
+MAPS['GMS_AWD_CFDAS'] = ('GmsAwardCfdasInterface.csv', gms_cfdas)
+gms_fund_alloc = _layout(4, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'ISSUE_NUMBER',
+    4: 'FUNDING_AMOUNT'})
+MAPS['GMS_AWD_FUND_ALLOC'] = ('GmsAwardFundAllocInterface.csv', gms_fund_alloc)
+gms_org_credits = _layout(4, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'ORGANIZATION',
+    4: 'CREDIT_PERCENTAGE'})
+MAPS['GMS_AWD_ORG_CREDITS'] = ('GmsAwardOrgCreditsInterface.csv', gms_org_credits)
+gms_prj_task_burden = _layout(5, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'TASK_NUMBER',
+    4: 'BURDEN_SCHEDULE', 5: 'FIXED_DATE'})
+MAPS['GMS_AWD_PRJ_TSK_BRD'] = ('GmsAwardPrjTaskBrdInterface.csv', gms_prj_task_burden)
+gms_references = _layout(5, {1: 'AWARD_NUMBER', 2: 'PROJECT_NUMBER', 3: 'REFERENCE_TYPE', 4: 'VALUE',
+    5: 'COMMENTS'})
+MAPS['GMS_AWD_REFERENCES'] = ('GmsAwardReferencesInterface.csv', gms_references)
+gms_terms = _layout(6, {1: 'AWARD_NUMBER', 2: 'TERM_CATEGORY_NAME', 3: 'TERM_NAME',
+    4: 'TERM_DESCRIPTION', 5: 'TERM_OPERAND', 6: 'TERM_VALUE'})
+MAPS['GMS_AWD_TERMS'] = ('GmsAwardTermsInterface.csv', gms_terms)
+
+
+# =============================== FILES: the upload routing registry ===============================
+# date_mask is the format the file's generator writes dates in; the loader parses every
+# DATE/TIMESTAMP column of the file with it (Grants and Billing Events write MM/DD/YYYY).
+# load_order orders the staging objects one file feeds. distinct loads one row per distinct
+# set of mapped values (the asset header repeats on every book row of FaMassAdditions.csv).
+# row_filter / driver are used only by the test-file builder (build_regression_zips.py):
+# which scenario rows go into the file (:scn = the scenario id), and, for a file fed by two
+# objects, (driver object, join column): one file row per driver row, joined to the other.
+FbdiFile = namedtuple('FbdiFile', 'file object cols load_order distinct date_mask row_filter driver')
+YMD = 'YYYY/MM/DD HH24:MI:SS'
+MDY = 'MM/DD/YYYY HH24:MI:SS'
+_PO_STYLE = ("INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_STG_TBL "
+             "WHERE SCENARIO_ID = :scn AND STYLE_DISPLAY_NAME = '{}')")
+
+
+def _f(file, obj, cols, load_order=1, distinct=False, date_mask=YMD, row_filter=None, driver=None):
+    return FbdiFile(file, obj, cols, load_order, distinct, date_mask, row_filter, driver)
+
+
+FILES = []
+for _oc, (_fn, _cols) in MAPS.items():
+    if _oc == 'PO_HEADERS_INT':
+        FILES.append(_f(_fn, _oc, _cols, row_filter="STYLE_DISPLAY_NAME = 'Purchase Order'"))
+    elif _oc == 'PO_LINES_INT':
+        FILES.append(_f(_fn, _oc, _cols, row_filter=_PO_STYLE.format('Purchase Order')))
+    else:
+        FILES.append(_f(_fn, _oc, _cols,
+                        date_mask=MDY if _oc.startswith('GMS_AWD_') or _oc == 'PJB_BILL_EVENTS' else YMD))
+FILES += [
+    _f('FaMassAdditions.csv', 'FA_ASSET_HDR', fa_add, load_order=1, distinct=True,
+       driver=('FA_ASSET_BOOK', 'ASSET_NUMBER')),
+    _f('FaMassAdditions.csv', 'FA_ASSET_BOOK', fa_add, load_order=2,
+       driver=('FA_ASSET_BOOK', 'ASSET_NUMBER')),
+    _f('FaMassaddDistributions.csv', 'FA_ASSET_ASSIGN', fa_dist),
+    _f('PoHeadersInterfaceBlanket.csv', 'PO_HEADERS_INT', bpa_h,
+       row_filter="STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'"),
+    _f('PoLinesInterfaceBlanket.csv', 'PO_LINES_INT', bpa_l,
+       row_filter=_PO_STYLE.format('Blanket Purchase Agreement')),
+    _f('PoHeadersInterfaceContract.csv', 'PO_HEADERS_INT', cpa_h,
+       row_filter="STYLE_DISPLAY_NAME = 'Contract Purchase Agreement'"),
+]
+for _oc in ('FA_ASSET_HDR', 'FA_ASSET_BOOK', 'FA_ASSET_ASSIGN'):
+    MAPS.setdefault(_oc, next((x.file, x.cols) for x in FILES if x.object == _oc))
+
+# Generated FBDI files deliberately NOT uploadable, with the reason
+# (scripts/check_fbdi_upload_mappings.py allowlist).
+NOT_UPLOADABLE = {
+    'EpbcsDataImport.csv': 'PlanningBudgets loads an EPM data import, not an FBDI staging table '
+                           '(out of scope for the upload feature, owner 2026-10-19)',
+}
+
+
 if __name__ == '__main__':
-    for oc, (fn, cols) in sorted(MAPS.items()):
-        print(f"{oc:22} {fn:35} positions={len(cols)}")
+    for x in FILES:
+        print(f"{x.file:36} {x.object:22} positions={len(x.cols)} load_order={x.load_order} "
+              f"distinct={x.distinct} date_mask={x.date_mask}")

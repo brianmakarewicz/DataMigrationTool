@@ -46,4 +46,4 @@ exception when others then
 end;
 /
 
-COMMENT ON COLUMN "DMT_UPLOAD_DICT_TBL"."FBDI_POSITION" IS 'Position of this column in the FBDI CSV (1-based). NULL = use sequential order from COLUMN_ORDER. Set explicitly when STG column order differs from CTL order.';
+COMMENT ON COLUMN "DMT_UPLOAD_DICT_TBL"."FBDI_POSITION" IS 'Legacy copy: position (1-based) of this column in the object''s first FBDI file, kept for the per-object test tooling. The FBDI upload loader reads DMT_UPLOAD_FBDI_POS_TBL, keyed per file (backlog #792).';
