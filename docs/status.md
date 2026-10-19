@@ -1,5 +1,17 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — after ATP upload test runs (backlog #786): blocked on the Fusion password
+
+**Result.** The new upload test works. Suppliers in the header format went through page 25 of ATP app 500 into the new scenario UPL-HDR-Suppliers-2610191717 and staged exactly. Its run 185 (prefix 93437, synced first and checked against local afterwards) halted at preflight because Fusion refused the BIP login, so all 3 rows are unaccounted and the test correctly reports FAIL. Every demo user now gets a steady HTTP 401 with the saved password while the pod is up, so the demo password has expired on Oracle's side. No further run was submitted. Rotating the password needs the owner's approval.
+
+**Upload half, all 27 objects (no runs).** In the header format, all 27 objects uploaded and staged exactly. In the FBDI format, 9 of the 16 objects where it applies staged exactly. Items, GLBalances and GLBudgets staged nothing. Requisitions and PurchaseOrders staged their own files but not the Items file they depend on. Expenditures and ProjectBudgets were reported as loaded while their values landed in the wrong columns. The other 11 have no FBDI format. All seven FBDI failures come from backlog #787: the deploy wipes the FBDI positions. Details are in docs/findings/upload_tests_786.md.
+
+**Ready for functional testing.** None yet, because no run could reach Fusion.
+
+**Owner decisions pending.** (1) Approve rotating the Fusion demo password, then rerun the test with --skip-done. (2) Decide whether a GOOD row that is LOADED without a Fusion id counts as a pass: 30 Grants child rows and 2 MiscReceipts rows are LOADED from their own import-report success line, which the design accepts, but the test currently fails them. (3) Approve the #787 fix, which changes the seed order or SEED_DICTIONARY and then needs a deploy.
+
+**Backlog.** #786 stays IN PROGRESS. New items: #787 (P1, FBDI positions wiped by the deploy) and #788 (P3, page 25 reports a failed file inside a success message). The counts table now reads 492 items: 371 resolved, none in test, 1 in progress, 59 still open, 31 deferred, parked, future or declined, 28 superseded and 2 stale.
+
 ## 2026-10-19 — before ATP upload test runs (backlog #786)
 
 **What is about to run.** A new browser test, test/playwright/dmt_upload_verify.py, uploads each of the 27 objects that pass the regression into its own new scenario through the Smart Upload page (page 25) of ATP app 500, signed in as the DMT_SMOKE user, and then runs that scenario through the pipeline on ATP. It first does Suppliers in the header format end to end, and then all 27 objects in the header format and, where it applies, the FBDI format. Each object's file holds its rows from the baseline RegressionTest261013111321, plus the rows of the objects it depends on (DEPENDS_ON), and the run submits that same set of objects. Runs go one at a time; before each run the ATP prefix is set to the highest prefix used on local and ATP plus one, and after it the prefix is checked against local. No code or data is deployed; the only database writes are the uploads into the new UPL- scenarios and the runs themselves.
