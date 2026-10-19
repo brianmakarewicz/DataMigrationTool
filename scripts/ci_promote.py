@@ -78,7 +78,7 @@ PROMOTE_YES=1 env) so they never fire unattended by accident. test-prod and
 test-local both write prefixed test records to the real Fusion demo pod — that
 is what the regression does; the prefix sync keeps them from colliding.
 """
-import argparse, glob, json, os, subprocess, sys, tempfile
+import argparse, glob, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -152,6 +152,23 @@ def _oracle(target):
                               user=t["schema"], password=t["pw"], dsn=t["dsn"], **kw)
 
 # ---------------------------------------------------------------- DB deploy
+def seed_order():
+    """db/seed/*.sql in the order db/install.sql runs them, then any seed that
+    install.sql does not list, sorted. Backlog #787: seeds depend on each other's
+    order (dmt_upload_object_tbl.sql calls SEED_DICTIONARY, which rebuilds
+    DMT_UPLOAD_DICT_TBL, so dmt_upload_fbdi_metadata.sql and
+    dmt_upload_dict_required.sql must run after it). Running them alphabetically
+    wiped every FBDI_POSITION on every deploy; install.sql is the one place
+    that order is written down, so deploy follows it."""
+    install = (REPO / "db" / "install.sql").read_text(encoding="utf-8")
+    listed = re.findall(r"^@@(seed/[^\s]+\.sql)", install, re.M)
+    present = sorted(q.relative_to(REPO / "db").as_posix()
+                     for q in REPO.glob("db/seed/*.sql"))
+    ordered = [s for s in listed if s in present]
+    ordered += [s for s in present if s not in ordered]
+    return ["db/" + s for s in ordered]
+
+
 def deploy_db(target, connect=None, sqlcl=None, log=print):
     """Idempotent sync of the working tree's db/ into an existing instance:
     tables (idempotent add_col/exception-wrapped), types, package specs, bodies,
@@ -171,9 +188,10 @@ def deploy_db(target, connect=None, sqlcl=None, log=print):
     order = []
     for pat in ("db/tables/*.sql", "db/types/*.sql",
                 "db/packages/*.pks.sql", "db/packages/*.pkb.sql",
-                "db/views/*.sql", "db/procedures/*.sql", "db/seed/*.sql"):
+                "db/views/*.sql", "db/procedures/*.sql"):
         order += sorted((REPO / p).as_posix() for p in
                         [q.relative_to(REPO).as_posix() for q in REPO.glob(pat)])
+    order += [(REPO / s).as_posix() for s in seed_order()]
     # Backlog #80: run every db/migrations file (sorted chronological filename)
     # AFTER seed. These are the MODIFY-width / guarded-DROP convergence steps that
     # bring an existing instance's schema in line with the git create scripts (fresh
