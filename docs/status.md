@@ -1,5 +1,11 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — before ATP upload test runs (backlog #786)
+
+**What is about to run.** A new browser test, test/playwright/dmt_upload_verify.py, uploads each of the 27 objects that pass the regression into its own new scenario through the Smart Upload page (page 25) of ATP app 500, signed in as the DMT_SMOKE user, and then runs that scenario through the pipeline on ATP. It first does Suppliers in the header format end to end, and then all 27 objects in the header format and, where it applies, the FBDI format. Each object's file holds its rows from the baseline RegressionTest261013111321, plus the rows of the objects it depends on (DEPENDS_ON), and the run submits that same set of objects. Runs go one at a time; before each run the ATP prefix is set to the highest prefix used on local and ATP plus one, and after it the prefix is checked against local. No code or data is deployed; the only database writes are the uploads into the new UPL- scenarios and the runs themselves.
+
+**Already found before running.** On both ATP and local, DMT_UPLOAD_DICT_TBL has no FBDI positions at all, so an FBDI upload cannot place its values in the right columns. The deploy runs the seed files in alphabetical order, so dmt_upload_object_tbl.sql (which rebuilds the dictionary) runs after dmt_upload_fbdi_metadata.sql (which sets the positions) and wipes them. The test still uploads each FBDI file to show what happens, but it does not run the pipeline on data that did not stage correctly.
+
 ## 2026-10-13 — after ATP regression: new test data promoted
 
 **Result.** Main commit 55cf865 is now on ATP. The ATP deploy was clean, with 0 invalid objects. The new baseline RegressionTest261013111321 was loaded onto ATP from the same committed seed, and its row counts match local exactly (365 rows each, no duplicates). ATP regression run 184, using prefix 93436, passed with no new failures (the same 7 known ones), every one of the 319 listed expected outcomes was met, and 0 rows are unaccounted. Its per-object counts are identical to local run 414.
