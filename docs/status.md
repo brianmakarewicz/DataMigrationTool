@@ -1,5 +1,11 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-20 — fixing #795 and #794 (owner approved), one promotion
+
+**Before any regression or ATP run.** Owner approved #795 (FBDI upload loses the AP invoice line-to-header link) and #794 (header upload cannot link MiscReceipts lots and serials), bundled into one ATP promotion. Branch fix/794-795-upload-parent-links. Then: local gate (deploy twice, full regression, click-through), ci_promote to ATP, ATP regression and click-through, then the header and FBDI upload runs on ATP with the comparison with the baseline (every parent-child link included) before each run. #789 (own Fusion id for Grants child rows and MiscReceipts lots/serials) is not in this bundle.
+
+**Owner decisions pending.** (1) The wording of the four PROPOSED (red) rows in the upload convention table of the design document (the owner is reviewing).
+
 ## 2026-10-20 — after the ATP promotion and the upload tests (backlog #786, #787, #788, #790 RESOLVED)
 
 **Promotion.** Main aea47c8 is on ATP. The local gate passed: run 416, prefix 93439, PASS, click-through 68 of 68. `deploy-prod` finished with 0 invalid objects. The ATP regression passed: run 186, prefix 93441, PASS with no new failures (7 known), and the ATP click-through passed 68 of 68.
