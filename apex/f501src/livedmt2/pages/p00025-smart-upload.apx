@@ -147,15 +147,16 @@ page 25 (
                 <p><strong>Three ways to upload:</strong></p>
                 <ul>
                 <li><strong>Manual:</strong> Select the file type from the dropdown, then upload any CSV file. The file must have a header row &mdash; column names determine the mapping. Filename does not matter.</li>
-                <li><strong>Auto-detect CSV:</strong> Upload a CSV file named to match the expected format (e.g. <code>POZ_SUPPLIERS.csv</code>). Must have a header row.</li>
-                <li><strong>ZIP bundle:</strong> Upload a ZIP file containing multiple CSVs. Each CSV is routed by its filename:
+                <li><strong>Auto-detect CSV:</strong> Upload a CSV file named after its staging table (e.g. <code>DMT_POZ_SUPPLIERS_STG_TBL.csv</code>). Must have a header row.</li>
+                <li><strong>ZIP bundle:</strong> Upload a ZIP file containing multiple CSVs of one format. The first recognized filename decides the format:
                   <ul>
-                    <li>If the filename matches a <strong>staging CSV name</strong> (e.g. <code>POZ_SUPPLIERS.csv</code>) &rarr; parsed with headers</li>
-                    <li>If the filename matches an <strong>FBDI template name</strong> (e.g. <code>PozSuppliersInt.csv</code>) &rarr; parsed positionally (no headers, column order per CTL spec)</li>
+                    <li>If the filename matches a <strong>staging CSV name</strong> (e.g. <code>DMT_POZ_SUPPLIERS_STG_TBL.csv</code>) &rarr; parsed with headers</li>
+                    <li>If the filename matches an <strong>FBDI template name</strong> (e.g. <code>PoSupplierImport.csv</code>) &rarr; parsed positionally (no headers, column order per the Oracle FBDI template)</li>
                     <li>Unrecognized filenames are skipped</li>
                   </ul>
                   The ZIP filename itself does not matter.</li>
                 </ul>
+                <p>A header file with any column that is not a column of the object is rejected whole. An FBDI file must have exactly its template's field count, or it is rejected whole. Otherwise bad rows are rejected one at a time into Upload Errors below while the good rows load.</p>
                 </div>
                 ```
         }
