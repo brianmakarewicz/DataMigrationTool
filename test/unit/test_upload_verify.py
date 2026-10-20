@@ -11,9 +11,13 @@ What it proves, with a fake cursor:
   * a FAILED row with no error, an UNACCOUNTED row and an uploaded row the run
     never showed all count as unaccounted, inside their GOOD or BAD totals;
   * a run with no BAD rows is not a pass;
-  * the FBDI format is not applicable to HCM objects or the four objects with no
-    FBDI mapping, and is "partial" when any staging table has no FBDI file;
-  * values are written the same way for the file and for the staged read-back.
+  * the FBDI format is not applicable to HCM objects, or when any staging table
+    has no FBDI file in the registry (fbdi_column_maps.FILES);
+  * values are written the same way for the file and for the staged read-back;
+  * one zip for many objects writes one file per staging table (a table shared
+    by several objects carries all their rows) and keeps each object's rows for
+    judging; the negative test's bad rows break one value each; the
+    ready-for-functional-testing rule.
 
     python test/unit/test_upload_verify.py
 
@@ -99,10 +103,98 @@ check("no BAD rows is not a pass", any("no BAD rows" in x for x in uv.verdict_of
 # FBDI applicability
 reg = FakeReg()
 check("HCM not applicable", "HCM" in (uv.fbdi_applicability(reg, "Wkr", ["Wkr"], {"Wkr": {}}) or ""))
-check("no FBDI mapping", uv.fbdi_applicability(reg, "Assets", ["Assets"], {"Assets": {}}) == "no FBDI mapping")
-check("partial mapping", (uv.fbdi_applicability(reg, "Obj", ["Obj"], {"Obj": {"DMT_X_STG_TBL": [1]}}) or "")
-      .startswith("partial"))
+check("a staging table with no FBDI file", (uv.fbdi_applicability(reg, "Obj", ["Obj"], {"Obj": {"DMT_X_STG_TBL": [1]}})
+                                           or "").startswith("no FBDI file for"))
 check("full mapping applies", uv.fbdi_applicability(reg, "Obj", ["Obj"], {"Obj": {"DMT_H_STG_TBL": [1]}}) is None)
+
+# one zip for many objects: a staging table shared by several objects is ONE file
+class PlanReg:
+    upload = {"DMT_PO_H_STG_TBL": {"object_code": "PO_H", "csv": "DMT_PO_H_STG_TBL.csv", "fbdi": None, "order": 2},
+              "DMT_SUP_STG_TBL": {"object_code": "SUP", "csv": "DMT_SUP_STG_TBL.csv", "fbdi": None, "order": 1}}
+    dict_cols = {"PO_H": ["STYLE", "AMT"], "SUP": ["NAME"]}
+    dict_fbdi = {}
+
+
+src = {"Suppliers": {"DMT_SUP_STG_TBL": [{"STG_SEQUENCE_ID": 1, "NAME": "A"}]},
+       "PurchaseOrders": {"DMT_PO_H_STG_TBL": [{"STG_SEQUENCE_ID": 10, "STYLE": "STD", "AMT": 5}]},
+       "BlanketPOs": {"DMT_PO_H_STG_TBL": [{"STG_SEQUENCE_ID": 11, "STYLE": "BPA", "AMT": None}]}}
+members, files, manifest = uv.plan_files(PlanReg(), "header", ["Suppliers", "PurchaseOrders", "BlanketPOs"], src)
+check("header format: members are the checks", members is files)
+po = [f for f in files if f["stg"] == "DMT_PO_H_STG_TBL"]
+check("shared staging table is one file", len(files) == 2 and len(po) == 1)
+check("shared file holds every object's rows", po[0]["source_seqs"] == [10, 11]
+      and po[0]["objects"] == ["PurchaseOrders", "BlanketPOs"])
+check("files follow the registry load order", [f["stg"] for f in files] == ["DMT_SUP_STG_TBL", "DMT_PO_H_STG_TBL"])
+check("manifest keeps each object's own rows for judging",
+      {(m["object"], tuple(m["source_seqs"])) for m in manifest}
+      == {("Suppliers", (1,)), ("PurchaseOrders", (10,)), ("BlanketPOs", (11,))})
+check("header file renders all rows", uv.render("header", po[0]["layout"], po[0]["rows"]).decode().splitlines()
+      == ["STYLE,AMT", "STD,5", "BPA,"])
+
+
+# negative test 1: three bad copies of the first row, one bad value each
+class TypeCursor(FakeCursor):
+    pass
+
+
+types = [("STYLE", "VARCHAR2", 30), ("AMT", "NUMBER", None), ("NOTE", "VARCHAR2", 5), ("D", "DATE", None)]
+PlanReg.dict_cols["PO_H"] = ["STYLE", "AMT", "NOTE", "D"]
+f = dict(po[0], raw_rows=[])
+uv.add_bad_rows(TypeCursor(types), PlanReg(), "header", f)
+kinds = {b["kind"]: b["column"] for b in f["bad"]}
+check("bad columns: number, text (columns already in the file first), date",
+      kinds == {"number": "AMT", "length": "STYLE", "date": "D"})
+check("a needed column is added to the header file", f["layout"] == ["STYLE", "AMT", "D"])
+check("bad rows carry one bad value each", [r["AMT"] for r in f["raw_rows"]][0] == "NOT_A_NUMBER"
+      and len(f["raw_rows"][1]["STYLE"]) == 40 and f["raw_rows"][2]["D"] == "NOT-A-DATE"
+      and f["raw_rows"][1]["AMT"] == "5")
+check("good row count excludes the bad rows", f["rows_in_file"] == 2)
+
+# FBDI plan from the file registry: filtered files share a table, a joined file feeds two tables
+from fbdi_column_maps import FbdiFile  # noqa: E402
+
+
+class FReg:
+    upload = {"DMT_PH_STG_TBL": {"object_code": "PH", "order": 1}, "DMT_AH_STG_TBL": {"object_code": "AH", "order": 2},
+              "DMT_AB_STG_TBL": {"object_code": "AB", "order": 3}}
+    dict_cols = {"PH": ["STYLE", "NUM"], "AH": ["ASSET", "DESCR"], "AB": ["ASSET", "BOOK"]}
+    dict_fbdi = {}
+
+
+saved = uv.FBDI_FILES
+uv.FBDI_FILES = [FbdiFile("Std.csv", "PH", ["NUM", "STYLE"], 1, False, uv.MDY, "f", None, None),
+                 FbdiFile("Bpa.csv", "PH", ["STYLE", None, "NUM"], 1, False, None, "f", None, None),
+                 FbdiFile("Fa.csv", "AH", ["ASSET", "DESCR", "BOOK"], 1, True, None, None, ("AB", "ASSET"), None),
+                 FbdiFile("Fa.csv", "AB", ["ASSET", "DESCR", "BOOK"], 2, False, None, None, ("AB", "ASSET"), None)]
+fsrc = {"POs": {"DMT_PH_STG_TBL": [{"STG_SEQUENCE_ID": 1, "STYLE": "STD", "NUM": 7},
+                                   {"STG_SEQUENCE_ID": 2, "STYLE": "BPA", "NUM": 8}]},
+        "Assets": {"DMT_AH_STG_TBL": [{"STG_SEQUENCE_ID": 5, "ASSET": "A1", "DESCR": "x"}],
+                   "DMT_AB_STG_TBL": [{"STG_SEQUENCE_ID": 6, "ASSET": "A1", "BOOK": "B1"},
+                                      {"STG_SEQUENCE_ID": 7, "ASSET": "A1", "BOOK": "B2"}]}}
+mem, chk, _m = uv.plan_files(FReg(), "fbdi", ["POs", "Assets"], fsrc,
+                             {("Std.csv", "PH"): {1}, ("Bpa.csv", "PH"): {2}})
+by = {m["file"]: m for m in mem}
+check("FBDI: one member per registry file", sorted(by) == ["Bpa.csv", "Fa.csv", "Std.csv"])
+check("FBDI: row filter splits a shared table", [r["NUM"] for r in by["Std.csv"]["rows"]] == [7]
+      and [r["NUM"] for r in by["Bpa.csv"]["rows"]] == [8])
+check("FBDI: joined file has one row per driver row", [(r["BOOK"], r["DESCR"]) for r in by["Fa.csv"]["rows"]]
+      == [("B1", "x"), ("B2", "x")])
+check("FBDI: parent-link key written in its slot",
+      uv.render("fbdi", [None, "A"], [{"A": "x", uv.KEY: 42}], key_slot=1).decode().strip() == '"42","x"')
+check("FBDI: file's date mask used", uv.render("fbdi", ["D"], [{"D": datetime.datetime(2026, 1, 2)}],
+                                               mask=uv.MDY).decode().strip() == '"01/02/2026"')
+cby = {c["stg"]: c for c in chk}
+check("FBDI: one staging check per table, all its rows", cby["DMT_PH_STG_TBL"]["source_seqs"] == [1, 2]
+      and cby["DMT_PH_STG_TBL"]["files"] == ["Std.csv", "Bpa.csv"] and cby["DMT_AB_STG_TBL"]["rows_in_file"] == 2)
+uv.FBDI_FILES = saved
+
+# readiness: header PASS and (FBDI PASS or not applicable)
+rd = uv.readiness([{"object": "A", "format": "header", "verdict": "PASS"},
+                   {"object": "A", "format": "fbdi", "verdict": "NOT APPLICABLE"},
+                   {"object": "B", "format": "header", "verdict": "PASS"},
+                   {"object": "B", "format": "fbdi", "verdict": "FAIL"},
+                   {"object": "C", "format": "header", "verdict": "PASS"}])
+check("ready rule", rd["A"] == "yes" and rd["B"].startswith("no") and rd["C"].startswith("not yet"))
 
 # value formatting
 check("date", uv.fmt(datetime.datetime(2026, 1, 2)) == "2026/01/02")

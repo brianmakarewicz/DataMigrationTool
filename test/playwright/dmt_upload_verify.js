@@ -1,4 +1,4 @@
-// dmt_upload_verify.js — browser half of the per-object upload test (backlog #786).
+// dmt_upload_verify.js — browser half of the upload test (backlog #786).
 //
 // Driven by test/playwright/dmt_upload_verify.py, which builds the upload files,
 // checks what landed in staging, runs the pipeline and judges every row. This
@@ -16,7 +16,8 @@
 //   DMT2_UI_BASE, DMT2_UI_APP, DMT2_UI_APPID, DMT2_UI_USER, DMT2_UI_PASS
 //   DMT2_PW_NODE_MODULES  node_modules folder that has 'playwright'
 //   DMT2_UPL_JOBS         JSON file: [{ "scenario": "...", "description": "...",
-//                                       "file": "C:/.../UPL-HDR-Suppliers-2610191200.zip" }]
+//                                       "file": "C:/.../UPL-HDR-2610191200.zip" }]
+//                         (several jobs run in one browser session, e.g. the negative tests)
 //   DMT2_UPL_SHOTS        folder for a screenshot after each upload (optional)
 // Output: one JSON object on stdout: { login, jobs: [{ scenario, scenarioCreated,
 //   scenarioMessage, uploaded, successMessage, errorMessage, batchId, shot }] }.
@@ -129,14 +130,28 @@ const LOGIN_RE = /P9999_USERNAME/;
         // The file item: APEX renders a real <input type=file> for P25_UPLOAD_FILE.
         const fileInput = page.locator('#P25_UPLOAD_FILE_CONTAINER input[type="file"], input[type="file"]#P25_UPLOAD_FILE').first();
         await fileInput.setInputFiles(job.file);
-        await Promise.all([
-          page.waitForEvent('load', { timeout: 600000 }).catch(() => {}),
-          page.getByRole('button', { name: 'Upload', exact: true }).first().click(),
-        ]);
+        // Clear the message the page may already show, press Upload, then wait
+        // until a new success or error message appears. A process error is
+        // rendered without reloading the page (no 'load' event), so this polls
+        // the page for the message instead of waiting for a navigation.
+        await page.evaluate(() => {
+          ['APEX_SUCCESS_MESSAGE', 'APEX_ERROR_MESSAGE'].forEach(id => {
+            const e = document.getElementById(id); if (e) e.innerHTML = '';
+          });
+        }).catch(() => {});
+        await page.getByRole('button', { name: 'Upload', exact: true }).first().click();
+        let m25 = { success: '', error: '' };
+        const deadline = Date.now() + 600000;
+        while (Date.now() < deadline) {
+          await page.waitForTimeout(2000);
+          m25 = await pageMessages();
+          if (m25.success || m25.error) break;
+        }
         await waitApex();
-        const m25 = await pageMessages();
         r.successMessage = m25.success;
         r.errorMessage = m25.error;
+        // P25_LAST_BATCH_ID is only current after a page reload (success); the
+        // Python side finds the batch from the upload errors otherwise.
         r.batchId = await page.evaluate(() => {
           const e = document.getElementById('P25_LAST_BATCH_ID');
           return e ? (e.value || null) : null;
