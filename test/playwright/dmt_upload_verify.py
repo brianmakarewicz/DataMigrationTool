@@ -624,6 +624,35 @@ STAGED_ID_LINKS = {"DMT_INV_TRX_LOTS_STG_TBL": ("SOURCE_ID", "DMT_INV_TRX_STG_TB
                                                    "INV_LOTSERIAL_INTERFACE_NUM")}
 
 
+_KEYLIKE = re.compile(r"(_ID|_KEY|_NUM|_NUMBER|_REF|_REFERENCE|_CODE)$")
+
+
+def registry_links(cur, present):
+    """Parent-child links between staging tables of this upload: for every child
+    table whose registered parent (DMT_UPLOAD_OBJECT_TBL.PARENT_OBJECT_CODE) is also
+    in the upload, each key-like column the two tables share. A link holds when as
+    many child rows find a parent row with the same value in the upload's scenario
+    as in the baseline (e.g. AP invoice lines to headers by INVOICE_ID, PO lines to
+    headers by INTERFACE_HEADER_KEY)."""
+    cur.execute("""SELECT o.STAGING_TABLE, p.STAGING_TABLE FROM DMT_UPLOAD_OBJECT_TBL o
+                   JOIN DMT_UPLOAD_OBJECT_TBL p ON p.OBJECT_CODE = o.PARENT_OBJECT_CODE""")
+    out = []
+    for ch, pa in cur.fetchall():
+        if ch in present and pa in present:
+            shared = sorted(k for k in (set(stg_columns(cur, ch)) & set(stg_columns(cur, pa))) - ADMIN_COLS
+                            if _KEYLIKE.search(k))
+            out += [(ident(ch), ident(pa), ident(k)) for k in shared]
+    return out
+
+
+def linked_count(cur, ch, pa, k, scenario_id_):
+    cur.execute(f"""SELECT COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM {pa} p WHERE p.SCENARIO_ID = t.SCENARIO_ID
+                                                           AND p.{k} = t.{k}) THEN 1 ELSE 0 END)
+                    FROM {ch} t WHERE t.SCENARIO_ID = :s""", s=scenario_id_)
+    total, linked = cur.fetchone()
+    return int(total or 0), int(linked or 0)
+
+
 def compare_cols(cur, reg, fmt_name, chk):
     """(compared columns, excluded columns with the reason) for one staging table.
     Header: every uploadable dictionary column (SOURCE_ID too: the loader honours
@@ -690,6 +719,15 @@ def compare_to_baseline(args, ctx, scenario, fmt_name, checks):
             t["clean"] = not missing and not extra and len(base) == len(up)
             out["tables"].append(t)
         present = {c["stg"] for c in checks}
+        for ch, pa, k in registry_links(cur, present):
+            bt, bl = linked_count(cur, ch, pa, k, ctx["base_sid"])
+            ut, ul = linked_count(cur, ch, pa, k, sid)
+            if not bl or not ut:
+                continue          # the column does not link these rows in the baseline
+            ok = ul == bl
+            out["links"].append({"link": f"{ch} -> {pa} on {k}", "clean": ok, "problems": [] if ok else [
+                f"{ch} -> {pa} on {k}: {bl} of {bt} child rows find their parent in the baseline, "
+                f"{ul} of {ut} in the upload"]})
         failures = []
         if any(t in present for t in LINK_CHECKS.values()):
             rt.check_links(cur, failures, sid, ctx["base_sid"], scenario)
@@ -1027,7 +1065,7 @@ def run_format(args, ctx, fmt_name, block, save):
         return block
     if not cmp_["clean"] and not (block.get("run") or {}).get("run_id"):
         bad_tables = {t["stg"] for t in cmp_["tables"] if not t["clean"]} | {
-            LINK_CHECKS[x["link"]] for x in cmp_["links"] if not x["clean"]}
+            LINK_CHECKS.get(x["link"], x["link"].split(" -> ")[0]) for x in cmp_["links"] if not x["clean"]}
         block["run"] = {"error": "not submitted: the uploaded rows differ from the baseline ("
                                  + ", ".join(sorted(bad_tables)) + ")"}
         block["objects"] = {}
