@@ -97,6 +97,7 @@ import ci_promote as cp  # noqa: E402  prefix sync, DB connections, console URL
 import dmt_apex_url_target as urltarget  # noqa: E402  the one URL knob
 from fbdi_column_maps import FILES as FBDI_FILES, MDY  # noqa: E402  committed FBDI file registry (#792)
 from build_regression_zips import LINK_KEYS  # noqa: E402  child-file parent keys, from staging (#793)
+import roundtrip_test as rt  # noqa: E402  typed value compare, parent-link checks (reused, owner 2026-10-19)
 
 oracledb.defaults.fetch_lobs = False
 oracledb.defaults.fetch_decimals = True
@@ -111,6 +112,12 @@ IN_SCOPE = ["Items", "Suppliers", "SupplierAddresses", "SupplierSites", "Supplie
             "APInvoices", "MiscReceipts", "Customers", "ARInvoices", "GLBalances", "GLBudgets",
             "Assets", "Projects", "BillingEvents", "Expenditures", "Grants", "ProjectBudgets",
             "Workers", "Salaries", "SalaryBases", "Absences", "TalentProfiles"]
+# Objects whose upload in a format is known to differ from the baseline, by a logged
+# defect: they are left out of that format's zip (so the rest can run under the owner's
+# "no run on an upload that differs from the baseline" rule) and reported as FAIL.
+BLOCKED = {"header": {"MiscReceipts": "backlog #794: a header upload cannot link MiscReceipts lots and "
+                                      "serials to their transaction (SOURCE_ID is copied from the source "
+                                      "scenario); not uploaded or run in the header format until fixed"}}
 # Upload objects (staging tables) that an Oracle FBDI file loads (backlog #792 registry).
 FBDI_OBJECTS = {x.object for x in FBDI_FILES}
 HDL_PIPELINE = "HCM"
@@ -601,6 +608,107 @@ def object_upload_problem(obj, up):
     return "upload: " + "; ".join(parts)
 
 
+# ---------------------------------------------------------------- baseline comparison
+# Owner requirement 2026-10-19: after each upload and BEFORE its run, the staged rows
+# must equal the baseline regression rows they were built from; otherwise the run is
+# not submitted. Reuses test/upload_samples/roundtrip_test.py: rt.norm (dates and
+# numbers compared as typed values), rt.col_exprs (a link held as the parent's
+# staging row id is compared as the parent's key) and rt.check_links (every linked
+# child points at a parent uploaded to the same scenario, the same parent as in the
+# baseline).
+LINK_CHECKS = {"FA_ASSET_ASSIGN -> asset": "DMT_FA_ASSET_ASSIGN_STG_TBL",
+               "INV_TRX_LOTS -> transaction": "DMT_INV_TRX_LOTS_STG_TBL",
+               "INV_TRX_SERIALS -> transaction": "DMT_INV_TRX_SERIALS_STG_TBL"}
+STAGED_ID_LINKS = {"DMT_INV_TRX_LOTS_STG_TBL": ("SOURCE_ID", "DMT_INV_TRX_STG_TBL", "INV_LOTSERIAL_INTERFACE_NUM"),
+                   "DMT_INV_TRX_SERIALS_STG_TBL": ("SOURCE_ID", "DMT_INV_TRX_STG_TBL",
+                                                   "INV_LOTSERIAL_INTERFACE_NUM")}
+
+
+def compare_cols(cur, reg, fmt_name, chk):
+    """(compared columns, excluded columns with the reason) for one staging table.
+    Header: every uploadable dictionary column (SOURCE_ID too: the loader honours
+    it). FBDI: the columns the format carries (mapped slots of every file that loads
+    the table). Excluded: admin/audit columns and columns the format cannot carry."""
+    oc = reg.upload[chk["stg"]]["object_code"]
+    allc = stg_columns(cur, chk["stg"])
+    if fmt_name == "header":
+        cols = [c for c in allc if c in set(reg.dict_cols.get(oc, [])) or c == "SOURCE_ID"]
+    else:
+        cols = [c for c in allc if c in set(chk["columns"])]
+        link = STAGED_ID_LINKS.get(chk["stg"])
+        if link and link[0] in allc and link[0] not in cols:
+            cols.append(link[0])        # FBDI carries the link (#793): compared as the parent's key
+    excl = [c + (" (admin/audit)" if c in ADMIN_COLS or c not in reg.dict_cols.get(oc, []) and c != "SOURCE_ID"
+                 else " (the format cannot carry it)") for c in allc if c not in cols]
+    return cols, excl
+
+
+def typed_rows(cur, stg, cols, scenario_id_, keep=None):
+    """{STG_SEQUENCE_ID: tuple of typed-normalised values} of a scenario's rows."""
+    link = STAGED_ID_LINKS.get(stg)
+    exprs = rt.col_exprs(cols, link if link and link[0] in cols else None)
+    cur.execute(f"SELECT t.STG_SEQUENCE_ID, {', '.join(exprs)} FROM {ident(stg)} t WHERE t.SCENARIO_ID = :s",
+                s=scenario_id_)
+    return {r[0]: tuple(rt.norm(v) for v in r[1:]) for r in cur.fetchall() if keep is None or r[0] in keep}
+
+
+def compare_to_baseline(args, ctx, scenario, fmt_name, checks):
+    """Per staging table: row counts, rows matched one to one on every compared
+    column (as a multiset: each staged row must equal one baseline row and the
+    other way round), the columns that differ with sample values, the excluded
+    columns, and the parent links. Returns {"clean": bool, "tables": [...], ...}."""
+    reg = ctx["reg"]
+    con = cp._oracle(args.target)
+    out = {"scenario": scenario, "baseline_scenario": ctx["baseline"], "tables": [], "links": []}
+    try:
+        cur = con.cursor()
+        sid = scenario_id(cur, scenario)
+        for chk in checks:
+            cols, excl = compare_cols(cur, reg, fmt_name, chk)
+            base = typed_rows(cur, chk["stg"], cols, ctx["base_sid"], set(chk["source_seqs"]))
+            up = typed_rows(cur, chk["stg"], cols, sid)
+            pool = {}
+            for k, v in base.items():
+                pool.setdefault(v, []).append(k)
+            extra = []
+            for k, v in up.items():
+                if pool.get(v):
+                    pool[v].pop()
+                else:
+                    extra.append(v)
+            missing = [v for vs in pool.items() for v in [vs[0]] * len(vs[1])]
+            diffs = []
+            for e in extra[:3]:            # pair each extra row with its closest missing row
+                if not missing:
+                    break
+                m = min(missing, key=lambda b: sum(1 for x, y in zip(b, e) if x != y))
+                diffs.append([f"{c}: baseline '{x[:40]}' uploaded '{y[:40]}'"
+                              for c, x, y in zip(cols, m, e) if x != y][:6])
+            t = {"stg": chk["stg"], "objects": chk["objects"], "baseline_rows": len(base), "uploaded_rows": len(up),
+                 "matched": len(up) - len(extra), "missing": len(missing), "extra": len(extra),
+                 "columns_compared": len(cols), "columns_excluded": excl, "differences": diffs}
+            t["clean"] = not missing and not extra and len(base) == len(up)
+            out["tables"].append(t)
+        present = {c["stg"] for c in checks}
+        failures = []
+        if any(t in present for t in LINK_CHECKS.values()):
+            rt.check_links(cur, failures, sid, ctx["base_sid"], scenario)
+        for name, tbl in LINK_CHECKS.items():
+            if tbl in present:
+                bad = [f for f in failures if name in f]
+                out["links"].append({"link": name, "clean": not bad, "problems": bad})
+    finally:
+        con.close()
+    out["clean"] = all(t["clean"] for t in out["tables"]) and all(x["clean"] for x in out["links"])
+    out["summary"] = ("clean: every staged row equals its baseline row" if out["clean"] else
+                      "; ".join([f"{t['stg']}: {t['matched']} matched, {t['missing']} missing, {t['extra']} extra"
+                                 + (f" (e.g. {t['differences'][0][:2]})" if t["differences"] else "")
+                                 for t in out["tables"] if not t["clean"]]
+                                + [p for x in out["links"] for p in x["problems"]]))
+    log(f"{scenario}: baseline comparison {'CLEAN' if out['clean'] else 'DIFFERS: ' + out['summary'][:300]}")
+    return out
+
+
 # ---------------------------------------------------------------- expected outcomes
 def regression_harness(target):
     """Import scripts/dmt_regression_run.py pointed at the target (its connect()
@@ -864,8 +972,10 @@ def run_format(args, ctx, fmt_name, block, save):
             r = fbdi_applicability(reg, o, reg.closure(o), {x: src_all[x] for x in reg.closure(o)})
             if r:
                 na[o] = r
-    scored = [o for o in objs if o not in na]
+    blocked = {o: r for o, r in BLOCKED.get(fmt_name, {}).items() if o in objs and o not in na}
+    scored = [o for o in objs if o not in na and o not in blocked]
     run_objects = reg.order({x for o in scored for x in reg.closure(o)})
+    block["blocked"] = blocked
     block.setdefault("format", fmt_name)
     block["not_applicable"] = na
     block["objects_scored"] = scored
@@ -902,14 +1012,31 @@ def run_format(args, ctx, fmt_name, block, save):
         f"{sum(1 for d in up['tables'] if not d.get('problem'))}/{len(up['tables'])} files staged exactly, "
         f"{up['upload_error_count']} upload error row(s)")
     save()
-    if args.upload_only:
-        block["objects"] = {o: {"verdict": "UPLOAD ONLY",
-                                "reason": object_upload_problem(o, up) or "upload passed; run not submitted"}
-                            for o in scored}
-        return block
     if not any(d["staged"] for d in up["tables"]):
         block["objects"] = {o: {"verdict": "FAIL", "reason": object_upload_problem(o, up) or "nothing staged"}
                             for o in scored}
+        return block
+    # ---- staged rows must equal the baseline before the run (owner 2026-10-19) ----
+    cmp_ = compare_to_baseline(args, ctx, block["scenario"], fmt_name, files)
+    block["baseline_compare"] = cmp_
+    save()
+    if args.upload_only:
+        block["objects"] = {o: {"verdict": "UPLOAD ONLY",
+                                "reason": object_upload_problem(o, up) or ("upload passed, staged rows equal the baseline; run not submitted" if cmp_["clean"] else "upload differs from the baseline: " + cmp_["summary"][:300])}
+                            for o in scored}
+        return block
+    if not cmp_["clean"] and not (block.get("run") or {}).get("run_id"):
+        bad_tables = {t["stg"] for t in cmp_["tables"] if not t["clean"]} | {
+            LINK_CHECKS[x["link"]] for x in cmp_["links"] if not x["clean"]}
+        block["run"] = {"error": "not submitted: the uploaded rows differ from the baseline ("
+                                 + ", ".join(sorted(bad_tables)) + ")"}
+        block["objects"] = {}
+        for o in scored:
+            own = sorted(t for t in bad_tables if t in src_all.get(o, {}))
+            block["objects"][o] = {"verdict": "FAIL", "reason": (
+                f"upload differs from the baseline in {', '.join(own)}; run not submitted" if own else
+                "run not submitted: the scenario's upload differs from the baseline in "
+                + ", ".join(sorted(bad_tables)))}
         return block
     # ---- run (once) ------------------------------------------------------------
     if not (block.get("run") or {}).get("run_id"):
@@ -1076,7 +1203,13 @@ def run_negative(args, ctx, block, save):
         t1["page_message_as_expected"] = bool(up["error"])
         block["mixed"][fmt_name] = t1
         save()
-        if t1["upload_as_expected"] and not args.upload_only:
+        if t1["upload_as_expected"]:
+            # The good rows must equal the baseline before the run (owner 2026-10-19).
+            t1["baseline_compare"] = compare_to_baseline(args, ctx, sc1, fmt_name, files)
+            if not t1["baseline_compare"]["clean"]:
+                t1.update(verdict="FAIL", reason="the staged good rows differ from the baseline: "
+                          + t1["baseline_compare"]["summary"][:400])
+        if t1["upload_as_expected"] and t1.get("baseline_compare", {}).get("clean") and not args.upload_only:
             prior = t1.get("run") or block.get(f"run_{fmt_name}") or {}
             if not prior.get("run_id"):
                 try:
@@ -1151,6 +1284,8 @@ def entries_of(payload):
             continue
         for o, reason in (b.get("not_applicable") or {}).items():
             out.append({"object": o, "format": fmt_name, "verdict": "NOT APPLICABLE", "reason": reason})
+        for o, reason in (b.get("blocked") or {}).items():
+            out.append({"object": o, "format": fmt_name, "verdict": "FAIL", "reason": reason})
         for o, e in (b.get("objects") or {}).items():
             out.append(dict(e, object=o, format=fmt_name))
     order = {o: i for i, o in enumerate(IN_SCOPE)}
@@ -1205,6 +1340,21 @@ def markdown(p):
                      + f", {up.get('upload_error_count', 0)} upload error row(s); run "
                      + (f"{run['run_id']}, prefix {run.get('prefix')}, {run.get('status')}"
                         if run.get("run_id") else (run.get("error") or "not submitted")) + ".")
+        bc = b.get("baseline_compare")
+        if bc:
+            lines.append(f"Comparison with the baseline before the run: "
+                         f"{'CLEAN' if bc['clean'] else 'DIFFERS (run not submitted)'}.")
+            lines += ["", "| Staging table | Baseline rows | Uploaded rows | Matched | Missing | Extra | "
+                          "Columns compared | Columns excluded | Differences |", "|---|---|---|---|---|---|---|---|---|"]
+            for t in bc["tables"]:
+                lines.append(f"| {t['stg']} | {t['baseline_rows']} | {t['uploaded_rows']} | {t['matched']} | "
+                             f"{t['missing']} | {t['extra']} | {t['columns_compared']} | "
+                             f"{len(t['columns_excluded'])} | "
+                             f"{'; '.join(' / '.join(d) for d in t['differences'][:2]).replace('|', '/') or '-'} |")
+            for x in bc["links"]:
+                lines.append(f"| parent link {x['link']} | | | | | | | | "
+                             f"{'clean' if x['clean'] else '; '.join(x['problems'])[:300].replace('|', '/')} |")
+            lines.append("")
         bad_files = [d for d in up.get("tables") or [] if d.get("problem")]
         for d in bad_files:
             lg = {x["file"]: x for x in up.get("upload_log") or []}.get(d["file"]) or {}
@@ -1218,7 +1368,7 @@ def markdown(p):
     for r in p.get("entries") or []:
         b = (p.get("formats") or {}).get(r["format"]) or {}
         up, run, s = b.get("upload"), b.get("run") or {}, r.get("result")
-        if up and r["verdict"] != "NOT APPLICABLE":
+        if up and r["object"] in (b.get("objects_scored") or []):
             own = [d for d in up["tables"] if r["object"] in (d.get("objects") or [])]
             upc = (("upload OK" if not any(d.get("problem") for d in own) else "upload FAILED") + " ("
                    + ", ".join(f"{d['rows_matching_source']}/{d['rows_in_file']} rows -> {d['stg']}"
@@ -1331,7 +1481,8 @@ def main():
     payload.setdefault("started_at", datetime.datetime.now().isoformat(timespec="seconds"))
     log(f"target {args.target}; baseline {baseline} (run {base_run}); work dir {work}")
     ctx = {"reg": reg, "rr": rr, "src": src_all, "src_by_seq": src_by_seq, "expected": expected,
-           "objects": objs, "work": work, "filter_seqs": filter_seqs, "link_keys": link_keys}
+           "objects": objs, "work": work, "filter_seqs": filter_seqs, "link_keys": link_keys,
+           "baseline": baseline, "base_sid": base_sid}
 
     def save():
         write_outputs(args, payload)
