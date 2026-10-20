@@ -1,5 +1,11 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-20 — local gate for #795/#794/#796 (main 25b5ddd): run 420 failed on Assets (Fusion wrote no import log), rerun
+
+**Local regression run 420 (prefix 93447): FAIL.** The only failures are the 8 rows of the cross-document Assets test batch, which ended UNACCOUNTED. Fusion's PrepareMassAdditions job 10135384 ended ERROR as usual, but returned only its summary file and no .log, so no row could be given its own error. Passing run 416's job returned the log. This bundle does not touch the Assets pipeline. Logged as backlog #797. The local regression is being rerun with a new prefix before any promotion.
+
+**Owner decisions pending.** (1) The owner's approval file (docs/.design_change_approved) is needed to promote the four upload rows of the design document to normal styling. The header-layout row is already reworded to the owner's rule (any unknown column rejects the file); the other three are accepted by the owner and only need the styling change.
+
 ## 2026-10-20 — fixing #795 and #794 (owner approved), one promotion
 
 **Before any regression or ATP run.** Owner approved #795 (FBDI upload loses the AP invoice line-to-header link) and #794 (header upload cannot link MiscReceipts lots and serials), bundled into one ATP promotion. Branch fix/794-795-upload-parent-links. Then: local gate (deploy twice, full regression, click-through), ci_promote to ATP, ATP regression and click-through, then the header and FBDI upload runs on ATP with the comparison with the baseline (every parent-child link included) before each run. #789 (own Fusion id for Grants child rows and MiscReceipts lots/serials) is not in this bundle.
