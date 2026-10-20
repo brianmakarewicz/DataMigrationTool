@@ -401,7 +401,8 @@ AS
         p_rows_loaded   OUT NUMBER,
         p_rows_errored  OUT NUMBER,
         p_error_msg     OUT VARCHAR2,
-        p_batch_tag     IN  VARCHAR2 DEFAULT NULL
+        p_batch_tag     IN  VARCHAR2 DEFAULT NULL,
+        p_scenario_id   IN  NUMBER   DEFAULT NULL   -- backlog #794: scenario the parent rows were uploaded to
     )
     IS
         l_headers      DBMS_SQL.VARCHAR2_TABLE;
@@ -426,10 +427,51 @@ AS
         l_date_cols    t_date_col_tab;          -- backlog #790: bad dates are rejected rows
         l_exclude      VARCHAR2(32767);
         l_date_bad     PLS_INTEGER := 0;
-        l_named_count  PLS_INTEGER := 0;
+        -- Backlog #794: parent link (same registry as the FBDI upload, #793).
+        l_link_col     VARCHAR2(128);
+        l_parent_obj   VARCHAR2(50);
+        l_parent_key   VARCHAR2(128);
+        l_parent_stg   VARCHAR2(128);
+        l_link_ref     VARCHAR2(10);
+        l_key_expr     VARCHAR2(100);
+        l_resolved     VARCHAR2(1000);
+        l_where        VARCHAR2(32767);
+        l_parent_bad   PLS_INTEGER := 0;
+        l_tail         VARCHAR2(1000);
+        -- Owner rule 2026-10-20: a header column that is not a column of the
+        -- object (not in DMT_UPLOAD_DICT_TBL) rejects the whole file.
+        TYPE t_name_set IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(128);
+        l_dict_cols    t_name_set;
+        l_unknown      VARCHAR2(4000);
+        l_unknown_n    PLS_INTEGER := 0;
     BEGIN
         p_rows_loaded  := 0;
         p_rows_errored := 0;
+
+        -- Backlog #794: a child object whose FBDI file links its rows to a parent
+        -- STAGING object (DMT_UPLOAD_FBDI_FILE_TBL.PARENT_OBJECT_CODE /
+        -- PARENT_KEY_COLUMN, the link column at LINK_POSITION; today the
+        -- MiscReceipts lots and serials) is linked the same way in the header
+        -- format: the link column of the CSV carries the parent's key (a lot's
+        -- SOURCE_ID = its transaction's INV_LOTSERIAL_INTERFACE_NUM) and the row
+        -- stores the STG_SEQUENCE_ID of that parent uploaded to the same scenario.
+        IF p_scenario_id IS NOT NULL THEN
+            BEGIN
+                SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(ps.COLUMN_NAME), f.PARENT_OBJECT_CODE,
+                       DBMS_ASSERT.SIMPLE_SQL_NAME(f.PARENT_KEY_COLUMN),
+                       DBMS_ASSERT.SIMPLE_SQL_NAME(o.STAGING_TABLE)
+                INTO   l_link_col, l_parent_obj, l_parent_key, l_parent_stg
+                FROM   DMT_UPLOAD_FBDI_FILE_TBL f
+                JOIN   DMT_UPLOAD_FBDI_POS_TBL ps
+                       ON ps.FBDI_FILE_ID = f.FBDI_FILE_ID AND ps.FBDI_POSITION = f.LINK_POSITION
+                JOIN   DMT_UPLOAD_OBJECT_TBL o ON o.OBJECT_CODE = f.PARENT_OBJECT_CODE
+                WHERE  f.OBJECT_CODE = p_object_code
+                AND    f.PARENT_OBJECT_CODE IS NOT NULL
+                AND    ROWNUM = 1;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN NULL;
+            END;
+        END IF;
 
         -- Load valid columns: non-admin AND non-LOB (LOG ERRORS INTO can't handle CLOBs).
         -- SOURCE_ID is marked admin in the dictionary (it defaults to NULL and is
@@ -447,6 +489,13 @@ AS
             AND    tc.data_type NOT IN ('CLOB', 'BLOB', 'NCLOB', 'LONG')
         ) LOOP
             l_valid_cols(c.COLUMN_NAME) := c.DATA_TYPE;
+        END LOOP;
+
+        -- Every dictionary column of the object (admin ones too), for the
+        -- unknown-column rule below.
+        FOR d IN (SELECT UPPER(COLUMN_NAME) AS COLUMN_NAME FROM DMT_UPLOAD_DICT_TBL
+                  WHERE OBJECT_CODE = p_object_code) LOOP
+            l_dict_cols(d.COLUMN_NAME) := 'Y';
         END LOOP;
 
         -- Read headers from first row of CSV
@@ -478,27 +527,53 @@ AS
                     l_date_cols(l_date_cols.COUNT).column_name := DBMS_ASSERT.SIMPLE_SQL_NAME(l_col_key);
                     l_date_cols(l_date_cols.COUNT).data_type   := l_col_type;
                 END IF;
-                l_select_list := l_select_list || date_expr('COL' || LPAD(i, 3, '0'), l_col_type);
+                IF l_col_key = l_link_col THEN
+                    -- Backlog #794: the parent's key becomes the parent's staging row id.
+                    l_link_ref := 'COL' || LPAD(i, 3, '0');
+                    l_select_list := l_select_list || '(SELECT TO_CHAR(MAX(pp.STG_SEQUENCE_ID)) FROM '
+                                  || l_parent_stg || ' pp WHERE pp.SCENARIO_ID = :sid AND TO_CHAR(pp.'
+                                  || l_parent_key || ') = ' || l_link_ref || ')';
+                ELSE
+                    l_select_list := l_select_list || date_expr('COL' || LPAD(i, 3, '0'), l_col_type);
+                END IF;
+            ELSIF l_col_key IS NOT NULL AND NOT l_dict_cols.EXISTS(l_col_key) THEN
+                -- Not a column of the object at all: the file is the wrong one
+                -- for its name, or carries a column we cannot load (owner rule
+                -- 2026-10-20). One Upload Errors row per such column.
+                l_unknown_n := l_unknown_n + 1;
+                l_unknown   := SUBSTR(l_unknown || CASE WHEN l_unknown IS NOT NULL THEN ', ' END
+                                      || l_col_key, 1, 3000);
+                log_row_error(
+                    p_log_id        => p_log_id,
+                    p_row_number    => 1,
+                    p_column_name   => SUBSTR(l_col_key, 1, 100),
+                    p_error_type    => 'LAYOUT',
+                    p_error_message => SUBSTR('Wrong layout: column "' || l_col_key || '" in '
+                                       || p_file_label || ' is not a column of ' || p_object_code
+                                       || ' (' || p_staging_table || '), so the whole file was not loaded.', 1, 4000),
+                    p_batch_tag     => p_batch_tag);
             ELSIF l_col_key IS NOT NULL THEN
+                -- A dictionary column that is not uploadable (admin or LOB): skipped.
                 l_warnings := l_warnings || 'Column "' || l_col_key || '" skipped. ';
             END IF;
         END LOOP;
 
-        -- Backlog #790: a file whose columns are mostly not this object's is the
-        -- wrong file for its name. Reject it visibly instead of staging rows that
-        -- carry only the few columns that happen to share a name.
-        FOR i IN 1 .. l_header_count LOOP
-            IF l_headers(i) IS NOT NULL THEN
-                l_named_count := l_named_count + 1;
+        -- Owner rule 2026-10-20 (replaces the earlier "fewer than half of the
+        -- columns" threshold): any unknown column rejects the whole file;
+        -- nothing stages. A file with no uploadable column is rejected too.
+        IF l_unknown_n > 0 OR l_map_count = 0 THEN
+            p_error_msg := SUBSTR(CASE WHEN l_unknown_n > 0 THEN
+                               'Wrong layout: ' || l_unknown_n || ' column(s) in ' || p_file_label
+                               || ' are not columns of ' || p_object_code || ' (' || p_staging_table
+                               || '): ' || l_unknown || '. The whole file was not loaded.'
+                           ELSE
+                               'Wrong layout: no column of ' || p_file_label || ' is an uploadable column of '
+                               || p_object_code || ' (' || p_staging_table || '), so the file was not loaded. '
+                               || l_warnings
+                           END, 1, 4000);
+            IF l_unknown_n = 0 THEN
+                reject_layout(p_log_id, p_batch_tag, p_error_msg);
             END IF;
-        END LOOP;
-        IF l_map_count = 0 OR l_map_count * 2 < l_named_count THEN
-            p_error_msg := 'Wrong layout: only ' || l_map_count || ' of the ' || l_named_count
-                        || ' columns in ' || p_file_label || ' are columns of ' || p_object_code
-                        || ' (' || p_staging_table || '), so the file was not loaded. '
-                        || 'Check that the file is the right one for its name. ' || l_warnings;
-            p_error_msg := SUBSTR(p_error_msg, 1, 4000);
-            reject_layout(p_log_id, p_batch_tag, p_error_msg);
             p_rows_errored := 1;
             RETURN;
         END IF;
@@ -509,6 +584,35 @@ AS
 
         -- Rows with a value that is not a valid date are rejected first.
         reject_bad_dates(p_blob, 1, l_date_cols, p_log_id, p_batch_tag, l_exclude, l_date_bad);
+
+        -- Backlog #794: then the rows whose parent is not in the scenario
+        -- (PARENT_NOT_FOUND, like the FBDI upload) - never staged unlinked.
+        IF l_link_col IS NOT NULL THEN
+            l_key_expr := NVL(l_link_ref, 'CAST(NULL AS VARCHAR2(4000))');
+            l_resolved := '(SELECT MAX(pp.STG_SEQUENCE_ID) FROM ' || l_parent_stg
+                       || ' pp WHERE pp.SCENARIO_ID = :sid AND TO_CHAR(pp.' || l_parent_key || ') = '
+                       || l_key_expr || ')';
+            l_where := CASE WHEN l_exclude IS NOT NULL THEN 'NOT (' || l_exclude || ') AND ' END;
+            l_tail  := ' matches no ' || l_parent_obj || ' row (' || l_parent_key
+                    || ') uploaded to this scenario, so the row was not staged. '
+                    || 'Upload the parent file first, in the same zip or scenario.';
+            -- Section-7 carve-out (see STANDARDS NOTE at top of body): the parent
+            -- staging table and key column come from the seeded upload registry and
+            -- are SIMPLE_SQL_NAME-checked; log id, column, file label, message,
+            -- batch tag, the BLOB and the scenario id are bound.
+            EXECUTE IMMEDIATE
+                'INSERT INTO DMT_UPLOAD_ERROR_TBL '
+             || '  (LOG_ID, ROW_NUMBER, COLUMN_NAME, ERROR_TYPE, ERROR_MESSAGE, RAW_VALUE, BATCH_TAG) '
+             || 'SELECT :log_id, LINE_NUMBER, :col, ''PARENT_NOT_FOUND'', '
+             || '  ''Line '' || LINE_NUMBER || '' of '' || :file || '': '' || :col2 || '' '' '
+             || '  || NVL(''"'' || ' || l_key_expr || ' || ''"'', ''(empty)'') || :tail, '
+             || '  SUBSTR(' || l_key_expr || ', 1, 4000), :tag '
+             || 'FROM TABLE(APEX_DATA_PARSER.PARSE(p_content => :blob, p_file_name => ''upload.csv'', p_skip_rows => 1)) '
+             || 'WHERE ' || l_where || l_resolved || ' IS NULL'
+                USING p_log_id, l_link_col, p_file_label, l_link_col, l_tail, p_batch_tag, p_blob, p_scenario_id;
+            l_parent_bad := SQL%ROWCOUNT;
+            COMMIT;
+        END IF;
 
         -- Build INSERT...SELECT with LOG ERRORS INTO.
         -- Good rows insert normally; bad rows (type conversion, constraint
@@ -523,7 +627,10 @@ AS
                  '   p_content   => :blob,' ||
                  '   p_file_name => ''upload.csv'',' ||
                  '   p_skip_rows => 1))' ||
-                 CASE WHEN l_exclude IS NOT NULL THEN ' WHERE NOT (' || l_exclude || ')' END ||
+                 CASE WHEN l_exclude IS NOT NULL OR l_link_col IS NOT NULL THEN ' WHERE ' END ||
+                 CASE WHEN l_exclude IS NOT NULL THEN 'NOT (' || l_exclude || ')' END ||
+                 CASE WHEN l_exclude IS NOT NULL AND l_link_col IS NOT NULL THEN ' AND ' END ||
+                 CASE WHEN l_link_col IS NOT NULL THEN l_resolved || ' IS NOT NULL' END ||
                  ' LOG ERRORS INTO ' || l_err_table ||
                  ' (''' || p_log_id || ''') REJECT LIMIT UNLIMITED';
 
@@ -534,14 +641,23 @@ AS
             p_procedure => 'fast_load_from_blob'
         );
 
-        EXECUTE IMMEDIATE l_sql USING p_blob;
+        -- Binds in the order they appear: the scenario id of the link column in
+        -- the SELECT list (when the file carries it), the BLOB, the scenario id
+        -- of the parent-found condition (backlog #794).
+        IF l_link_ref IS NOT NULL THEN
+            EXECUTE IMMEDIATE l_sql USING p_scenario_id, p_blob, p_scenario_id;
+        ELSIF l_link_col IS NOT NULL THEN
+            EXECUTE IMMEDIATE l_sql USING p_blob, p_scenario_id;
+        ELSE
+            EXECUTE IMMEDIATE l_sql USING p_blob;
+        END IF;
         p_rows_loaded := SQL%ROWCOUNT;
         COMMIT;
 
         -- Rows the DML error log caught (number, length, constraint) go to the
-        -- Upload Errors region next to the bad-date rows found above.
+        -- Upload Errors region next to the bad-date and no-parent rows found above.
         copy_dml_errors(l_err_table, p_log_id, p_batch_tag, 'FAST_LOADER', l_err_count);
-        p_rows_errored := l_err_count + l_date_bad;
+        p_rows_errored := l_err_count + l_date_bad + l_parent_bad;
         IF p_rows_errored > 0 THEN
             p_error_msg := p_rows_loaded || ' loaded, ' || p_rows_errored
                         || ' rejected. Filter Upload Errors by Load ID: ' || p_batch_tag;
@@ -925,7 +1041,8 @@ AS
                 p_rows_loaded   => p_rows_loaded,
                 p_rows_errored  => p_rows_errored,
                 p_error_msg     => p_error_msg,
-                p_batch_tag     => l_batch_tag
+                p_batch_tag     => l_batch_tag,
+                p_scenario_id   => l_scenario_id
             );
         ELSE
             legacy_load_from_blob(

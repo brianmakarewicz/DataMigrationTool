@@ -115,9 +115,7 @@ IN_SCOPE = ["Items", "Suppliers", "SupplierAddresses", "SupplierSites", "Supplie
 # Objects whose upload in a format is known to differ from the baseline, by a logged
 # defect: they are left out of that format's zip (so the rest can run under the owner's
 # "no run on an upload that differs from the baseline" rule) and reported as FAIL.
-BLOCKED = {"header": {"MiscReceipts": "backlog #794: a header upload cannot link MiscReceipts lots and "
-                                      "serials to their transaction (SOURCE_ID is copied from the source "
-                                      "scenario); not uploaded or run in the header format until fixed"}}
+BLOCKED = {}   # none today (MiscReceipts header was blocked by #794 until 2026-10-20)
 # Upload objects (staging tables) that an Oracle FBDI file loads (backlog #792 registry).
 FBDI_OBJECTS = {x.object for x in FBDI_FILES}
 HDL_PIPELINE = "HCM"
@@ -1163,6 +1161,21 @@ def layout_file(cur, reg, fmt_name, src_all):
                     f"{len(slots) + FBDI_SHIFT} slots instead of {len(slots)})"}
 
 
+UNKNOWN_COLUMN = "NOT_A_COLUMN"
+
+
+def unknown_column_file(reg, src_all):
+    """A correctly named, otherwise correct Suppliers header file with exactly one
+    column that is not a column of the object (owner rule 2026-10-20: the whole
+    file must be rejected)."""
+    rows = src_all["Suppliers"][LAYOUT_TARGET]
+    name, cols, _x = header_layout(reg, LAYOUT_TARGET, rows)
+    return {"stg": LAYOUT_TARGET, "file": name, "files": [name], "stgs": [LAYOUT_TARGET], "objects": ["Suppliers"],
+            "layout": cols + [UNKNOWN_COLUMN], "columns": [], "mask": None,
+            "rows": [dict(r, **{UNKNOWN_COLUMN: "x"}) for r in rows], "raw_rows": [], "rows_in_file": 0,
+            "source_seqs": [], "what": f"{name} with its {len(rows)} good rows and one extra column {UNKNOWN_COLUMN}"}
+
+
 def visible_rejection(up, fname):
     """What a user sees for a file: an error notification on the page, or rows in
     the Upload Errors region (DMT_UPLOAD_ERROR_TBL). The log alone is not visible."""
@@ -1171,12 +1184,48 @@ def visible_rejection(up, fname):
             "visible": bool(up["error"]) or bool(errs)}
 
 
+def layout_result(args, block, sc2, lay, src_by_seq, require_column=None):
+    """A file that must be rejected whole: nothing staged and the rejection visible
+    (page error or an Upload Errors row); with require_column, an Upload Errors row
+    must name that column."""
+    up2, _ = check_upload(args.target, sc2, [lay], src_by_seq, block["pages"][sc2])
+    d = up2["tables"][0]
+    lg = (up2["upload_log"] or [{}])[0]
+    vis = visible_rejection(up2, lay["file"])
+    t2 = {"scenario": sc2, "file": lay["what"], "staged": d["staged"],
+          "page": {k: up2[k] for k in ("page_ok", "message", "error", "batch_id")},
+          "log_status": lg.get("status"), "log_rows_loaded": lg.get("rows_loaded"),
+          "log_rows_errored": lg.get("rows_errored"), "log_error": lg.get("error"),
+          "upload_errors": up2["upload_errors"][:4], **vis}
+    if d["staged"]:
+        con = cp._oracle(args.target)
+        try:
+            cur = con.cursor()
+            sid = scenario_id(cur, sc2)
+            cols = [c for c in stg_columns(cur, LAYOUT_TARGET) if c not in ADMIN_COLS]
+            cur.execute(f"SELECT {', '.join(cols)} FROM {LAYOUT_TARGET} WHERE SCENARIO_ID = :s "
+                        f"AND ROWNUM = 1", s=sid)
+            r = cur.fetchone()
+            t2["first_staged_row_populated"] = {c: fmt(v)[:40] for c, v in zip(cols, r) if v is not None}
+        finally:
+            con.close()
+    t2["verdict"] = "PASS" if (d["staged"] == 0 and vis["visible"]) else "FAIL"
+    t2["reason"] = None if t2["verdict"] == "PASS" else (
+        (f"{d['staged']} row(s) staged from a file with the wrong layout" if d["staged"]
+         else "nothing staged, but the rejection is not visible (no page error, no Upload Errors row)"))
+    t2["page_message_as_expected"] = bool(up2["error"])
+    if require_column and not any((e.get("column") or "").upper() == require_column
+                                  for e in up2["upload_errors"]):
+        t2.update(verdict="FAIL", reason=f"no Upload Errors row names the unknown column {require_column}")
+    return t2
+
+
 def run_negative(args, ctx, block, save):
     reg, rr, src_all, src_by_seq, expected = (ctx[k] for k in ("reg", "rr", "src", "src_by_seq", "expected"))
     objs = reg.order({x for o in NEG_OBJECTS for x in reg.closure(o)})
     block.update(objects_in_zip=objs, mixed={}, layout={})
     stamp = block.get("stamp") or new_stamp(args.target, lambda s: [
-        f"UPL-NEG-{t}-{s}" for t in ("HDR", "FBDI", "HDR-LAYOUT", "FBDI-LAYOUT")])
+        f"UPL-NEG-{t}-{s}" for t in ("HDR", "FBDI", "HDR-LAYOUT", "FBDI-LAYOUT", "HDR-UNKNOWN")])
     block["stamp"] = stamp
     plans, jobs = {}, []
     con = cp._oracle(args.target)
@@ -1196,6 +1245,11 @@ def run_negative(args, ctx, block, save):
             plans[fmt_name] = (sc1, members, files, manifest, sc2, lay)
             jobs += [{"scenario": sc1, "file": z1, "description": f"Backlog #786 negative test 1 ({fmt_name})"},
                      {"scenario": sc2, "file": z2, "description": f"Backlog #786 negative test 2 ({fmt_name})"}]
+        unk = unknown_column_file(reg, src_all)
+        sc3 = f"UPL-NEG-HDR-UNKNOWN-{stamp}"
+        z3 = os.path.join(ctx["work"], f"{sc3}.zip")
+        write_zip("header", [unk], z3)
+        jobs.append({"scenario": sc3, "file": z3, "description": "Backlog #786 negative test 2b (one unknown column)"})
     finally:
         con.close()
     if not block.get("pages"):
@@ -1275,34 +1329,12 @@ def run_negative(args, ctx, block, save):
         block["mixed"][fmt_name] = t1
         save()
         # ---- test 2: correctly named file, wrong layout ------------------------
-        up2, _ = check_upload(args.target, sc2, [lay], src_by_seq, block["pages"][sc2])
-        d = up2["tables"][0]
-        lg = (up2["upload_log"] or [{}])[0]
-        vis = visible_rejection(up2, lay["file"])
-        t2 = {"scenario": sc2, "file": lay["what"], "staged": d["staged"],
-              "page": {k: up2[k] for k in ("page_ok", "message", "error", "batch_id")},
-              "log_status": lg.get("status"), "log_rows_loaded": lg.get("rows_loaded"),
-              "log_rows_errored": lg.get("rows_errored"), "log_error": lg.get("error"),
-              "upload_errors": up2["upload_errors"][:4], **vis}
-        if d["staged"]:
-            con = cp._oracle(args.target)
-            try:
-                cur = con.cursor()
-                sid = scenario_id(cur, sc2)
-                cols = [c for c in stg_columns(cur, LAYOUT_TARGET) if c not in ADMIN_COLS]
-                cur.execute(f"SELECT {', '.join(cols)} FROM {LAYOUT_TARGET} WHERE SCENARIO_ID = :s "
-                            f"AND ROWNUM = 1", s=sid)
-                r = cur.fetchone()
-                t2["first_staged_row_populated"] = {c: fmt(v)[:40] for c, v in zip(cols, r) if v is not None}
-            finally:
-                con.close()
-        t2["verdict"] = "PASS" if (d["staged"] == 0 and vis["visible"]) else "FAIL"
-        t2["reason"] = None if t2["verdict"] == "PASS" else (
-            (f"{d['staged']} row(s) staged from a file with the wrong layout" if d["staged"]
-             else "nothing staged, but the rejection is not visible (no page error, no Upload Errors row)"))
-        t2["page_message_as_expected"] = bool(up2["error"])
-        block["layout"][fmt_name] = t2
+        block["layout"][fmt_name] = layout_result(args, block, sc2, lay, src_by_seq)
         save()
+    # ---- test 2b: header file with exactly one unknown column (owner rule 2026-10-20)
+    block["layout"]["header, one unknown column"] = layout_result(args, block, sc3, unk, src_by_seq,
+                                                                  require_column=UNKNOWN_COLUMN)
+    save()
     block["page_message"] = {
         f"{t} ({f})": ("PASS" if block[k][f]["page_message_as_expected"] else "FAIL")
         + f": page showed error '{oneline(block[k][f]['page']['error'], 160)}'"
