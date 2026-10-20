@@ -1,5 +1,20 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-20 — after the ATP promotion and the upload tests (backlog #786, #787, #788, #790 RESOLVED)
+
+**Promotion.** Main aea47c8 is on ATP. The local gate passed: run 416, prefix 93439, PASS, click-through 68 of 68. `deploy-prod` finished with 0 invalid objects. The ATP regression passed: run 186, prefix 93441, PASS with no new failures (7 known), and the ATP click-through passed 68 of 68.
+
+**Upload tests on ATP** (local identical):
+- **Header run 187:** 25 of 26 objects PASS. Grants fails only on the own-Fusion-id rule (#789). MiscReceipts is not in the header test because of #794.
+- **FBDI run 188:** 19 of 22 PASS. APInvoices fails on #795; MiscReceipts and Grants fail on #789.
+- **Negative tests:** both formats reject bad rows one by one and reject a wrong layout visibly, and the page never shows a failed file as success. The header mixed-row run 189 passed for all 6 objects. The FBDI mixed-row run was not submitted because of #795.
+
+**Ready for functional testing (24 of 27).** All except APInvoices, MiscReceipts and Grants. Details: docs/findings/upload_tests_786.md.
+
+**New defects.** #794: header uploads cannot link MiscReceipts lots and serials. #795 (P1): FBDI uploads lose the AP invoice line-to-header link.
+
+**Owner decisions pending.** (1) Accept or reject the four PROPOSED (red) rows added to the upload convention table in the design document. (2) Approve fixing #795 (FBDI map: INVOICE_ID in slot 1 of both AP files) and #794 (header lot and serial parent link), each followed by a promotion and a rerun of the upload tests.
+
 ## 2026-10-19 — local gate PASS on aea47c8; promoting to ATP (bundle #787, #790, #788, #786, #792, #793)
 
 **Local gate on main aea47c8.** Deploy clean (0 invalid). Full local regression run 416, prefix 93439: PASS (no new failures; the 7 known review items are the HCM objects with no regression data, unchanged). Local console click-through for run 416: PASS, 68 of 68 steps.

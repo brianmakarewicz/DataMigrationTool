@@ -1,0 +1,3430 @@
+{
+ "header": {
+  "scenario": "UPL-HDR-2610192255",
+  "baseline_scenario": "RegressionTest261013111321",
+  "tables": [
+   {
+    "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+    "objects": [
+     "Suppliers"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 156,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+    "objects": [
+     "SupplierAddresses"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 110,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+    "objects": [
+     "SupplierSites"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 200,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+    "objects": [
+     "SupplierSiteAssignments"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 16,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_CONTACTS_STG_TBL",
+    "objects": [
+     "SupplierContacts"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 90,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_HEADERS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders",
+     "BlanketPOs",
+     "Contracts"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 100,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_LINES_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders",
+     "BlanketPOs"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 99,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_LINE_LOCS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 94,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_DISTS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 125,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+    "objects": [
+     "APInvoices"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 136,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+    "objects": [
+     "APInvoices"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 165,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_RA_LINES_STG_TBL",
+    "objects": [
+     "ARInvoices"
+    ],
+    "baseline_rows": 11,
+    "uploaded_rows": 11,
+    "matched": 11,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 171,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_RA_DISTS_STG_TBL",
+    "objects": [
+     "ARInvoices"
+    ],
+    "baseline_rows": 12,
+    "uploaded_rows": 12,
+    "matched": 12,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 70,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_HEADERS_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 70,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_LINES_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 117,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_DISTS_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 117,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTIES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 40,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_LOCATIONS_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 51,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTY_SITES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 39,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 34,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCOUNTS_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 34,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCT_SITES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 39,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 36,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GL_INTERFACE_STG_TBL",
+    "objects": [
+     "GLBalances"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 151,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GL_BUDGET_INT_STG_TBL",
+    "objects": [
+     "GLBudgets"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 40,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_HDR_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 38,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_BOOK_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 17,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_ASSIGN_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 20,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_PROJECTS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 158,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_TASKS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 124,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 16,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 20,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJC_EXPENDITURES_STG_TBL",
+    "objects": [
+     "Expenditures"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 120,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PRJ_BUDGET_STG_TBL",
+    "objects": [
+     "ProjectBudgets"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 62,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SCENARIO_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJB_BILL_EVENTS_STG_TBL",
+    "objects": [
+     "BillingEvents"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 79,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_EGP_ITEM_STG_TBL",
+    "objects": [
+     "Items"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 172,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_EGP_ITEM_CAT_STG_TBL",
+    "objects": [
+     "Items"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 13,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_WORKER_STG_TBL",
+    "objects": [
+     "Workers"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 16,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PERSON_NAME_STG_TBL",
+    "objects": [
+     "Workers"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 47,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PERSON_EMAIL_STG_TBL",
+    "objects": [
+     "Workers"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 9,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_WORK_REL_STG_TBL",
+    "objects": [
+     "Workers"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 9,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_ASSIGNMENT_STG_TBL",
+    "objects": [
+     "Workers"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 23,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_SALARY_STG_TBL",
+    "objects": [
+     "Salaries"
+    ],
+    "baseline_rows": 2,
+    "uploaded_rows": 2,
+    "matched": 2,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 16,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_SAL_BASIS_STG_TBL",
+    "objects": [
+     "SalaryBases"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 11,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_ABSENCE_STG_TBL",
+    "objects": [
+     "Absences"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 18,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_TALENT_PROF_STG_TBL",
+    "objects": [
+     "TalentProfiles"
+    ],
+    "baseline_rows": 2,
+    "uploaded_rows": 2,
+    "matched": 2,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 7,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_TALENT_PROF_ITEM_STG_TBL",
+    "objects": [
+     "TalentProfiles"
+    ],
+    "baseline_rows": 2,
+    "uploaded_rows": 2,
+    "matched": 2,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 10,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_HEADERS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 125,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PROJECTS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 57,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PERSONNEL_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 62,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUNDING_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 11,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUND_SRC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 9,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 6,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 6,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_BDGT_PRDS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_CFDAS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 3,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_CERTS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 14,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_KEYWORDS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 4,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_REFERENCES_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 6,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_TERMS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 7,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   }
+  ],
+  "links": [
+   {
+    "link": "DMT_PO_LINES_INT_STG_TBL -> DMT_PO_HEADERS_INT_STG_TBL on INTERFACE_HEADER_KEY",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_POR_REQ_LINES_STG_TBL -> DMT_POR_REQ_HEADERS_STG_TBL on INTERFACE_HEADER_KEY",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_LOCATIONS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCOUNTS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCOUNTS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCT_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCT_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_FA_ASSET_ASSIGN_STG_TBL -> DMT_FA_ASSET_HDR_STG_TBL on ASSET_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_FA_ASSET_BOOK_STG_TBL -> DMT_FA_ASSET_HDR_STG_TBL on ASSET_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PJF_TASKS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PJC_TXN_CONTROLS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on ITEM_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on ORGANIZATION_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on SOURCE_SYSTEM_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PERSON_NAME_STG_TBL -> DMT_WORKER_STG_TBL on PERSON_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PERSON_EMAIL_STG_TBL -> DMT_WORKER_STG_TBL on PERSON_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_ASSIGNMENT_STG_TBL -> DMT_WORK_REL_STG_TBL on ACTION_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_ASSIGNMENT_STG_TBL -> DMT_WORK_REL_STG_TBL on PERSON_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_TALENT_PROF_ITEM_STG_TBL -> DMT_TALENT_PROF_STG_TBL on PERSON_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_TALENT_PROF_ITEM_STG_TBL -> DMT_TALENT_PROF_STG_TBL on PROFILE_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PROJECTS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PERSONNEL_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUNDING_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUND_SRC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUND_ALLOC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_BDGT_PRDS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_CFDAS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_CERTS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_KEYWORDS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_ORG_CREDITS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_REFERENCES_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_TERMS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "FA_ASSET_ASSIGN -> asset",
+    "clean": true,
+    "problems": []
+   }
+  ],
+  "clean": true,
+  "summary": "clean: every staged row equals its baseline row"
+ },
+ "fbdi": {
+  "scenario": "UPL-FBDI-2610192328",
+  "baseline_scenario": "RegressionTest261013111321",
+  "tables": [
+   {
+    "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+    "objects": [
+     "Suppliers"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 155,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+    "objects": [
+     "SupplierAddresses"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 109,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+    "objects": [
+     "SupplierSites"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 199,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+    "objects": [
+     "SupplierSiteAssignments"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 15,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POZ_SUP_CONTACTS_STG_TBL",
+    "objects": [
+     "SupplierContacts"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 89,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_HEADERS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders",
+     "BlanketPOs",
+     "Contracts"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 86,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "REQ_BU_NAME (the format cannot carry it)",
+     "SOLDTO_LE_NAME (the format cannot carry it)",
+     "BILLTO_BU_NAME (the format cannot carry it)",
+     "RATE (the format cannot carry it)",
+     "RATE_TYPE (the format cannot carry it)",
+     "RATE_DATE (the format cannot carry it)",
+     "BILL_TO_LOCATION (the format cannot carry it)",
+     "SHIP_TO_LOCATION (the format cannot carry it)",
+     "DEFAULT_TAXATION_COUNTRY (the format cannot carry it)",
+     "TAX_DOCUMENT_SUBTYPE (the format cannot carry it)",
+     "FIRST_PTY_REG_NUM (the format cannot carry it)",
+     "THIRD_PTY_REG_NUM (the format cannot carry it)",
+     "BUYER_MANAGED_TRANSPORT_FLAG (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_LINES_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders",
+     "BlanketPOs"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 65,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "AMOUNT (the format cannot carry it)",
+     "QUANTITY (the format cannot carry it)",
+     "SECONDARY_QUANTITY (the format cannot carry it)",
+     "SECONDARY_UNIT_OF_MEASURE (the format cannot carry it)",
+     "VENDOR_PRODUCT_NUM (the format cannot carry it)",
+     "HAZARD_CLASS (the format cannot carry it)",
+     "UN_NUMBER (the format cannot carry it)",
+     "UNIT_WEIGHT (the format cannot carry it)",
+     "WEIGHT_UOM_CODE (the format cannot carry it)",
+     "WEIGHT_UNIT_OF_MEASURE (the format cannot carry it)",
+     "UNIT_VOLUME (the format cannot carry it)",
+     "VOLUME_UOM_CODE (the format cannot carry it)",
+     "VOLUME_UNIT_OF_MEASURE (the format cannot carry it)",
+     "TEMPLATE_NAME (the format cannot carry it)",
+     "ITEM_ATTRIBUTE_CATEGORY (the format cannot carry it)",
+     "ITEM_ATTRIBUTE1 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE2 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE3 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE4 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE5 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE6 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE7 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE8 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE9 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE10 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE11 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE12 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE13 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE14 (the format cannot carry it)",
+     "ITEM_ATTRIBUTE15 (the format cannot carry it)",
+     "SOURCE_AGREEMENT_PRC_BU_NAME (the format cannot carry it)",
+     "SOURCE_AGREEMENT (the format cannot carry it)",
+     "SOURCE_AGREEMENT_LINE (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_LINE_LOCS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 93,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PO_DISTS_INT_STG_TBL",
+    "objects": [
+     "PurchaseOrders"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 124,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+    "objects": [
+     "APInvoices"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 134,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "INVOICE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+    "objects": [
+     "APInvoices"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 163,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "INVOICE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_RA_LINES_STG_TBL",
+    "objects": [
+     "ARInvoices"
+    ],
+    "baseline_rows": 11,
+    "uploaded_rows": 11,
+    "matched": 11,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 169,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "RESET_TRX_DATE_FLAG (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_RA_DISTS_STG_TBL",
+    "objects": [
+     "ARInvoices"
+    ],
+    "baseline_rows": 12,
+    "uploaded_rows": 12,
+    "matched": 12,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 69,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_HEADERS_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 69,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_LINES_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 116,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_POR_REQ_DISTS_STG_TBL",
+    "objects": [
+     "Requisitions"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 116,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_INV_TRX_STG_TBL",
+    "objects": [
+     "MiscReceipts"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 257,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_INV_TRX_LOTS_STG_TBL",
+    "objects": [
+     "MiscReceipts"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 10,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SECONDARY_TRANSACTION_QUANTITY (the format cannot carry it)",
+     "ORIGINATION_TYPE (the format cannot carry it)",
+     "ORIGINATION_DATE (the format cannot carry it)",
+     "STATUS_CODE (the format cannot carry it)",
+     "RETEST_DATE (the format cannot carry it)",
+     "EXPIRATION_ACTION_NAME (the format cannot carry it)",
+     "EXPIRATION_ACTION_CODE (the format cannot carry it)",
+     "EXPIRATION_ACTION_DATE (the format cannot carry it)",
+     "HOLD_DATE (the format cannot carry it)",
+     "MATURITY_DATE (the format cannot carry it)",
+     "DATE_CODE (the format cannot carry it)",
+     "GRADE_CODE (the format cannot carry it)",
+     "CHANGE_DATE (the format cannot carry it)",
+     "AGE (the format cannot carry it)",
+     "REASON_CODE (the format cannot carry it)",
+     "REASON_NAME (the format cannot carry it)",
+     "PROCESS_FLAG (the format cannot carry it)",
+     "SUPPLIER_LOT_NUMBER (the format cannot carry it)",
+     "TERRITORY_CODE (the format cannot carry it)",
+     "TERRITORY_SHORT_NAME (the format cannot carry it)",
+     "ITEM_SIZE (the format cannot carry it)",
+     "COLOR (the format cannot carry it)",
+     "LOT_VOLUME (the format cannot carry it)",
+     "VOLUME_UOM_NAME (the format cannot carry it)",
+     "VOLUME_UOM (the format cannot carry it)",
+     "PLACE_OF_ORIGIN (the format cannot carry it)",
+     "BEST_BY_DATE (the format cannot carry it)",
+     "LOT_LENGTH (the format cannot carry it)",
+     "LENGTH_UOM (the format cannot carry it)",
+     "LENGTH_UOM_NAME (the format cannot carry it)",
+     "RECYCLED_CONTENT (the format cannot carry it)",
+     "LOT_THICKNESS (the format cannot carry it)",
+     "THICKNESS_UOM (the format cannot carry it)",
+     "LOT_WIDTH (the format cannot carry it)",
+     "WIDTH_UOM (the format cannot carry it)",
+     "WIDTH_UOM_NAME (the format cannot carry it)",
+     "CURL_WRINKLE_FOLD (the format cannot carry it)",
+     "VENDOR_NAME (the format cannot carry it)",
+     "PRODUCT_CODE (the format cannot carry it)",
+     "PRODUCT_TRANSACTION_ID (the format cannot carry it)",
+     "SUBLOT_NUM (the format cannot carry it)",
+     "PARENT_LOT_NUMBER (the format cannot carry it)",
+     "PARENT_OBJECT_TYPE (the format cannot carry it)",
+     "PARENT_OBJECT_NUMBER (the format cannot carry it)",
+     "PARENT_OBJECT_TYPE2 (the format cannot carry it)",
+     "PARENT_OBJECT_NUMBER2 (the format cannot carry it)",
+     "LOT_ATTRIBUTE_CATEGORY (the format cannot carry it)",
+     "C_ATTRIBUTE1 (the format cannot carry it)",
+     "C_ATTRIBUTE2 (the format cannot carry it)",
+     "C_ATTRIBUTE3 (the format cannot carry it)",
+     "C_ATTRIBUTE4 (the format cannot carry it)",
+     "C_ATTRIBUTE5 (the format cannot carry it)",
+     "C_ATTRIBUTE6 (the format cannot carry it)",
+     "C_ATTRIBUTE7 (the format cannot carry it)",
+     "C_ATTRIBUTE8 (the format cannot carry it)",
+     "C_ATTRIBUTE9 (the format cannot carry it)",
+     "C_ATTRIBUTE10 (the format cannot carry it)",
+     "C_ATTRIBUTE11 (the format cannot carry it)",
+     "C_ATTRIBUTE12 (the format cannot carry it)",
+     "C_ATTRIBUTE13 (the format cannot carry it)",
+     "C_ATTRIBUTE14 (the format cannot carry it)",
+     "C_ATTRIBUTE15 (the format cannot carry it)",
+     "C_ATTRIBUTE16 (the format cannot carry it)",
+     "C_ATTRIBUTE17 (the format cannot carry it)",
+     "C_ATTRIBUTE18 (the format cannot carry it)",
+     "C_ATTRIBUTE19 (the format cannot carry it)",
+     "C_ATTRIBUTE20 (the format cannot carry it)",
+     "D_ATTRIBUTE1 (the format cannot carry it)",
+     "D_ATTRIBUTE2 (the format cannot carry it)",
+     "D_ATTRIBUTE3 (the format cannot carry it)",
+     "D_ATTRIBUTE4 (the format cannot carry it)",
+     "D_ATTRIBUTE5 (the format cannot carry it)",
+     "D_ATTRIBUTE6 (the format cannot carry it)",
+     "D_ATTRIBUTE7 (the format cannot carry it)",
+     "D_ATTRIBUTE8 (the format cannot carry it)",
+     "D_ATTRIBUTE9 (the format cannot carry it)",
+     "D_ATTRIBUTE10 (the format cannot carry it)",
+     "N_ATTRIBUTE1 (the format cannot carry it)",
+     "N_ATTRIBUTE2 (the format cannot carry it)",
+     "N_ATTRIBUTE3 (the format cannot carry it)",
+     "N_ATTRIBUTE4 (the format cannot carry it)",
+     "N_ATTRIBUTE5 (the format cannot carry it)",
+     "N_ATTRIBUTE6 (the format cannot carry it)",
+     "N_ATTRIBUTE7 (the format cannot carry it)",
+     "N_ATTRIBUTE8 (the format cannot carry it)",
+     "N_ATTRIBUTE9 (the format cannot carry it)",
+     "N_ATTRIBUTE10 (the format cannot carry it)",
+     "T_ATTRIBUTE1 (the format cannot carry it)",
+     "T_ATTRIBUTE2 (the format cannot carry it)",
+     "T_ATTRIBUTE3 (the format cannot carry it)",
+     "T_ATTRIBUTE4 (the format cannot carry it)",
+     "T_ATTRIBUTE5 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY (the format cannot carry it)",
+     "ATTRIBUTE1 (the format cannot carry it)",
+     "ATTRIBUTE2 (the format cannot carry it)",
+     "ATTRIBUTE3 (the format cannot carry it)",
+     "ATTRIBUTE4 (the format cannot carry it)",
+     "ATTRIBUTE5 (the format cannot carry it)",
+     "ATTRIBUTE6 (the format cannot carry it)",
+     "ATTRIBUTE7 (the format cannot carry it)",
+     "ATTRIBUTE8 (the format cannot carry it)",
+     "ATTRIBUTE9 (the format cannot carry it)",
+     "ATTRIBUTE10 (the format cannot carry it)",
+     "ATTRIBUTE11 (the format cannot carry it)",
+     "ATTRIBUTE12 (the format cannot carry it)",
+     "ATTRIBUTE13 (the format cannot carry it)",
+     "ATTRIBUTE14 (the format cannot carry it)",
+     "ATTRIBUTE15 (the format cannot carry it)",
+     "ATTRIBUTE16 (the format cannot carry it)",
+     "ATTRIBUTE17 (the format cannot carry it)",
+     "ATTRIBUTE18 (the format cannot carry it)",
+     "ATTRIBUTE19 (the format cannot carry it)",
+     "ATTRIBUTE20 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER1 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER2 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER3 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER4 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER5 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER6 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER7 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER8 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER9 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER10 (the format cannot carry it)",
+     "ATTRIBUTE_DATE1 (the format cannot carry it)",
+     "ATTRIBUTE_DATE2 (the format cannot carry it)",
+     "ATTRIBUTE_DATE3 (the format cannot carry it)",
+     "ATTRIBUTE_DATE4 (the format cannot carry it)",
+     "ATTRIBUTE_DATE5 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP1 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP2 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP3 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP4 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP5 (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_INV_TRX_SERIALS_STG_TBL",
+    "objects": [
+     "MiscReceipts"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 3,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "VENDOR_SERIAL_NUMBER (the format cannot carry it)",
+     "VENDOR_LOT_NUMBER (the format cannot carry it)",
+     "PARENT_SERIAL_NUMBER (the format cannot carry it)",
+     "TERRITORY_CODE (the format cannot carry it)",
+     "ORIGINATION_DATE (the format cannot carry it)",
+     "STATUS_NAME (the format cannot carry it)",
+     "STATUS_CODE (the format cannot carry it)",
+     "TIME_SINCE_NEW (the format cannot carry it)",
+     "CYCLES_SINCE_NEW (the format cannot carry it)",
+     "TIME_SINCE_OVERHAUL (the format cannot carry it)",
+     "CYCLES_SINCE_OVERHAUL (the format cannot carry it)",
+     "TIME_SINCE_REPAIR (the format cannot carry it)",
+     "CYCLES_SINCE_REPAIR (the format cannot carry it)",
+     "TIME_SINCE_VISIT (the format cannot carry it)",
+     "CYCLES_SINCE_VISIT (the format cannot carry it)",
+     "TIME_SINCE_MARK (the format cannot carry it)",
+     "NUMBER_OF_REPAIRS (the format cannot carry it)",
+     "SERIAL_ATTRIBUTE_CATEGORY (the format cannot carry it)",
+     "C_ATTRIBUTE1 (the format cannot carry it)",
+     "C_ATTRIBUTE2 (the format cannot carry it)",
+     "C_ATTRIBUTE3 (the format cannot carry it)",
+     "C_ATTRIBUTE4 (the format cannot carry it)",
+     "C_ATTRIBUTE5 (the format cannot carry it)",
+     "C_ATTRIBUTE6 (the format cannot carry it)",
+     "C_ATTRIBUTE7 (the format cannot carry it)",
+     "C_ATTRIBUTE8 (the format cannot carry it)",
+     "C_ATTRIBUTE9 (the format cannot carry it)",
+     "C_ATTRIBUTE10 (the format cannot carry it)",
+     "C_ATTRIBUTE11 (the format cannot carry it)",
+     "C_ATTRIBUTE12 (the format cannot carry it)",
+     "C_ATTRIBUTE13 (the format cannot carry it)",
+     "C_ATTRIBUTE14 (the format cannot carry it)",
+     "C_ATTRIBUTE15 (the format cannot carry it)",
+     "C_ATTRIBUTE16 (the format cannot carry it)",
+     "C_ATTRIBUTE17 (the format cannot carry it)",
+     "C_ATTRIBUTE18 (the format cannot carry it)",
+     "C_ATTRIBUTE19 (the format cannot carry it)",
+     "C_ATTRIBUTE20 (the format cannot carry it)",
+     "D_ATTRIBUTE1 (the format cannot carry it)",
+     "D_ATTRIBUTE2 (the format cannot carry it)",
+     "D_ATTRIBUTE3 (the format cannot carry it)",
+     "D_ATTRIBUTE4 (the format cannot carry it)",
+     "D_ATTRIBUTE5 (the format cannot carry it)",
+     "D_ATTRIBUTE6 (the format cannot carry it)",
+     "D_ATTRIBUTE7 (the format cannot carry it)",
+     "D_ATTRIBUTE8 (the format cannot carry it)",
+     "D_ATTRIBUTE9 (the format cannot carry it)",
+     "D_ATTRIBUTE10 (the format cannot carry it)",
+     "N_ATTRIBUTE1 (the format cannot carry it)",
+     "N_ATTRIBUTE2 (the format cannot carry it)",
+     "N_ATTRIBUTE3 (the format cannot carry it)",
+     "N_ATTRIBUTE4 (the format cannot carry it)",
+     "N_ATTRIBUTE5 (the format cannot carry it)",
+     "N_ATTRIBUTE6 (the format cannot carry it)",
+     "N_ATTRIBUTE7 (the format cannot carry it)",
+     "N_ATTRIBUTE8 (the format cannot carry it)",
+     "N_ATTRIBUTE9 (the format cannot carry it)",
+     "N_ATTRIBUTE10 (the format cannot carry it)",
+     "T_ATTRIBUTE1 (the format cannot carry it)",
+     "T_ATTRIBUTE2 (the format cannot carry it)",
+     "T_ATTRIBUTE3 (the format cannot carry it)",
+     "T_ATTRIBUTE4 (the format cannot carry it)",
+     "T_ATTRIBUTE5 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY (the format cannot carry it)",
+     "ATTRIBUTE1 (the format cannot carry it)",
+     "ATTRIBUTE2 (the format cannot carry it)",
+     "ATTRIBUTE3 (the format cannot carry it)",
+     "ATTRIBUTE4 (the format cannot carry it)",
+     "ATTRIBUTE5 (the format cannot carry it)",
+     "ATTRIBUTE6 (the format cannot carry it)",
+     "ATTRIBUTE7 (the format cannot carry it)",
+     "ATTRIBUTE8 (the format cannot carry it)",
+     "ATTRIBUTE9 (the format cannot carry it)",
+     "ATTRIBUTE10 (the format cannot carry it)",
+     "ATTRIBUTE11 (the format cannot carry it)",
+     "ATTRIBUTE12 (the format cannot carry it)",
+     "ATTRIBUTE13 (the format cannot carry it)",
+     "ATTRIBUTE14 (the format cannot carry it)",
+     "ATTRIBUTE15 (the format cannot carry it)",
+     "ATTRIBUTE16 (the format cannot carry it)",
+     "ATTRIBUTE17 (the format cannot carry it)",
+     "ATTRIBUTE18 (the format cannot carry it)",
+     "ATTRIBUTE19 (the format cannot carry it)",
+     "ATTRIBUTE20 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER1 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER2 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER3 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER4 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER5 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER6 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER7 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER8 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER9 (the format cannot carry it)",
+     "ATTRIBUTE_NUMBER10 (the format cannot carry it)",
+     "ATTRIBUTE_DATE1 (the format cannot carry it)",
+     "ATTRIBUTE_DATE2 (the format cannot carry it)",
+     "ATTRIBUTE_DATE3 (the format cannot carry it)",
+     "ATTRIBUTE_DATE4 (the format cannot carry it)",
+     "ATTRIBUTE_DATE5 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP1 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP2 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP3 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP4 (the format cannot carry it)",
+     "ATTRIBUTE_TIMESTAMP5 (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTIES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 39,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_LOCATIONS_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 50,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTY_SITES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 38,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_PARTY_SITE_USES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 33,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCOUNTS_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 33,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCT_SITES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 38,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_HZ_ACCT_SITE_USES_STG_TBL",
+    "objects": [
+     "Customers"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 35,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GL_INTERFACE_STG_TBL",
+    "objects": [
+     "GLBalances"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 77,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "CREATED_BY (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)",
+     "LEDGER_ID (the format cannot carry it)",
+     "REFERENCE3 (the format cannot carry it)",
+     "REFERENCE9 (the format cannot carry it)",
+     "REFERENCE21 (the format cannot carry it)",
+     "REFERENCE22 (the format cannot carry it)",
+     "REFERENCE23 (the format cannot carry it)",
+     "REFERENCE24 (the format cannot carry it)",
+     "REFERENCE25 (the format cannot carry it)",
+     "REFERENCE26 (the format cannot carry it)",
+     "REFERENCE27 (the format cannot carry it)",
+     "REFERENCE28 (the format cannot carry it)",
+     "REFERENCE29 (the format cannot carry it)",
+     "REFERENCE30 (the format cannot carry it)",
+     "CONTEXT2 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY3 (the format cannot carry it)",
+     "CONTEXT3 (the format cannot carry it)",
+     "ENCUMBRANCE_TYPE_ID (the format cannot carry it)",
+     "JGZZ_RECON_REF (the format cannot carry it)",
+     "JE_LINE_NUM (the format cannot carry it)",
+     "CHART_OF_ACCOUNTS_ID (the format cannot carry it)",
+     "FUNCTIONAL_CURRENCY_CODE (the format cannot carry it)",
+     "CODE_COMBINATION_ID (the format cannot carry it)",
+     "DATE_CREATED_IN_GL (the format cannot carry it)",
+     "WARNING_CODE (the format cannot carry it)",
+     "STATUS_DESCRIPTION (the format cannot carry it)",
+     "AVERAGE_JOURNAL_FLAG (the format cannot carry it)",
+     "ORIGINATING_BAL_SEG_VALUE (the format cannot carry it)",
+     "GL_SL_LINK_ID (the format cannot carry it)",
+     "GL_SL_LINK_TABLE (the format cannot carry it)",
+     "REFERENCE_DATE (the format cannot carry it)",
+     "USSGL_TRANSACTION_CODE (the format cannot carry it)",
+     "TRANSACTION_DATE (the format cannot carry it)",
+     "BALANCING_SEGMENT_VALUE (the format cannot carry it)",
+     "MANAGEMENT_SEGMENT_VALUE (the format cannot carry it)",
+     "INTERCOMPANY_SEGMENT_VALUE (the format cannot carry it)",
+     "INTERCOMPANY_MODE (the format cannot carry it)",
+     "CONTEXT4 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY5 (the format cannot carry it)",
+     "CONTEXT5 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY6 (the format cannot carry it)",
+     "CONTEXT6 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY7 (the format cannot carry it)",
+     "CONTEXT7 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY8 (the format cannot carry it)",
+     "CONTEXT8 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY9 (the format cannot carry it)",
+     "CONTEXT9 (the format cannot carry it)",
+     "ATTRIBUTE_CATEGORY10 (the format cannot carry it)",
+     "CONTEXT10 (the format cannot carry it)",
+     "GL_SL_LINK_KEY (the format cannot carry it)",
+     "SUBLEDGER_DOC_SEQUENCE_ID (the format cannot carry it)",
+     "SUBLEDGER_DOC_SEQUENCE_VALUE (the format cannot carry it)",
+     "REFERENCE_FLEX_NUM (the format cannot carry it)",
+     "REFERENCE11 (the format cannot carry it)",
+     "REFERENCE12 (the format cannot carry it)",
+     "REFERENCE13 (the format cannot carry it)",
+     "REFERENCE14 (the format cannot carry it)",
+     "REFERENCE15 (the format cannot carry it)",
+     "REFERENCE16 (the format cannot carry it)",
+     "REFERENCE17 (the format cannot carry it)",
+     "REFERENCE18 (the format cannot carry it)",
+     "REFERENCE19 (the format cannot carry it)",
+     "REFERENCE20 (the format cannot carry it)",
+     "CLEARING_COMPANY (the format cannot carry it)",
+     "CLEARING_DOMAIN (the format cannot carry it)",
+     "CLEARING_INTERCOMPANY (the format cannot carry it)",
+     "INVOICE_DATE (the format cannot carry it)",
+     "INVOICE_IDENTIFIER (the format cannot carry it)",
+     "INVOICE_AMOUNT (the format cannot carry it)",
+     "TAX_CODE (the format cannot carry it)",
+     "FUNDS_CHECK_INDICATOR (the format cannot carry it)",
+     "BUDGET_VERSION_ID (the format cannot carry it)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GL_BUDGET_INT_STG_TBL",
+    "objects": [
+     "GLBudgets"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 37,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "BUDGET_ENTITY_NAME (the format cannot carry it)",
+     "JOURNAL_STATUS (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_HDR_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 37,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_BOOK_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 14,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "ORIGINAL_COST (the format cannot carry it)",
+     "UNREVALUED_COST (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_FA_ASSET_ASSIGN_STG_TBL",
+    "objects": [
+     "Assets"
+    ],
+    "baseline_rows": 9,
+    "uploaded_rows": 9,
+    "matched": 9,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 18,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "ASSET_NUMBER (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_PROJECTS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 157,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_TASKS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 122,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "PROCESSING_MODE (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 15,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+    "objects": [
+     "Projects"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 19,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJC_EXPENDITURES_STG_TBL",
+    "objects": [
+     "Expenditures"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 103,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "NON_LABOR_RESOURCE (the format cannot carry it)",
+     "NON_LABOR_RESOURCE_ID (the format cannot carry it)",
+     "NON_LABOR_RESOURCE_ORG (the format cannot carry it)",
+     "NON_LABOR_RESOURCE_ORG_ID (the format cannot carry it)",
+     "ACCRUAL_FLAG (the format cannot carry it)",
+     "SUPPLIER_NUMBER (the format cannot carry it)",
+     "SUPPLIER_NAME (the format cannot carry it)",
+     "VENDOR_ID (the format cannot carry it)",
+     "INVENTORY_ITEM_NAME (the format cannot carry it)",
+     "INVENTORY_ITEM_ID (the format cannot carry it)",
+     "RECEIPT_CURRENCY_CODE (the format cannot carry it)",
+     "RECEIPT_CURRENCY (the format cannot carry it)",
+     "RECEIPT_CURRENCY_AMOUNT (the format cannot carry it)",
+     "RECEIPT_EXCHANGE_RATE (the format cannot carry it)",
+     "PROJECT_ROLE_NAME (the format cannot carry it)",
+     "PROJECT_ROLE_ID (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PRJ_BUDGET_STG_TBL",
+    "objects": [
+     "ProjectBudgets"
+    ],
+    "baseline_rows": 6,
+    "uploaded_rows": 6,
+    "matched": 6,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 61,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "SCENARIO_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_PJB_BILL_EVENTS_STG_TBL",
+    "objects": [
+     "BillingEvents"
+    ],
+    "baseline_rows": 3,
+    "uploaded_rows": 3,
+    "matched": 3,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 78,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_EGP_ITEM_STG_TBL",
+    "objects": [
+     "Items"
+    ],
+    "baseline_rows": 4,
+    "uploaded_rows": 4,
+    "matched": 4,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 169,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "DUAL_UOM_CONTROL (the format cannot carry it)",
+     "SAFETY_STOCK_BUCKET_DAYS (the format cannot carry it)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_EGP_ITEM_CAT_STG_TBL",
+    "objects": [
+     "Items"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 12,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_HEADERS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 8,
+    "uploaded_rows": 8,
+    "matched": 8,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 124,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PROJECTS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 56,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PERSONNEL_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 7,
+    "uploaded_rows": 7,
+    "matched": 7,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 61,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUNDING_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 10,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUND_SRC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 8,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_FUND_ALLOC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 4,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_BDGT_PRDS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 4,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_CFDAS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 2,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_CERTS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 13,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_KEYWORDS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 3,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_ORG_CREDITS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 5,
+    "uploaded_rows": 5,
+    "matched": 5,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 4,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_REFERENCES_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 5,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   },
+   {
+    "stg": "DMT_GMS_AWD_TERMS_STG_TBL",
+    "objects": [
+     "Grants"
+    ],
+    "baseline_rows": 1,
+    "uploaded_rows": 1,
+    "matched": 1,
+    "missing": 0,
+    "extra": 0,
+    "columns_compared": 6,
+    "columns_excluded": [
+     "STG_SEQUENCE_ID (admin/audit)",
+     "STAGE_DATE (admin/audit)",
+     "STG_STATUS (admin/audit)",
+     "ERROR_TEXT (admin/audit)",
+     "SOURCE_ID (the format cannot carry it)",
+     "LAST_UPDATED_DATE (admin/audit)",
+     "SCENARIO_ID (admin/audit)"
+    ],
+    "differences": [],
+    "clean": true
+   }
+  ],
+  "links": [
+   {
+    "link": "DMT_PO_LINES_INT_STG_TBL -> DMT_PO_HEADERS_INT_STG_TBL on INTERFACE_HEADER_KEY",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID",
+    "clean": false,
+    "problems": [
+     "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID: 6 of 6 child rows find their parent in the baseline, 0 of 6 in the upload"
+    ]
+   },
+   {
+    "link": "DMT_POR_REQ_LINES_STG_TBL -> DMT_POR_REQ_HEADERS_STG_TBL on INTERFACE_HEADER_KEY",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_LOCATIONS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_PARTY_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCOUNTS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCOUNTS_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on PARTY_ORIG_SYSTEM_REFERENCE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCT_SITES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_HZ_ACCT_SITE_USES_STG_TBL -> DMT_HZ_PARTIES_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_FA_ASSET_ASSIGN_STG_TBL -> DMT_FA_ASSET_HDR_STG_TBL on ASSET_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_FA_ASSET_BOOK_STG_TBL -> DMT_FA_ASSET_HDR_STG_TBL on ASSET_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PJF_TASKS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_PJC_TXN_CONTROLS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on BATCH_ID",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on ITEM_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on ORGANIZATION_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_EGP_ITEM_CAT_STG_TBL -> DMT_EGP_ITEM_STG_TBL on SOURCE_SYSTEM_CODE",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PROJECTS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PERSONNEL_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUNDING_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUND_SRC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_FUND_ALLOC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PRJ_FUND_SRC_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_PRJ_TSK_BRD_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_BDGT_PRDS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_CFDAS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_CERTS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_KEYWORDS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_ORG_CREDITS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_REFERENCES_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "DMT_GMS_AWD_TERMS_STG_TBL -> DMT_GMS_AWD_HEADERS_STG_TBL on AWARD_NUMBER",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "FA_ASSET_ASSIGN -> asset",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "INV_TRX_LOTS -> transaction",
+    "clean": true,
+    "problems": []
+   },
+   {
+    "link": "INV_TRX_SERIALS -> transaction",
+    "clean": true,
+    "problems": []
+   }
+  ],
+  "clean": false,
+  "summary": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID: 6 of 6 child rows find their parent in the baseline, 0 of 6 in the upload"
+ }
+}
