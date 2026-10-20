@@ -9,8 +9,8 @@ An object is "ready for functional testing" when it passes in the header run AND
      DMT_UPLOAD_DICT_TBL), upload through page 25 (Smart Upload);
   2. FBDI format: the object's Oracle FBDI files (headerless CSVs named per
      DMT_UPLOAD_OBJECT_TBL.FBDI_CSV_FILENAME, one value per FBDI slot) upload
-     through the same page (not applicable to HCM/HDL objects or to objects with
-     no or only part of an FBDI mapping);
+     through the same page (not applicable to HCM/HDL objects, or where a staging
+     table has no FBDI file in the registry, test/upload_samples/fbdi_column_maps.FILES);
   3. the uploaded data, run through the pipeline into Fusion, ends with every
      GOOD row LOADED with its own Fusion id, every BAD row FAILED with a real
      error, and nothing unaccounted.
@@ -95,7 +95,7 @@ sys.path.insert(0, os.path.join(REPO, "test", "upload_samples"))
 import oracledb  # noqa: E402
 import ci_promote as cp  # noqa: E402  prefix sync, DB connections, console URL
 import dmt_apex_url_target as urltarget  # noqa: E402  the one URL knob
-from fbdi_column_maps import MAPS as FBDI_MAPS  # noqa: E402  committed FBDI slot layout
+from fbdi_column_maps import FILES as FBDI_FILES, MDY  # noqa: E402  committed FBDI file registry (#792)
 
 oracledb.defaults.fetch_lobs = False
 oracledb.defaults.fetch_decimals = True
@@ -110,8 +110,8 @@ IN_SCOPE = ["Items", "Suppliers", "SupplierAddresses", "SupplierSites", "Supplie
             "APInvoices", "MiscReceipts", "Customers", "ARInvoices", "GLBalances", "GLBudgets",
             "Assets", "Projects", "BillingEvents", "Expenditures", "Grants", "ProjectBudgets",
             "Workers", "Salaries", "SalaryBases", "Absences", "TalentProfiles"]
-# Objects with no Oracle FBDI file mapping in the tool (owner list, 2026-10-19).
-NO_FBDI_MAPPING = {"BlanketPOs", "Contracts", "MiscReceipts", "Assets"}
+# Upload objects (staging tables) that an Oracle FBDI file loads (backlog #792 registry).
+FBDI_OBJECTS = {x.object for x in FBDI_FILES}
 HDL_PIPELINE = "HCM"
 PIPELINE_ORDER = ["P2P", "O2C", "FINANCIALS", "PROJECTS", "HCM"]   # the regression's set and order
 
@@ -136,18 +136,20 @@ def ident(name):
     return name
 
 
-def fmt(v):
-    """One value as text, the same way for the file and for the staged read-back."""
+def fmt(v, mask=None):
+    """One value as text, the same way for the file and for the staged read-back.
+    mask: an FBDI file's date mask (MM/DD/YYYY files are written that way)."""
     if v is None:
         return ""
+    d = "%m/%d/%Y" if mask == MDY else "%Y/%m/%d"
     if isinstance(v, datetime.datetime):
         if v.microsecond:
-            return v.strftime("%Y/%m/%d %H:%M:%S.%f")
+            return v.strftime(d + " %H:%M:%S.%f")
         if v.hour or v.minute or v.second:
-            return v.strftime("%Y/%m/%d %H:%M:%S")
-        return v.strftime("%Y/%m/%d")
+            return v.strftime(d + " %H:%M:%S")
+        return v.strftime(d)
     if isinstance(v, datetime.date):
-        return v.strftime("%Y/%m/%d")
+        return v.strftime(d)
     if isinstance(v, decimal.Decimal):
         s = format(v, "f")
         return s.rstrip("0").rstrip(".") if "." in s else s
@@ -261,21 +263,7 @@ def header_layout(reg, stg, rows):
     return up["csv"], cols, notes
 
 
-def fbdi_layout(reg, stg, rows):
-    """Slots of one FBDI CSV, headerless, as laid out in the committed FBDI map
-    (test/upload_samples/fbdi_column_maps.py, the source of
-    db/seed/dmt_upload_fbdi_metadata.sql). Returns (file name, slots, columns, notes)."""
-    up = reg.upload[stg]
-    fname, colmap = FBDI_MAPS[up["object_code"]]
-    slots = [c if (c and c in rows[0]) else None for c in colmap]
-    cols = [c for c in slots if c]
-    lost = sorted(c for c in rows[0] if c not in cols and c not in ADMIN_COLS
-                  and any(r.get(c) is not None for r in rows))
-    notes = [f"populated columns the FBDI file has no slot for (not carried): {', '.join(lost)}"] if lost else []
-    return fname, slots, cols, notes
-
-
-def render(fmt_name, cols_or_slots, rows, raw_rows=()):
+def render(fmt_name, cols_or_slots, rows, raw_rows=(), mask=None):
     """The CSV bytes. rows are source rows (formatted with fmt); raw_rows are
     {column: text} rows written as given (the negative tests' bad rows)."""
     buf = io.StringIO()
@@ -285,7 +273,7 @@ def render(fmt_name, cols_or_slots, rows, raw_rows=()):
     else:
         w = csv.writer(buf, lineterminator="\r\n", quoting=csv.QUOTE_ALL)
     for r in rows:
-        w.writerow([fmt(r.get(c)) if c else "" for c in cols_or_slots])
+        w.writerow([fmt(r.get(c), mask) if c else "" for c in cols_or_slots])
     for r in raw_rows:
         w.writerow([r.get(c, "") if c else "" for c in cols_or_slots])
     return buf.getvalue().encode("utf-8")
@@ -295,51 +283,138 @@ def fbdi_applicability(reg, obj, objects, src):
     """None when the FBDI format applies, else the reason it does not."""
     if reg.pipe[obj]["pipeline"] == HDL_PIPELINE:
         return "not applicable: HCM object loaded by HCM Data Loader, no FBDI file"
-    if obj in NO_FBDI_MAPPING:
-        return "no FBDI mapping"
     unmapped = [f"{o}:{stg}" for o in objects for stg in src[o]
-                if not reg.upload.get(stg, {}).get("fbdi") or reg.upload[stg]["object_code"] not in FBDI_MAPS]
+                if reg.upload.get(stg, {}).get("object_code") not in FBDI_OBJECTS]
     if unmapped:
-        return "partial FBDI mapping: no FBDI file for " + ", ".join(unmapped)
+        return "no FBDI file for " + ", ".join(unmapped)
     return None
 
 
-def plan_files(reg, fmt_name, objects, src):
-    """One file per staging table across every object of the run (a table shared
-    by several objects carries all their rows). Returns (files, manifest):
-    files are what goes in the zip; manifest has one entry per (object, table)
-    with that object's source rows, for judging."""
+def merge_rows(objects, src):
+    """{stg: {"objects": [...], "rows": [...]}} over every object of the run (a
+    staging table shared by several objects carries all their rows), plus the
+    judging manifest: one entry per (object, table) with that object's rows."""
     by_stg, manifest = {}, []
     for o in objects:
         for stg, rows in src[o].items():
-            f = by_stg.setdefault(stg, {"stg": stg, "objects": [], "rows": []})
+            f = by_stg.setdefault(stg, {"objects": [], "rows": []})
             f["objects"].append(o)
             have = {r["STG_SEQUENCE_ID"] for r in f["rows"]}
             f["rows"] += [r for r in rows if r["STG_SEQUENCE_ID"] not in have]
             manifest.append({"object": o, "stg": stg, "source_seqs": [r["STG_SEQUENCE_ID"] for r in rows]})
-    files = []
-    for stg in sorted(by_stg, key=lambda s: reg.upload[s]["order"] or 0):
-        f = by_stg[stg]
-        if fmt_name == "header":
+    return by_stg, manifest
+
+
+def plan_files(reg, fmt_name, objects, src, filter_seqs=None):
+    """What goes in the zip and what is checked after the upload.
+    Returns (members, checks, manifest):
+      members  - the files written to the zip;
+      checks   - one per staging table: the rows that must stage, compared on
+                 'columns';
+      manifest - one entry per (object, table), for judging the run.
+    Header format: one file per staging table, so members and checks are the
+    same entries. FBDI format: one file per FBDI file name of the registry
+    (fbdi_column_maps.FILES, backlog #792): its own layout and date format; a
+    row_filter narrows a shared table to the file's rows (filter_seqs, read from
+    the database); a file fed by two staging tables (driver) has one row per
+    driver row joined to the other table's row."""
+    by_stg, manifest = merge_rows(objects, src)
+    if fmt_name == "header":
+        files = []
+        for stg in sorted(by_stg, key=lambda t: reg.upload[t]["order"] or 0):
+            f = by_stg[stg]
             name, cols, notes = header_layout(reg, stg, f["rows"])
-            layout = cols
+            files.append({"stg": stg, "stgs": [stg], "file": name, "files": [name], "objects": f["objects"],
+                          "layout": cols, "columns": cols, "notes": notes, "rows": f["rows"], "raw_rows": [],
+                          "mask": None, "rows_in_file": len(f["rows"]),
+                          "dict_fbdi_positions": reg.dict_fbdi.get(reg.upload[stg]["object_code"], 0),
+                          "source_seqs": [r["STG_SEQUENCE_ID"] for r in f["rows"]]})
+        return files, files, manifest
+    filter_seqs = filter_seqs or {}
+    oc_stg = {v["object_code"]: t for t, v in reg.upload.items()}
+    groups = {}
+    for x in FBDI_FILES:
+        if oc_stg.get(x.object) in by_stg:
+            groups.setdefault(x.file, []).append(x)
+
+    def rows_for(x):
+        rows = by_stg[oc_stg[x.object]]["rows"]
+        keep = filter_seqs.get((x.file, x.object))
+        return rows if keep is None else [r for r in rows if r["STG_SEQUENCE_ID"] in keep]
+
+    members, cols_of = [], {}
+    for fname, entries in groups.items():
+        first = entries[0]
+        if first.driver:
+            drv, key = first.driver
+            per = {x.object: rows_for(x) for x in entries}
+            look = {o: {r.get(key): r for r in rs} for o, rs in per.items() if o != drv}
+            rows = []
+            for d in per.get(drv, []):
+                m = {}
+                for o in look:
+                    m.update(look[o].get(d.get(key), {}))
+                m.update(d)
+                rows.append(m)
         else:
-            name, layout, cols, notes = fbdi_layout(reg, stg, f["rows"])
-        files.append({"stg": stg, "file": name, "objects": f["objects"], "layout": layout, "columns": cols,
-                      "notes": notes, "rows": f["rows"], "raw_rows": [], "rows_in_file": len(f["rows"]),
-                      "dict_fbdi_positions": reg.dict_fbdi.get(reg.upload[stg]["object_code"], 0),
-                      "source_seqs": [r["STG_SEQUENCE_ID"] for r in f["rows"]]})
-    return files, manifest
+            rows = rows_for(first)
+        if not rows:
+            continue
+        stgs = [oc_stg[x.object] for x in entries]
+        members.append({"file": fname, "stg": stgs[0], "stgs": stgs,
+                        "objects": sorted({o for t in stgs for o in by_stg[t]["objects"]}),
+                        "layout": list(first.cols), "columns": [c for c in first.cols if c and c in rows[0]],
+                        "rows": rows, "raw_rows": [], "mask": first.date_mask, "notes": []})
+        for x in entries:
+            t = oc_stg[x.object]
+            dict_cols = set(reg.dict_cols.get(x.object, []))
+            have = by_stg[t]["rows"][0]
+            cols = {c for c in x.cols if c and c in dict_cols and c in have}
+            # A table fed by several files is compared on the columns they all carry.
+            prev_cols, prev_files = cols_of.get(t, (None, []))
+            cols_of[t] = (cols if prev_cols is None else prev_cols & cols, prev_files + [fname])
+    checks = []
+    for t in sorted(cols_of, key=lambda t: reg.upload[t]["order"] or 0):
+        cols, fnames = cols_of[t]
+        oc = reg.upload[t]["object_code"]
+        order = reg.dict_cols.get(oc, [])
+        rows = by_stg[t]["rows"]
+        checks.append({"stg": t, "file": ", ".join(fnames), "files": fnames, "objects": by_stg[t]["objects"],
+                       "columns": [c for c in order if c in cols], "rows_in_file": len(rows), "notes": [],
+                       "dict_fbdi_positions": reg.dict_fbdi.get(oc, 0),
+                       "source_seqs": [r["STG_SEQUENCE_ID"] for r in rows]})
+    missing = [t for t in by_stg if t not in cols_of]
+    if missing:
+        raise RuntimeError(f"no FBDI file for staging table(s) {missing}")
+    return members, checks, manifest
+
+
+def fbdi_filter_seqs(cur, scenario_id_):
+    """{(file, object): {STG_SEQUENCE_ID}} for every registry file with a
+    row_filter (the PO styles), evaluated on the baseline scenario."""
+    out = {}
+    for x in FBDI_FILES:
+        if not x.row_filter:
+            continue
+        stg = ident(next(t for t, v in REG_UPLOAD.items() if v["object_code"] == x.object))
+        cur.execute(f"SELECT STG_SEQUENCE_ID FROM {stg} WHERE SCENARIO_ID = :scn AND ({x.row_filter})",
+                    scn=scenario_id_)
+        out[(x.file, x.object)] = {r[0] for r in cur.fetchall()}
+    return out
+
+
+REG_UPLOAD = {}   # set in main() from the Registry (staging table -> upload object)
 
 
 def write_zip(fmt_name, files, path):
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
-            z.writestr(f["file"], render(fmt_name, f["layout"], f["rows"], f["raw_rows"]))
+            z.writestr(f["file"], render(fmt_name, f["layout"], f["rows"], f["raw_rows"], f.get("mask")))
 
 
 def file_summary(f):
     return {k: f[k] for k in ("stg", "file", "objects", "rows_in_file", "notes") if k in f} | (
+        {"rows_in_file": len(f["rows"])} if "rows" in f else {}) | (
         {"bad_rows_added": [b["what"] for b in f.get("bad", [])]} if f.get("bad") else {})
 
 
@@ -772,18 +847,19 @@ def run_format(args, ctx, fmt_name, block, save):
     if not scored:
         return block
     empty = [o for o in run_objects if not src_all[o]]
-    files, manifest = plan_files(reg, fmt_name, [o for o in run_objects if src_all[o]], src_all)
-    block["files"] = [file_summary(f) for f in files]
+    members, files, manifest = plan_files(reg, fmt_name, [o for o in run_objects if src_all[o]], src_all,
+                                          ctx.get("filter_seqs"))
+    block["files"] = [file_summary(f) for f in members]
     tag = "HDR" if fmt_name == "header" else "FBDI"
     # ---- upload (once) -------------------------------------------------------
     if not (block.get("upload") or {}).get("batch_id"):
         stamp = new_stamp(args.target, lambda s: [f"UPL-{tag}-{s}"])
         scenario = f"UPL-{tag}-{stamp}"
         zip_path = os.path.join(ctx["work"], f"{scenario}.zip")
-        write_zip(fmt_name, files, zip_path)
+        write_zip(fmt_name, members, zip_path)
         block.update(scenario=scenario, zip=zip_path)
         log(f"{scenario}: uploading {os.path.basename(zip_path)} "
-            f"({sum(f['rows_in_file'] for f in files)} rows, {len(files)} files) through page 25")
+            f"({sum(len(f['rows']) for f in members)} rows, {len(members)} files) through page 25")
         page = page_result(browser_upload(args.target, [{
             "scenario": scenario, "file": zip_path,
             "description": f"Backlog #786 upload test: all objects in {fmt_name} format"}], ctx["work"])[scenario])
@@ -859,7 +935,7 @@ def add_bad_rows(cur, reg, fmt_name, f):
         oc = reg.upload[f["stg"]]["object_code"]
         cand += [c for c in reg.dict_cols.get(oc, []) if c not in cand and c != "SOURCE_ID"]
     pick = pick_bad_columns(types, cand, f["columns"])
-    base = {c: fmt(f["rows"][0].get(c)) for c in f["columns"]}
+    base = {c: fmt(f["rows"][0].get(c), f.get("mask")) for c in f["columns"]}
     f["bad"] = []
     for kind, col in pick.items():
         if not col:
@@ -883,11 +959,14 @@ def layout_file(cur, reg, fmt_name, src_all):
         rows = src_all["Projects"][LAYOUT_SOURCE]
         _n, cols, _x = header_layout(reg, LAYOUT_SOURCE, rows)
         name = reg.upload[LAYOUT_TARGET]["csv"]
-        return {"stg": LAYOUT_TARGET, "file": name, "objects": ["Suppliers"], "layout": cols, "columns": [],
+        return {"stg": LAYOUT_TARGET, "file": name, "files": [name], "stgs": [LAYOUT_TARGET],
+                "objects": ["Suppliers"], "layout": cols, "columns": [], "mask": None,
                 "rows": rows, "raw_rows": [], "rows_in_file": 0, "source_seqs": [],
                 "what": f"{name} carrying the {LAYOUT_SOURCE} columns and its {len(rows)} rows"}
-    name, slots, _c, _x = fbdi_layout(reg, LAYOUT_TARGET, sup)
-    return {"stg": LAYOUT_TARGET, "file": name, "objects": ["Suppliers"], "layout": [None] * FBDI_SHIFT + slots,
+    x = next(f for f in FBDI_FILES if f.object == reg.upload[LAYOUT_TARGET]["object_code"])
+    name, slots = x.file, list(x.cols)
+    return {"stg": LAYOUT_TARGET, "file": name, "files": [name], "stgs": [LAYOUT_TARGET], "objects": ["Suppliers"],
+            "layout": [None] * FBDI_SHIFT + slots, "mask": x.date_mask,
             "columns": [], "rows": sup, "raw_rows": [], "rows_in_file": 0, "source_seqs": [],
             "what": f"{name} with every value moved {FBDI_SHIFT} slots right ({len(sup)} rows, "
                     f"{len(slots) + FBDI_SHIFT} slots instead of {len(slots)})"}
@@ -913,16 +992,16 @@ def run_negative(args, ctx, block, save):
     try:
         cur = con.cursor()
         for fmt_name, tag in (("header", "HDR"), ("fbdi", "FBDI")):
-            files, manifest = plan_files(reg, fmt_name, objs, src_all)
-            for f in files:
+            members, files, manifest = plan_files(reg, fmt_name, objs, src_all, ctx.get("filter_seqs"))
+            for f in members:
                 if f["stg"] in NEG_TABLES:
                     add_bad_rows(cur, reg, fmt_name, f)
             lay = layout_file(cur, reg, fmt_name, src_all)
             sc1, sc2 = f"UPL-NEG-{tag}-{stamp}", f"UPL-NEG-{tag}-LAYOUT-{stamp}"
             z1, z2 = (os.path.join(ctx["work"], f"{s}.zip") for s in (sc1, sc2))
-            write_zip(fmt_name, files, z1)
+            write_zip(fmt_name, members, z1)
             write_zip(fmt_name, [lay], z2)
-            plans[fmt_name] = (sc1, files, manifest, sc2, lay)
+            plans[fmt_name] = (sc1, members, files, manifest, sc2, lay)
             jobs += [{"scenario": sc1, "file": z1, "description": f"Backlog #786 negative test 1 ({fmt_name})"},
                      {"scenario": sc2, "file": z2, "description": f"Backlog #786 negative test 2 ({fmt_name})"}]
     finally:
@@ -931,15 +1010,19 @@ def run_negative(args, ctx, block, save):
         log(f"negative tests: uploading {len(jobs)} zips through page 25")
         block["pages"] = {k: page_result(v) for k, v in browser_upload(args.target, jobs, ctx["work"]).items()}
         save()
-    for fmt_name, (sc1, files, manifest, sc2, lay) in plans.items():
+    for fmt_name, (sc1, members, files, manifest, sc2, lay) in plans.items():
         # ---- test 1: mixed good and bad rows --------------------------------
         up, seq_map = check_upload(args.target, sc1, files, src_by_seq, block["pages"][sc1])
         per_file = []
         logs = {x["file"]: x for x in up["upload_log"]}
         for f, d in zip(files, up["tables"]):
-            nbad = len(f.get("bad", []))
-            errs = [e for e in up["upload_errors"] if e["file"] and f["file"].startswith(e["file"])]
-            lg = logs.get(f["file"]) or {}
+            # The bad rows were added to the file(s) that load this staging table.
+            feeding = [m for m in members if f["stg"] in m["stgs"]]
+            bad = [b for m in feeding for b in m.get("bad", [])]
+            nbad = len(bad)
+            errs = [e for e in up["upload_errors"]
+                    if e["file"] and any(n.startswith(e["file"]) for n in f["files"])]
+            lg = next((logs[n] for n in f["files"] if n in logs), {})
             if nbad:
                 want = (not d.get("problem") and len(errs) == nbad
                         and all((e["message"] or "").strip() for e in errs)
@@ -947,7 +1030,7 @@ def run_negative(args, ctx, block, save):
             else:
                 want = not d.get("problem") and not errs
             per_file.append({"file": f["file"], "stg": f["stg"], "good_rows": f["rows_in_file"],
-                             "bad_rows": [b["what"] for b in f.get("bad", [])], "staged": d["staged"],
+                             "bad_rows": [b["what"] for b in bad], "staged": d["staged"],
                              "good_rows_staged_exactly": not d.get("problem"),
                              "upload_error_rows": len(errs),
                              "errors": [f"row {e['row']} {e['column'] or ''}: {e['message']}" for e in errs][:4],
@@ -1205,6 +1288,8 @@ def main():
     src_by_seq = {(stg, r["STG_SEQUENCE_ID"]): r for o in needed for stg, rows in src_all[o].items()
                   for r in rows}
     base_run, expected = baseline_expectations(cur, rr, reg, baseline, base_sid)
+    REG_UPLOAD.update(reg.upload)
+    filter_seqs = fbdi_filter_seqs(cur, base_sid)
     con.close()
     git = subprocess.run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"], capture_output=True,
                          text=True).stdout.strip()
@@ -1218,7 +1303,7 @@ def main():
     payload.setdefault("started_at", datetime.datetime.now().isoformat(timespec="seconds"))
     log(f"target {args.target}; baseline {baseline} (run {base_run}); work dir {work}")
     ctx = {"reg": reg, "rr": rr, "src": src_all, "src_by_seq": src_by_seq, "expected": expected,
-           "objects": objs, "work": work}
+           "objects": objs, "work": work, "filter_seqs": filter_seqs}
 
     def save():
         write_outputs(args, payload)
