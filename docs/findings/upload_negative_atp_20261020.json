@@ -1,0 +1,1118 @@
+{
+ "target": "atp",
+ "console": "https://g6726c838b72234-queryapp.adb.us-ashburn-1.oraclecloudapps.com/ords",
+ "baseline_scenario": "RegressionTest261013111321",
+ "baseline_run_id": "186",
+ "git_commit": "74e3d7c",
+ "work_dir": "C:/Users/Monroe/AppData/Local/Temp/claude/C--Users-Monroe/2633b8c5-761b-4330-b490-c3e497e46257/scratchpad/upl_atp_run",
+ "started_at": "2026-10-20T00:04:28",
+ "negative": {
+  "objects_in_zip": [
+   "Suppliers",
+   "SupplierAddresses",
+   "SupplierSites",
+   "SupplierSiteAssignments",
+   "APInvoices",
+   "Projects"
+  ],
+  "mixed": {
+   "header": {
+    "scenario": "UPL-NEG-HDR-2610200004",
+    "page": {
+     "page_ok": false,
+     "message": "",
+     "error": "Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. 10 objects, 50 rows loaded, 9 errors, 0 skipped. Load ID: UPL-NEG-HDR-2610200004~261020040440~UPL-NEG-HDR-2610200004.zip | 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. 10 objects, 50 rows loaded, 9 errors, 0 skipped. Load ID: UPL-NEG-HDR-2610200004~261020040440~UPL-NEG-HDR-2610200004.zip",
+     "batch_id": "62"
+    },
+    "files": [
+     {
+      "file": "DMT_POZ_SUPPLIERS_STG_TBL.csv",
+      "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+      "good_rows": 3,
+      "bad_rows": [
+       "number: SETTLEMENT_PRIORITY = 'NOT_A_NUMBER'",
+       "length: IMPORT_ACTION = 'XXXXXXXXXXXXXXXXXXXX'",
+       "date: END_DATE_ACTIVE = 'NOT-A-DATE'"
+      ],
+      "staged": 3,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 7 END_DATE_ACTIVE: Line 7, column END_DATE_ACTIVE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS, YYYY/MM/DD, YYYY-MM-DD HH24:MI:SS or YYYY-MM-DD). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_POZ_SUPPLIERS_STG_TBL\".\"IMPORT_ACTION\" (actual: 20, maximum: 10)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-HDR-2610200004~261020040440~DMT_POZ_SUPPLIERS_STG_TBL.csv",
+      "as_expected": true
+     },
+     {
+      "file": "DMT_POZ_SUP_ADDR_STG_TBL.csv",
+      "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+      "good_rows": 4,
+      "bad_rows": [],
+      "staged": 4,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_POZ_SUP_SITE_STG_TBL.csv",
+      "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+      "good_rows": 4,
+      "bad_rows": [],
+      "staged": 4,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_POZ_SUP_SITE_ASSN_STG_TBL.csv",
+      "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+      "good_rows": 3,
+      "bad_rows": [],
+      "staged": 3,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_AP_INVOICES_INT_STG_TBL.csv",
+      "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+      "good_rows": 5,
+      "bad_rows": [
+       "number: INVOICE_ID = 'NOT_A_NUMBER'",
+       "length: CALC_TAX_DURING_IMPORT_FLAG = 'XXXXXXXXXXX'",
+       "date: INVOICE_DATE = 'NOT-A-DATE'"
+      ],
+      "staged": 5,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 9 INVOICE_DATE: Line 9, column INVOICE_DATE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS, YYYY/MM/DD, YYYY-MM-DD HH24:MI:SS or YYYY-MM-DD). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_AP_INVOICES_INT_STG_TBL\".\"CALC_TAX_DURING_IMPORT_FLAG\" (actual: 11, maximum: 1)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-HDR-2610200004~261020040440~DMT_AP_INVOICES_INT_STG_TBL.csv",
+      "as_expected": true
+     },
+     {
+      "file": "DMT_AP_INVOICE_LINES_INT_STG_TBL.csv",
+      "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_PJF_PROJECTS_STG_TBL.csv",
+      "stg": "DMT_PJF_PROJECTS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [
+       "number: ATTRIBUTE1_NUMBER = 'NOT_A_NUMBER'",
+       "length: PROJECT_CURRENCY_CODE = 'XXXXXXXXXXXXXXXXXXXX...'",
+       "date: PROJECT_START_DATE = 'NOT-A-DATE'"
+      ],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 10 PROJECT_START_DATE: Line 10, column PROJECT_START_DATE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS, YYYY/MM/DD, YYYY-MM-DD HH24:MI:SS or YYYY-MM-DD). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_PJF_PROJECTS_STG_TBL\".\"PROJECT_CURRENCY_CODE\" (actual: 25, maximum: 15)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-HDR-2610200004~261020040440~DMT_PJF_PROJECTS_STG_TBL.csv",
+      "as_expected": true
+     },
+     {
+      "file": "DMT_PJF_TASKS_STG_TBL.csv",
+      "stg": "DMT_PJF_TASKS_STG_TBL",
+      "good_rows": 7,
+      "bad_rows": [],
+      "staged": 7,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_PJF_TEAM_MEMBERS_STG_TBL.csv",
+      "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "DMT_PJC_TXN_CONTROLS_STG_TBL.csv",
+      "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     }
+    ],
+    "upload_as_expected": true,
+    "verdict": "PASS",
+    "reason": null,
+    "page_message_as_expected": true,
+    "baseline_compare": {
+     "scenario": "UPL-NEG-HDR-2610200004",
+     "baseline_scenario": "RegressionTest261013111321",
+     "tables": [
+      {
+       "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+       "objects": [
+        "Suppliers"
+       ],
+       "baseline_rows": 3,
+       "uploaded_rows": 3,
+       "matched": 3,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 156,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+       "objects": [
+        "SupplierAddresses"
+       ],
+       "baseline_rows": 4,
+       "uploaded_rows": 4,
+       "matched": 4,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 110,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+       "objects": [
+        "SupplierSites"
+       ],
+       "baseline_rows": 4,
+       "uploaded_rows": 4,
+       "matched": 4,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 200,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+       "objects": [
+        "SupplierSiteAssignments"
+       ],
+       "baseline_rows": 3,
+       "uploaded_rows": 3,
+       "matched": 3,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 16,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+       "objects": [
+        "APInvoices"
+       ],
+       "baseline_rows": 5,
+       "uploaded_rows": 5,
+       "matched": 5,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 136,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+       "objects": [
+        "APInvoices"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 165,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_PROJECTS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 158,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_TASKS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 7,
+       "uploaded_rows": 7,
+       "matched": 7,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 124,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 16,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 20,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      }
+     ],
+     "links": [
+      {
+       "link": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID",
+       "clean": true,
+       "problems": []
+      },
+      {
+       "link": "DMT_PJF_TASKS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+       "clean": true,
+       "problems": []
+      },
+      {
+       "link": "DMT_PJC_TXN_CONTROLS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+       "clean": true,
+       "problems": []
+      }
+     ],
+     "clean": true,
+     "summary": "clean: every staged row equals its baseline row"
+    },
+    "run": {
+     "run_id": 189,
+     "prefix_expected": 93446,
+     "prefix": "93446",
+     "status": "COMPLETED_ERRORS",
+     "timed_out": false
+    },
+    "run_objects": {
+     "Suppliers": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 2,
+       "good_loaded": 2,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 1,
+       "bad_failed_with_error": 1,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     },
+     "SupplierAddresses": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 2,
+       "good_loaded": 2,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 2,
+       "bad_failed_with_error": 2,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     },
+     "SupplierSites": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 2,
+       "good_loaded": 2,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 2,
+       "bad_failed_with_error": 2,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     },
+     "SupplierSiteAssignments": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 2,
+       "good_loaded": 2,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 1,
+       "bad_failed_with_error": 1,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     },
+     "APInvoices": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 6,
+       "good_loaded": 6,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 5,
+       "bad_failed_with_error": 5,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     },
+     "Projects": {
+      "verdict": "PASS",
+      "reason": null,
+      "result": {
+       "good_total": 8,
+       "good_loaded": 8,
+       "good_loaded_no_fusion_id": 0,
+       "good_failed": 0,
+       "bad_total": 17,
+       "bad_failed_with_error": 17,
+       "bad_loaded": 0,
+       "unaccounted": 0,
+       "not_in_run": 0
+      },
+      "samples": []
+     }
+    }
+   },
+   "fbdi": {
+    "scenario": "UPL-NEG-FBDI-2610200004",
+    "page": {
+     "page_ok": false,
+     "message": "",
+     "error": "Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 3 loaded, 3 errors \u2014 3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040448~PoSupplierImport.csv POZ_SUP_ADDR: 4 loaded, 0 errors POZ_SUP_SITE: 4 loaded, 0 errors POZ_SUP_SITE_ASSN: 3 loaded, 0 errors PJF_PROJECTS: 6 loaded, 3 errors \u2014 6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040452~PjfProjectsAllXface.csv PJF_TASKS: 7 loaded, 0 errors PJF_TEAM_MEMBERS: 6 loaded, 0 errors PJC_TXN_CONTROLS: 6 loaded, 0 errors AP_INVOICES_INT: 5 loaded, 3 errors \u2014 5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040454~ApInvoicesInterface.csv AP_INVOICE_LINES_INT: 6 loaded, 0 errors | 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 3 loaded, 3 errors \u2014 3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040448~PoSupplierImport.csv POZ_SUP_ADDR: 4 loaded, 0 errors POZ_SUP_SITE: 4 loaded, 0 errors POZ_SUP_SITE_ASSN: 3 loaded, 0 errors PJF_PROJECTS: 6 loaded, 3 errors \u2014 6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040452~PjfProjectsAllXface.csv PJF_TASKS: 7 loaded, 0 errors PJF_TEAM_MEMBERS: 6 loaded, 0 errors PJC_TXN_CONTROLS: 6 loaded, 0 errors AP_INVOICES_INT: 5 loaded, 3 errors \u2014 5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040454~ApInvoicesInterface.csv AP_INVOICE_LINES_INT: 6 loaded, 0 errors",
+     "batch_id": "64"
+    },
+    "files": [
+     {
+      "file": "PoSupplierImport.csv",
+      "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+      "good_rows": 3,
+      "bad_rows": [
+       "number: SETTLEMENT_PRIORITY = 'NOT_A_NUMBER'",
+       "length: ONE_TIME_FLAG = 'XXXXXXXXXXX'",
+       "date: END_DATE_ACTIVE = 'NOT-A-DATE'"
+      ],
+      "staged": 3,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 6 END_DATE_ACTIVE: Line 6, column END_DATE_ACTIVE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_POZ_SUPPLIERS_STG_TBL\".\"ONE_TIME_FLAG\" (actual: 11, maximum: 1)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040448~PoSupplierImport.csv",
+      "as_expected": true
+     },
+     {
+      "file": "PozSupAddressesInt.csv",
+      "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+      "good_rows": 4,
+      "bad_rows": [],
+      "staged": 4,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "PozSupplierSitesInt.csv",
+      "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+      "good_rows": 4,
+      "bad_rows": [],
+      "staged": 4,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "PozSiteAssignmentsInt.csv",
+      "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+      "good_rows": 3,
+      "bad_rows": [],
+      "staged": 3,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "ApInvoicesInterface.csv",
+      "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+      "good_rows": 5,
+      "bad_rows": [
+       "number: INVOICE_AMOUNT = 'NOT_A_NUMBER'",
+       "length: EXCLUSIVE_PAYMENT_FLAG = 'XXXXXXXXXXX'",
+       "date: INVOICE_DATE = 'NOT-A-DATE'"
+      ],
+      "staged": 5,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 8 INVOICE_DATE: Line 8, column INVOICE_DATE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_AP_INVOICES_INT_STG_TBL\".\"EXCLUSIVE_PAYMENT_FLAG\" (actual: 11, maximum: 1)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040454~ApInvoicesInterface.csv",
+      "as_expected": true
+     },
+     {
+      "file": "ApInvoiceLinesInterface.csv",
+      "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "PjfProjectsAllXface.csv",
+      "stg": "DMT_PJF_PROJECTS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [
+       "number: ATTRIBUTE1_NUMBER = 'NOT_A_NUMBER'",
+       "length: PLANNING_PROJECT_FLAG = 'XXXXXXXXXXX'",
+       "date: PROJECT_START_DATE = 'NOT-A-DATE'"
+      ],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 3,
+      "errors": [
+       "row 9 PROJECT_START_DATE: Line 9, column PROJECT_START_DATE: \"NOT-A-DATE\" is not a valid date (expected YYYY/MM/DD HH24:MI:SS). The row was not loaded.",
+       "row 1 : ORA-01722: unable to convert string value containing 'N' to a number: \nORA-03302: (ORA-01722 details) invalid string value: NOT_A_NUMBER\n",
+       "row 2 : ORA-12899: value too large for column \"DMT2_OWNER\".\"DMT_PJF_PROJECTS_STG_TBL\".\"PLANNING_PROJECT_FLAG\" (actual: 11, maximum: 1)\n"
+      ],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED_WITH_ERRORS",
+      "log_rows_errored": "3",
+      "log_error": "6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040452~PjfProjectsAllXface.csv",
+      "as_expected": true
+     },
+     {
+      "file": "PjfProjElementsXface.csv",
+      "stg": "DMT_PJF_TASKS_STG_TBL",
+      "good_rows": 7,
+      "bad_rows": [],
+      "staged": 7,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "PjfProjectPartiesInt.csv",
+      "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     },
+     {
+      "file": "PjcTxnControlsStage.csv",
+      "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+      "good_rows": 6,
+      "bad_rows": [],
+      "staged": 6,
+      "good_rows_staged_exactly": true,
+      "upload_error_rows": 0,
+      "errors": [],
+      "unexpected_staged_row": null,
+      "log_status": "COMPLETED",
+      "log_rows_errored": "0",
+      "log_error": null,
+      "as_expected": true
+     }
+    ],
+    "upload_as_expected": true,
+    "verdict": "FAIL",
+    "reason": "the staged good rows differ from the baseline: DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID: 6 of 6 child rows find their parent in the baseline, 0 of 6 in the upload",
+    "page_message_as_expected": true,
+    "baseline_compare": {
+     "scenario": "UPL-NEG-FBDI-2610200004",
+     "baseline_scenario": "RegressionTest261013111321",
+     "tables": [
+      {
+       "stg": "DMT_POZ_SUPPLIERS_STG_TBL",
+       "objects": [
+        "Suppliers"
+       ],
+       "baseline_rows": 3,
+       "uploaded_rows": 3,
+       "matched": 3,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 155,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_ADDR_STG_TBL",
+       "objects": [
+        "SupplierAddresses"
+       ],
+       "baseline_rows": 4,
+       "uploaded_rows": 4,
+       "matched": 4,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 109,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_SITE_STG_TBL",
+       "objects": [
+        "SupplierSites"
+       ],
+       "baseline_rows": 4,
+       "uploaded_rows": 4,
+       "matched": 4,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 199,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_POZ_SUP_SITE_ASSN_STG_TBL",
+       "objects": [
+        "SupplierSiteAssignments"
+       ],
+       "baseline_rows": 3,
+       "uploaded_rows": 3,
+       "matched": 3,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 15,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_AP_INVOICES_INT_STG_TBL",
+       "objects": [
+        "APInvoices"
+       ],
+       "baseline_rows": 5,
+       "uploaded_rows": 5,
+       "matched": 5,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 134,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "INVOICE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_AP_INVOICE_LINES_INT_STG_TBL",
+       "objects": [
+        "APInvoices"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 163,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "INVOICE_ID (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_PROJECTS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 157,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_TASKS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 7,
+       "uploaded_rows": 7,
+       "matched": 7,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 122,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "PROCESSING_MODE (the format cannot carry it)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJF_TEAM_MEMBERS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 15,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      },
+      {
+       "stg": "DMT_PJC_TXN_CONTROLS_STG_TBL",
+       "objects": [
+        "Projects"
+       ],
+       "baseline_rows": 6,
+       "uploaded_rows": 6,
+       "matched": 6,
+       "missing": 0,
+       "extra": 0,
+       "columns_compared": 19,
+       "columns_excluded": [
+        "STG_SEQUENCE_ID (admin/audit)",
+        "STAGE_DATE (admin/audit)",
+        "STG_STATUS (admin/audit)",
+        "ERROR_TEXT (admin/audit)",
+        "SOURCE_ID (the format cannot carry it)",
+        "LAST_UPDATED_DATE (admin/audit)",
+        "SCENARIO_ID (admin/audit)"
+       ],
+       "differences": [],
+       "clean": true
+      }
+     ],
+     "links": [
+      {
+       "link": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID",
+       "clean": false,
+       "problems": [
+        "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID: 6 of 6 child rows find their parent in the baseline, 0 of 6 in the upload"
+       ]
+      },
+      {
+       "link": "DMT_PJF_TASKS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+       "clean": true,
+       "problems": []
+      },
+      {
+       "link": "DMT_PJC_TXN_CONTROLS_STG_TBL -> DMT_PJF_PROJECTS_STG_TBL on PROJECT_NUMBER",
+       "clean": true,
+       "problems": []
+      }
+     ],
+     "clean": false,
+     "summary": "DMT_AP_INVOICE_LINES_INT_STG_TBL -> DMT_AP_INVOICES_INT_STG_TBL on INVOICE_ID: 6 of 6 child rows find their parent in the baseline, 0 of 6 in the upload"
+    }
+   }
+  },
+  "layout": {
+   "header": {
+    "scenario": "UPL-NEG-HDR-LAYOUT-2610200004",
+    "file": "DMT_POZ_SUPPLIERS_STG_TBL.csv carrying the DMT_PJF_PROJECTS_STG_TBL columns and its 6 rows",
+    "staged": 0,
+    "page": {
+     "page_ok": false,
+     "message": "",
+     "error": "Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. 1 objects, 0 rows loaded, 1 errors, 0 skipped. Load ID: UPL-NEG-HDR-LAYOUT-2610200004~261020040444~UPL-NEG-HDR-LAYOUT-2610200004.zip | 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. 1 objects, 0 rows loaded, 1 errors, 0 skipped. Load ID: UPL-NEG-HDR-LAYOUT-2610200004~261020040444~UPL-NEG-HDR-LAYOUT-2610200004.zip",
+     "batch_id": "63"
+    },
+    "log_status": "FAILED",
+    "log_rows_loaded": "0",
+    "log_rows_errored": "1",
+    "log_error": "Wrong layout: only 1 of the 10 columns in DMT_POZ_SUPPLIERS_STG_TBL.csv are columns of POZ_SUPPLIERS (DMT_POZ_SUPPLIERS_STG_TBL), so the file was not loaded. Check that the file is the right one for its name. Column \"PROJECT_NAME\" skipped. Column \"PROJECT_NUMBER\" skipped. Column \"SOURCE_TEMPLATE_NUM",
+    "upload_errors": [
+     {
+      "file": "DMT_POZ_SUPPLIERS_STG_TBL.csv",
+      "row": "1",
+      "column": null,
+      "type": "LAYOUT",
+      "message": "Wrong layout: only 1 of the 10 columns in DMT_POZ_SUPPLIERS_STG_TBL.csv are columns of POZ_SUPPLIERS (DMT_POZ_SUPPLIERS_STG_TBL), so the file was not loaded. Check that the file is the right one for its name. Column \"PROJECT_NAME\" skipped. Column \"PROJECT_NUMBER\" skipped. Column \"SOURCE_TEMPLATE_NUM"
+     }
+    ],
+    "page_error": true,
+    "upload_error_rows": 1,
+    "visible": true,
+    "verdict": "PASS",
+    "reason": null,
+    "page_message_as_expected": true
+   },
+   "fbdi": {
+    "scenario": "UPL-NEG-FBDI-LAYOUT-2610200004",
+    "file": "PoSupplierImport.csv with every value moved 3 slots right (3 rows, 158 slots instead of 155)",
+    "staged": 0,
+    "page": {
+     "page_ok": false,
+     "message": "",
+     "error": "Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 0 loaded, 1 errors \u2014 Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template. | 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 0 loaded, 1 errors \u2014 Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template.",
+     "batch_id": "65"
+    },
+    "log_status": "FAILED",
+    "log_rows_loaded": "0",
+    "log_rows_errored": "1",
+    "log_error": "Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template.",
+    "upload_errors": [
+     {
+      "file": "PoSupplierImport.csv",
+      "row": "1",
+      "column": null,
+      "type": "LAYOUT",
+      "message": "Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template."
+     }
+    ],
+    "page_error": true,
+    "upload_error_rows": 1,
+    "visible": true,
+    "verdict": "PASS",
+    "reason": null,
+    "page_message_as_expected": true
+   }
+  },
+  "stamp": "2610200004",
+  "pages": {
+   "UPL-NEG-HDR-2610200004": {
+    "page_ok": false,
+    "scenario_created": true,
+    "message": "",
+    "error": "Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. 10 objects, 50 rows loaded, 9 errors, 0 skipped. Load ID: UPL-NEG-HDR-2610200004~261020040440~UPL-NEG-HDR-2610200004.zip | 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. 10 objects, 50 rows loaded, 9 errors, 0 skipped. Load ID: UPL-NEG-HDR-2610200004~261020040440~UPL-NEG-HDR-2610200004.zip",
+    "batch_id": null,
+    "screenshot": "C:\\Users\\Monroe\\AppData\\Local\\Temp\\claude\\C--Users-Monroe\\2633b8c5-761b-4330-b490-c3e497e46257\\scratchpad\\upl_atp_run\\UPL-NEG-HDR-2610200004.png"
+   },
+   "UPL-NEG-HDR-LAYOUT-2610200004": {
+    "page_ok": false,
+    "scenario_created": true,
+    "message": "",
+    "error": "Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. 1 objects, 0 rows loaded, 1 errors, 0 skipped. Load ID: UPL-NEG-HDR-LAYOUT-2610200004~261020040444~UPL-NEG-HDR-LAYOUT-2610200004.zip | 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. 1 objects, 0 rows loaded, 1 errors, 0 skipped. Load ID: UPL-NEG-HDR-LAYOUT-2610200004~261020040444~UPL-NEG-HDR-LAYOUT-2610200004.zip",
+    "batch_id": "62",
+    "screenshot": "C:\\Users\\Monroe\\AppData\\Local\\Temp\\claude\\C--Users-Monroe\\2633b8c5-761b-4330-b490-c3e497e46257\\scratchpad\\upl_atp_run\\UPL-NEG-HDR-LAYOUT-2610200004.png"
+   },
+   "UPL-NEG-FBDI-2610200004": {
+    "page_ok": false,
+    "scenario_created": true,
+    "message": "",
+    "error": "Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 3 loaded, 3 errors \u2014 3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040448~PoSupplierImport.csv POZ_SUP_ADDR: 4 loaded, 0 errors POZ_SUP_SITE: 4 loaded, 0 errors POZ_SUP_SITE_ASSN: 3 loaded, 0 errors PJF_PROJECTS: 6 loaded, 3 errors \u2014 6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040452~PjfProjectsAllXface.csv PJF_TASKS: 7 loaded, 0 errors PJF_TEAM_MEMBERS: 6 loaded, 0 errors PJC_TXN_CONTROLS: 6 loaded, 0 errors AP_INVOICES_INT: 5 loaded, 3 errors \u2014 5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040454~ApInvoicesInterface.csv AP_INVOICE_LINES_INT: 6 loaded, 0 errors | 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 3 loaded, 3 errors \u2014 3 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040448~PoSupplierImport.csv POZ_SUP_ADDR: 4 loaded, 0 errors POZ_SUP_SITE: 4 loaded, 0 errors POZ_SUP_SITE_ASSN: 3 loaded, 0 errors PJF_PROJECTS: 6 loaded, 3 errors \u2014 6 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040452~PjfProjectsAllXface.csv PJF_TASKS: 7 loaded, 0 errors PJF_TEAM_MEMBERS: 6 loaded, 0 errors PJC_TXN_CONTROLS: 6 loaded, 0 errors AP_INVOICES_INT: 5 loaded, 3 errors \u2014 5 loaded, 3 rejected. Filter Upload Errors by Load ID: UPL-NEG-FBDI-2610200004~261020040454~ApInvoicesInterface.csv AP_INVOICE_LINES_INT: 6 loaded, 0 errors",
+    "batch_id": "63",
+    "screenshot": "C:\\Users\\Monroe\\AppData\\Local\\Temp\\claude\\C--Users-Monroe\\2633b8c5-761b-4330-b490-c3e497e46257\\scratchpad\\upl_atp_run\\UPL-NEG-FBDI-2610200004.png"
+   },
+   "UPL-NEG-FBDI-LAYOUT-2610200004": {
+    "page_ok": false,
+    "scenario_created": true,
+    "message": "",
+    "error": "Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 0 loaded, 1 errors \u2014 Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template. | 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 0 loaded, 1 errors \u2014 Wrong layout: the first row of PoSupplierImport.csv has 158 fields, but the Oracle FBDI template for POZ_SUPPLIERS has 155, so the file was not loaded. Check that the file is the right one for its name and was saved from the current template.",
+    "batch_id": "64",
+    "screenshot": "C:\\Users\\Monroe\\AppData\\Local\\Temp\\claude\\C--Users-Monroe\\2633b8c5-761b-4330-b490-c3e497e46257\\scratchpad\\upl_atp_run\\UPL-NEG-FBDI-LAYOUT-2610200004.png"
+   }
+  },
+  "run_header": {
+   "run_id": 189,
+   "prefix_expected": 93446
+  },
+  "page_message": {
+   "test 1 mixed rows (header)": "PASS: page showed error 'Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. 10 objects, 50 rows loaded, 9 errors, 0 skippe'",
+   "test 1 mixed rows (fbdi)": "PASS: page showed error 'Error Message 1 error has occurred 3 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 3 loaded, 3 errors \u2014 3 loaded, '",
+   "test 2 wrong layout (header)": "PASS: page showed error 'Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. 1 objects, 0 rows loaded, 1 errors, 0 skipped.'",
+   "test 2 wrong layout (fbdi)": "PASS: page showed error 'Error Message 1 error has occurred 1 file(s) in this upload failed or had rejected rows; see Upload Errors below. POZ_SUPPLIERS: 0 loaded, 1 errors \u2014 Wrong layo'"
+  }
+ },
+ "finished_at": "2026-10-20T00:33:05",
+ "entries": []
+}
