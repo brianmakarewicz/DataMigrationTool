@@ -96,6 +96,7 @@ import oracledb  # noqa: E402
 import ci_promote as cp  # noqa: E402  prefix sync, DB connections, console URL
 import dmt_apex_url_target as urltarget  # noqa: E402  the one URL knob
 from fbdi_column_maps import FILES as FBDI_FILES, MDY  # noqa: E402  committed FBDI file registry (#792)
+from build_regression_zips import LINK_KEYS  # noqa: E402  child-file parent keys, from staging (#793)
 
 oracledb.defaults.fetch_lobs = False
 oracledb.defaults.fetch_decimals = True
@@ -263,9 +264,10 @@ def header_layout(reg, stg, rows):
     return up["csv"], cols, notes
 
 
-def render(fmt_name, cols_or_slots, rows, raw_rows=(), mask=None):
+def render(fmt_name, cols_or_slots, rows, raw_rows=(), mask=None, key_slot=None):
     """The CSV bytes. rows are source rows (formatted with fmt); raw_rows are
-    {column: text} rows written as given (the negative tests' bad rows)."""
+    {column: text} rows written as given (the negative tests' bad rows).
+    key_slot: the 1-based slot that carries the row's parent-link key (KEY)."""
     buf = io.StringIO()
     if fmt_name == "header":
         w = csv.writer(buf, lineterminator="\r\n")
@@ -273,7 +275,8 @@ def render(fmt_name, cols_or_slots, rows, raw_rows=(), mask=None):
     else:
         w = csv.writer(buf, lineterminator="\r\n", quoting=csv.QUOTE_ALL)
     for r in rows:
-        w.writerow([fmt(r.get(c), mask) if c else "" for c in cols_or_slots])
+        w.writerow([fmt(r.get(KEY)) if i == key_slot else (fmt(r.get(c), mask) if c else "")
+                    for i, c in enumerate(cols_or_slots, 1)])
     for r in raw_rows:
         w.writerow([r.get(c, "") if c else "" for c in cols_or_slots])
     return buf.getvalue().encode("utf-8")
@@ -305,7 +308,7 @@ def merge_rows(objects, src):
     return by_stg, manifest
 
 
-def plan_files(reg, fmt_name, objects, src, filter_seqs=None):
+def plan_files(reg, fmt_name, objects, src, filter_seqs=None, link_keys=None):
     """What goes in the zip and what is checked after the upload.
     Returns (members, checks, manifest):
       members  - the files written to the zip;
@@ -360,11 +363,15 @@ def plan_files(reg, fmt_name, objects, src, filter_seqs=None):
             rows = rows_for(first)
         if not rows:
             continue
+        keys = (link_keys or {}).get(fname)
+        if keys is not None:
+            rows = [dict(r, **{KEY: keys.get(r["STG_SEQUENCE_ID"])}) for r in rows]
         stgs = [oc_stg[x.object] for x in entries]
         members.append({"file": fname, "stg": stgs[0], "stgs": stgs,
                         "objects": sorted({o for t in stgs for o in by_stg[t]["objects"]}),
                         "layout": list(first.cols), "columns": [c for c in first.cols if c and c in rows[0]],
-                        "rows": rows, "raw_rows": [], "mask": first.date_mask, "notes": []})
+                        "rows": rows, "raw_rows": [], "mask": first.date_mask, "notes": [],
+                        "key_slot": LINK_KEYS.get(fname, (None, None))[0] if keys is not None else None})
         for x in entries:
             t = oc_stg[x.object]
             dict_cols = set(reg.dict_cols.get(x.object, []))
@@ -404,12 +411,31 @@ def fbdi_filter_seqs(cur, scenario_id_):
 
 
 REG_UPLOAD = {}   # set in main() from the Registry (staging table -> upload object)
+KEY = "__LINK_KEY"
+
+
+def fbdi_link_keys(cur, scenario_id_):
+    """{file: {STG_SEQUENCE_ID: key}} - the parent-link key each child FBDI file
+    carries in its key slot (backlog #793), computed from the baseline staging
+    rows exactly as test/upload_samples/build_regression_zips.py does."""
+    out = {}
+    for fname, (_slot, key_sql) in LINK_KEYS.items():
+        x = next((f for f in FBDI_FILES if f.file == fname), None)
+        if not x:
+            continue
+        obj = x.driver[0] if x.driver else x.object
+        stg = ident(next(t for t, v in REG_UPLOAD.items() if v["object_code"] == obj))
+        cur.execute(f"SELECT t.STG_SEQUENCE_ID, {key_sql} FROM {stg} t WHERE t.SCENARIO_ID = :scn",
+                    scn=scenario_id_)
+        out[fname] = dict(cur.fetchall())
+    return out
 
 
 def write_zip(fmt_name, files, path):
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
-            z.writestr(f["file"], render(fmt_name, f["layout"], f["rows"], f["raw_rows"], f.get("mask")))
+            z.writestr(f["file"], render(fmt_name, f["layout"], f["rows"], f["raw_rows"], f.get("mask"),
+                                         f.get("key_slot")))
 
 
 def file_summary(f):
@@ -848,7 +874,7 @@ def run_format(args, ctx, fmt_name, block, save):
         return block
     empty = [o for o in run_objects if not src_all[o]]
     members, files, manifest = plan_files(reg, fmt_name, [o for o in run_objects if src_all[o]], src_all,
-                                          ctx.get("filter_seqs"))
+                                          ctx.get("filter_seqs"), ctx.get("link_keys"))
     block["files"] = [file_summary(f) for f in members]
     tag = "HDR" if fmt_name == "header" else "FBDI"
     # ---- upload (once) -------------------------------------------------------
@@ -992,7 +1018,8 @@ def run_negative(args, ctx, block, save):
     try:
         cur = con.cursor()
         for fmt_name, tag in (("header", "HDR"), ("fbdi", "FBDI")):
-            members, files, manifest = plan_files(reg, fmt_name, objs, src_all, ctx.get("filter_seqs"))
+            members, files, manifest = plan_files(reg, fmt_name, objs, src_all, ctx.get("filter_seqs"),
+                                                  ctx.get("link_keys"))
             for f in members:
                 if f["stg"] in NEG_TABLES:
                     add_bad_rows(cur, reg, fmt_name, f)
@@ -1290,6 +1317,7 @@ def main():
     base_run, expected = baseline_expectations(cur, rr, reg, baseline, base_sid)
     REG_UPLOAD.update(reg.upload)
     filter_seqs = fbdi_filter_seqs(cur, base_sid)
+    link_keys = fbdi_link_keys(cur, base_sid)
     con.close()
     git = subprocess.run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"], capture_output=True,
                          text=True).stdout.strip()
@@ -1303,7 +1331,7 @@ def main():
     payload.setdefault("started_at", datetime.datetime.now().isoformat(timespec="seconds"))
     log(f"target {args.target}; baseline {baseline} (run {base_run}); work dir {work}")
     ctx = {"reg": reg, "rr": rr, "src": src_all, "src_by_seq": src_by_seq, "expected": expected,
-           "objects": objs, "work": work, "filter_seqs": filter_seqs}
+           "objects": objs, "work": work, "filter_seqs": filter_seqs, "link_keys": link_keys}
 
     def save():
         write_outputs(args, payload)

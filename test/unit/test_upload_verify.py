@@ -162,10 +162,10 @@ class FReg:
 
 
 saved = uv.FBDI_FILES
-uv.FBDI_FILES = [FbdiFile("Std.csv", "PH", ["NUM", "STYLE"], 1, False, uv.MDY, "f", None),
-                 FbdiFile("Bpa.csv", "PH", ["STYLE", None, "NUM"], 1, False, None, "f", None),
-                 FbdiFile("Fa.csv", "AH", ["ASSET", "DESCR", "BOOK"], 1, True, None, None, ("AB", "ASSET")),
-                 FbdiFile("Fa.csv", "AB", ["ASSET", "DESCR", "BOOK"], 2, False, None, None, ("AB", "ASSET"))]
+uv.FBDI_FILES = [FbdiFile("Std.csv", "PH", ["NUM", "STYLE"], 1, False, uv.MDY, "f", None, None),
+                 FbdiFile("Bpa.csv", "PH", ["STYLE", None, "NUM"], 1, False, None, "f", None, None),
+                 FbdiFile("Fa.csv", "AH", ["ASSET", "DESCR", "BOOK"], 1, True, None, None, ("AB", "ASSET"), None),
+                 FbdiFile("Fa.csv", "AB", ["ASSET", "DESCR", "BOOK"], 2, False, None, None, ("AB", "ASSET"), None)]
 fsrc = {"POs": {"DMT_PH_STG_TBL": [{"STG_SEQUENCE_ID": 1, "STYLE": "STD", "NUM": 7},
                                    {"STG_SEQUENCE_ID": 2, "STYLE": "BPA", "NUM": 8}]},
         "Assets": {"DMT_AH_STG_TBL": [{"STG_SEQUENCE_ID": 5, "ASSET": "A1", "DESCR": "x"}],
@@ -179,6 +179,8 @@ check("FBDI: row filter splits a shared table", [r["NUM"] for r in by["Std.csv"]
       and [r["NUM"] for r in by["Bpa.csv"]["rows"]] == [8])
 check("FBDI: joined file has one row per driver row", [(r["BOOK"], r["DESCR"]) for r in by["Fa.csv"]["rows"]]
       == [("B1", "x"), ("B2", "x")])
+check("FBDI: parent-link key written in its slot",
+      uv.render("fbdi", [None, "A"], [{"A": "x", uv.KEY: 42}], key_slot=1).decode().strip() == '"42","x"')
 check("FBDI: file's date mask used", uv.render("fbdi", ["D"], [{"D": datetime.datetime(2026, 1, 2)}],
                                                mask=uv.MDY).decode().strip() == '"01/02/2026"')
 cby = {c["stg"]: c for c in chk}
