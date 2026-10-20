@@ -1,5 +1,13 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — local gate PASS on aea47c8; promoting to ATP (bundle #787, #790, #788, #786, #792, #793)
+
+**Local gate on main aea47c8.** Deploy clean (0 invalid). Full local regression run 416, prefix 93439: PASS (no new failures; the 7 known review items are the HCM objects with no regression data, unchanged). Local console click-through for run 416: PASS, 68 of 68 steps.
+
+**Before the ATP run.** Next: ci_promote deploy-prod to ATP, then test-prod (ATP regression and click-through, prefix synced to the highest used on local and ATP plus one). The upload tests run on local in parallel (header and FBDI runs plus the negative tests), then on ATP one run at a time after the ATP regression.
+
+**Owner decisions pending.** (1) Accept or reject the four PROPOSED (red) rows added to the upload convention table in the design document (wrong header layout, bad rows in both formats, FBDI file layout, page message). (2) #794 (header upload cannot link MiscReceipts lots and serials to their transaction): until it is fixed, MiscReceipts is left out of the header upload test and reported as header FAIL.
+
 ## 2026-10-19 — local gate stopped by owner request; one bundle (#787, #790, #788, #786 test, #792) before the gate
 
 **Gate stopped.** The owner asked to bundle #790 with #787 into one ATP promotion, so the local gate started on 86da0d4 was stopped: the gate process was killed and local run 415 (prefix 93438) was cancelled with DMT_QUEUE_PKG.CANCEL_RUN (27 items done, 16 cancelled; no STG or TFM row touched; prefix 93438 stays used).
