@@ -1795,7 +1795,8 @@ AS
         p_log_id        IN  NUMBER,
         p_rows_loaded   OUT NUMBER,
         p_rows_errored  OUT NUMBER,
-        p_error_msg     OUT VARCHAR2
+        p_error_msg     OUT VARCHAR2,
+        p_batch_tag     IN  VARCHAR2 DEFAULT NULL    -- backlog #790: Load ID of the rejected rows
     )
     IS
         l_blob     BLOB := p_blob;
@@ -1821,7 +1822,8 @@ AS
                 p_log_id        => p_log_id,
                 p_rows_loaded   => p_rows_loaded,
                 p_rows_errored  => p_rows_errored,
-                p_error_msg     => p_error_msg);
+                p_error_msg     => p_error_msg,
+                p_batch_tag     => p_batch_tag);
         END IF;
         p_rows_errored := NVL(p_rows_errored, 0) + l_rejected;
         IF l_rejected > 0 THEN
