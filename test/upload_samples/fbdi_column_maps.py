@@ -61,7 +61,7 @@ MAPS = {}
 
 # ---------------- GL Balances (GlInterface.csv) ----------------
 # 149 emitted fields; slot 53 = RECON_KEY (transform-only, dropped by seeder).
-gl = [None] * 152
+gl = [None] * 149                             # the generator writes 149 fields
 gl[0] = 'JOURNAL_STATUS'
 gl[2] = 'ACCOUNTING_DATE'
 gl[3] = 'USER_JE_SOURCE_NAME'

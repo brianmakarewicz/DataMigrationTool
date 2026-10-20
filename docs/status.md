@@ -1,5 +1,15 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — FBDI upload links child rows to their parents (backlog #793)
+
+**Result.** Uploaded Assets distributions and MiscReceipts lots and serials now arrive in staging linked to their parent, so their FBDI upload can run into Fusion. A distribution gets its asset number from the matching row of the asset file in the same zip. A lot or serial is linked to the transaction uploaded with it. A child row whose parent is not in the upload is rejected with a readable error and is not staged.
+
+**Proof on local.** With the current regression data, all 9 distributions, 3 lots and 3 serials staged with the same parents as the regression rows. The real files the generators wrote linked the same way. Uploading the child files without their parents rejected all 15 rows and staged none. I also fixed the GL Balances map, which was 3 fields wider than the file the generator writes.
+
+**Coordination.** The #790 agent is testing its own build of the upload package on the shared local database, so I deployed in short turns and put their build back each time. When #790 rebases, two small things are needed: its wrong-layout check must count the one appended link field, and it must pass its batch tag through the new linked-load step. Both were proven on local in a combined build.
+
+**Owner decisions pending.** None new.
+
 ## 2026-10-19 — FBDI upload now covers every generated FBDI file (backlog #792, PR #767)
 
 **Result.** Every FBDI file our generators write can now be uploaded through Smart Upload in FBDI format. The only exception is PlanningBudgets' EPM file, which is out of scope. Newly covered: AR distributions, both Assets files, the three MiscReceipts files, the other 13 Grants award files, the two Blanket PO files and the Contracts header file.

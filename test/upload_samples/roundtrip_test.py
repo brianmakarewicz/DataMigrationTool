@@ -77,8 +77,12 @@ DERIVED = {('InvTransactionLotsInterface.csv', 'INV_TRX_LOTS'):
 # The TFM rows a generated file actually holds, where FBDI_CSV_ID alone says more:
 # FaMassAdditions.csv is the asset header INNER JOIN the book, so a book whose header
 # is not in the file is not in it either (the generator still stamps the book's id).
+# A distribution is in the upload only with its asset's FaMassAdditions.csv row (backlog #793
+# rejects the others as PARENT_NOT_FOUND); {fa_add} = the FaMassAdditions.csv picked.
 TFM_IN_FILE = {('FaMassAdditions.csv', 'FA_ASSET_BOOK'):
-               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = :id)'}
+               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = :id)',
+               ('FaMassaddDistributions.csv', 'FA_ASSET_ASSIGN'):
+               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = {fa_add})'}
 
 
 def connect():
@@ -304,14 +308,17 @@ def leg2(cur, conn, failures):
         # check_links proves it below.
         skip = DERIVED.get((fn, oc), set()) | ({links[fid][0]} if fid in links else set())
         cols = [c for c in poscols.get(fid, []) if c not in skip]
-        extra = TFM_IN_FILE.get((fn, oc))
+        extra = TFM_IN_FILE.get((fn, oc), '').format(fa_add=picked.get('FaMassAdditions.csv', (0,))[0])
         a = rows(cur, tfm, cols, 'fbdi_csv_id = :id' + (f' and {extra}' if extra else ''),
                  {'id': csv_id}, dist == 'Y', date_only=True)
         rf = filt.get((fn, oc))   # the shared PO staging tables: this file's style only
         b = rows(cur, st, cols, 'scenario_id = :scn' + (f' and ({rf})' if rf else ''),
                  {'scn': sg}, dist == 'Y', date_only=True)
-        if dist != 'Y' and len(b) != lines:
-            failures.append(f"{fn}->{oc}: file has {lines} rows, staged {len(b)}")
+        if dist != 'Y' and len(b) != len(a):
+            failures.append(f"{fn}->{oc}: file has {lines} rows, staged {len(b)}, expected {len(a)}")
+        if len(a) < lines and dist != 'Y':
+            print(f"           {lines - len(a)} row(s) of the generated file have no parent in it and were "
+                  f"rejected as PARENT_NOT_FOUND (the generator wrote them without their parent)")
         ok = a == b and len(b) > 0
         skipped = sorted(DERIVED.get((fn, oc), set()))
         print(f"     {'PASS' if ok else 'FAIL'}  {fn:36} {oc:20} run {run_id} file rows={lines:>2} "
@@ -332,7 +339,7 @@ def leg3(cur, conn, failures):
     with zipfile.ZipFile(buf, 'w') as z:
         for fn in children:
             data = src.read(fn)
-            expect[fn] = len(data.decode('utf-8').strip().splitlines())
+            expect[fn] = len(list(csv.reader(io.StringIO(data.decode('utf-8')))))
             z.writestr(fn, data)
     err, summ = load(cur, conn, buf.getvalue(), 'orphans.zip', ORPHAN_SCN)
     so = scenario_id(cur, ORPHAN_SCN)
@@ -343,9 +350,9 @@ def leg3(cur, conn, failures):
         staged = cur.fetchone()[0]
         cur.execute("""select count(*), max(e.error_message) from dmt_upload_error_tbl e
                        join dmt_upload_log_tbl l on l.log_id = e.log_id
-                       where l.file_name = :1 and e.error_type = 'PARENT_NOT_FOUND'
-                       and l.batch_id = (select max(batch_id) from dmt_upload_log_tbl where file_name = :1)""",
-                    [fn])
+                       where l.file_name = :fn and e.error_type = 'PARENT_NOT_FOUND'
+                       and l.batch_id = (select max(batch_id) from dmt_upload_log_tbl where file_name = :fn)""",
+                    fn=fn)
         rejected, msg = cur.fetchone()
         ok = staged == 0 and rejected == expect[fn]
         print(f"     {'PASS' if ok else 'FAIL'}  {fn:36} rows={expect[fn]} staged={staged} rejected={rejected}")
