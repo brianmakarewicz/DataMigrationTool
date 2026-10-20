@@ -71,7 +71,29 @@ def positions(x):
         if c and c not in seen:
             seen.add(c)
             out.append((c, i))
+    if x.link:
+        out.append((x.link.column, len(x.cols) + 1))
     return out
+
+
+def n(v):
+    return 'null' if v is None else (q(v) if isinstance(v, str) else str(v))
+
+
+LINK_COLS = ['link_position', 'link_key_position', 'parent_fbdi_filename', 'parent_key_position',
+             'parent_value_position', 'parent_object_code', 'parent_key_column']
+LINK_NULLS = ['cast(null as number)', 'cast(null as number)', 'cast(null as varchar2(100))',
+              'cast(null as number)', 'cast(null as number)', 'cast(null as varchar2(50))',
+              'cast(null as varchar2(128))']
+
+
+def link_values(x):
+    """LINK_POSITION .. PARENT_KEY_COLUMN of one registry row (backlog #793)."""
+    k = x.link
+    if not k:
+        return LINK_NULLS
+    return [str(len(x.cols) + 1), str(k.key_pos), n(k.parent_file), n(k.parent_key_pos),
+            n(k.parent_value_pos), n(k.parent_object), n(k.parent_key_column)]
 
 
 def render():
@@ -87,7 +109,7 @@ def render():
     parts.append('update "DMT_UPLOAD_DICT_TBL"\nset    "FBDI_POSITION" = null\nwhere  "OBJECT_CODE" in ('
                  + ', '.join(q(oc) for oc, _v in objs) + ');\n')
     for oc, (fn, cols) in objs:
-        pos = positions(FbdiFile(fn, oc, cols, 1, False, None, None, None))
+        pos = positions(FbdiFile(fn, oc, cols, 1, False, None, None, None, None))
         parts.append('merge into "DMT_UPLOAD_DICT_TBL" t\nusing (\n'
                      + union([(q(oc), q(c), str(p)) for c, p in pos],
                              ['object_code', 'column_name', 'fbdi_position'])
@@ -95,20 +117,22 @@ def render():
                      'when matched then update set t."FBDI_POSITION" = s.fbdi_position;\n')
 
     # 2) file registry
-    reg = [(q(x.file), q(x.object), str(x.load_order), q('Y' if x.distinct else 'N'), q(x.date_mask))
-           for x in FILES]
+    reg = [tuple([q(x.file), q(x.object), str(x.load_order), q('Y' if x.distinct else 'N'), q(x.date_mask)]
+                 + link_values(x)) for x in FILES]
+    upd = ',\n'.join(f'                             t."{c.upper()}" = s.{c}' for c in LINK_COLS)
     parts.append("-- 2) FBDI file routing registry: one row per (file, staging object).")
     parts.append('merge into "DMT_UPLOAD_FBDI_FILE_TBL" t\nusing (\n'
                  + union(reg, ['fbdi_csv_filename', 'object_code', 'load_order',
-                               'distinct_rows_flag', 'date_mask'])
+                               'distinct_rows_flag', 'date_mask'] + LINK_COLS)
                  + '\n) s\non (t."FBDI_CSV_FILENAME" = s.fbdi_csv_filename and t."OBJECT_CODE" = s.object_code)\n'
                  'when matched then update set t."LOAD_ORDER" = s.load_order,\n'
                  '                             t."DISTINCT_ROWS_FLAG" = s.distinct_rows_flag,\n'
-                 '                             t."DATE_MASK" = s.date_mask\n'
+                 '                             t."DATE_MASK" = s.date_mask,\n'
+                 + upd + '\n'
                  'when not matched then insert ("FBDI_CSV_FILENAME", "OBJECT_CODE", "LOAD_ORDER", '
-                 '"DISTINCT_ROWS_FLAG", "DATE_MASK")\n'
+                 '"DISTINCT_ROWS_FLAG", "DATE_MASK", ' + ', '.join(f'"{c.upper()}"' for c in LINK_COLS) + ')\n'
                  '     values (s.fbdi_csv_filename, s.object_code, s.load_order, s.distinct_rows_flag, '
-                 's.date_mask);\n')
+                 's.date_mask, ' + ', '.join(f's.{c}' for c in LINK_COLS) + ');\n')
     parts.append("-- Registry rows the maps no longer hold (their positions go with them, ON DELETE CASCADE).")
     parts.append('delete from "DMT_UPLOAD_FBDI_FILE_TBL" t\nwhere not exists (\n  select 1 from (\n'
                  + union([(q(x.file), q(x.object)) for x in FILES], ['fbdi_csv_filename', 'object_code'], indent='    ')
@@ -128,7 +152,8 @@ def render():
                      f'    on f."FBDI_CSV_FILENAME" = {q(x.file)} and f."OBJECT_CODE" = {q(x.object)}\n'
                      '  join "DMT_UPLOAD_DICT_TBL" d\n'
                      '    on d."OBJECT_CODE" = f."OBJECT_CODE" and d."COLUMN_NAME" = s.column_name\n'
-                     '   and d."IS_ADMIN_COLUMN" = \'N\'\n'
+                     + ('   and (d."IS_ADMIN_COLUMN" = \'N\' or d."COLUMN_NAME" = ' + q(x.link.column) + ')\n'
+                        if x.link else '   and d."IS_ADMIN_COLUMN" = \'N\'\n') +
                      ') s\non (t."FBDI_FILE_ID" = s.fbdi_file_id and t."COLUMN_NAME" = s.column_name)\n'
                      'when matched then update set t."FBDI_POSITION" = s.fbdi_position\n'
                      'when not matched then insert ("FBDI_FILE_ID", "COLUMN_NAME", "FBDI_POSITION")\n'
