@@ -603,10 +603,10 @@ AS
             EXECUTE IMMEDIATE
                 'INSERT INTO DMT_UPLOAD_ERROR_TBL '
              || '  (LOG_ID, ROW_NUMBER, COLUMN_NAME, ERROR_TYPE, ERROR_MESSAGE, RAW_VALUE, BATCH_TAG) '
-             || 'SELECT :log_id, LINE_NUMBER, :col, ''PARENT_NOT_FOUND'', '
-             || '  ''Line '' || LINE_NUMBER || '' of '' || :file || '': '' || :col2 || '' '' '
-             || '  || NVL(''"'' || ' || l_key_expr || ' || ''"'', ''(empty)'') || :tail, '
-             || '  SUBSTR(' || l_key_expr || ', 1, 4000), :tag '
+             || 'SELECT :p_log, LINE_NUMBER, :p_col, ''PARENT_NOT_FOUND'', '
+             || '  ''Line '' || LINE_NUMBER || '' of '' || :p_fname || '': '' || :p_col2 || '' '' '
+             || '  || NVL(''"'' || ' || l_key_expr || ' || ''"'', ''(empty)'') || :p_tail, '
+             || '  SUBSTR(' || l_key_expr || ', 1, 4000), :p_tag '
              || 'FROM TABLE(APEX_DATA_PARSER.PARSE(p_content => :blob, p_file_name => ''upload.csv'', p_skip_rows => 1)) '
              || 'WHERE ' || l_where || l_resolved || ' IS NULL'
                 USING p_log_id, l_link_col, p_file_label, l_link_col, l_tail, p_batch_tag, p_blob, p_scenario_id;
