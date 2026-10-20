@@ -1,5 +1,15 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-19 — local gate stopped by owner request; one bundle (#787, #790, #788, #786 test, #792) before the gate
+
+**Gate stopped.** The owner asked to bundle #790 with #787 into one ATP promotion, so the local gate started on 86da0d4 was stopped: the gate process was killed and local run 415 (prefix 93438) was cancelled with DMT_QUEUE_PKG.CANCEL_RUN (27 items done, 16 cancelled; no STG or TFM row touched; prefix 93438 stays used).
+
+**Built since.** #790 (per-row rejection in both upload formats, wrong layout rejected visibly), #788 (page 25 never shows a failed file as success) and the owner's new upload-test design (one zip, one scenario, one run per format, plus negative tests), rebased onto #792 (PR #767, FBDI upload for every generated FBDI file) and #793 (PR #768, parent links for Assets distributions and MiscReceipts lots/serials). Proven on local with uploads only: header 65 of 65 files staged exactly, FBDI 55 of 55 staging tables (57 files, 22 objects) staged exactly, negative tests 8 of 8 PASS. Deployed to local twice in a row, 0 invalid objects after the second (the first left the upload package invalid until the APEX import recompiled it; not reproduced).
+
+**Next.** Merge this PR, then ONE gate on the final main commit: local deploy, full local regression and click-through, the upload tests on local, ci_promote to ATP, the ATP regression and click-through, then the upload tests on ATP.
+
+**Owner decisions pending.** (1) Accept or reject the four PROPOSED (red) rows added to the upload convention table in the design document (wrong header layout, bad rows in both formats, FBDI file layout, page message).
+
 ## 2026-10-19 — FBDI upload links child rows to their parents (backlog #793)
 
 **Result.** Uploaded Assets distributions and MiscReceipts lots and serials now arrive in staging linked to their parent, so their FBDI upload can run into Fusion. A distribution gets its asset number from the matching row of the asset file in the same zip. A lot or serial is linked to the transaction uploaded with it. A child row whose parent is not in the upload is rejected with a readable error and is not staged.
