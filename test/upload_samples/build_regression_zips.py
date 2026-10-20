@@ -75,14 +75,33 @@ def current_scenario_id(cur):
     return row[0], name
 
 
-def object_rows(cur, staging_table, columns, row_filter=None):
-    """Return the scenario's rows for the given columns, ordered by STG_SEQUENCE_ID,
-    narrowed by an FBDI file's row_filter (which may reference :scn)."""
-    col_sql = ", ".join(f'"{c}"' for c in columns)
-    where = 'scenario_id = :scn' + (f' and ({row_filter})' if row_filter else '')
+# The linking key each child FBDI file carries (backlog #793), written the way the
+# generator writes it, from staging: {file: (slot, SQL over the file's staging row t)}.
+# The generator writes TFM ids; from staging the stand-in is the staging row id.
+LINK_KEYS = {
+    'FaMassAdditions.csv': (1, 't.STG_SEQUENCE_ID'),   # MASS_ADDITION_ID of the book row
+    'FaMassaddDistributions.csv': (1, '(SELECT MIN(b.STG_SEQUENCE_ID) FROM DMT_FA_ASSET_BOOK_STG_TBL b '
+                                      'WHERE b.SCENARIO_ID = t.SCENARIO_ID AND b.ASSET_NUMBER = t.ASSET_NUMBER)'),
+    'InvTransactionLotsInterface.csv': (1, 'NVL((SELECT TO_CHAR(p.INV_LOTSERIAL_INTERFACE_NUM) '
+                                           'FROM DMT_INV_TRX_STG_TBL p WHERE p.STG_SEQUENCE_ID = '
+                                           'TO_NUMBER(t.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR)), '
+                                           'TO_CHAR(t.INVENTORY_LOT_INTERFACE_NUMBER))'),
+    'InvSerialNumbersInterface.csv': (1, '(SELECT TO_CHAR(p.INV_LOTSERIAL_INTERFACE_NUM) '
+                                         'FROM DMT_INV_TRX_STG_TBL p WHERE p.STG_SEQUENCE_ID = '
+                                         'TO_NUMBER(t.SOURCE_ID DEFAULT NULL ON CONVERSION ERROR))'),
+}
+KEY = '__LINK_KEY'
+
+
+def object_rows(cur, staging_table, columns, row_filter=None, key_sql=None):
+    """Return the scenario's rows for the given columns (plus the file's linking key
+    as the last value when key_sql is given), ordered by STG_SEQUENCE_ID, narrowed by
+    an FBDI file's row_filter (which may reference :scn)."""
+    col_sql = ", ".join(f't."{c}"' for c in columns) + (f', {key_sql}' if key_sql else '')
+    where = 't.scenario_id = :scn' + (f' and ({row_filter})' if row_filter else '')
     cur.execute(
-        f'select {col_sql} from {staging_table} '
-        f'where {where} order by stg_sequence_id', scn=SCENARIO_ID)
+        f'select {col_sql} from {staging_table} t '
+        f'where {where} order by t.stg_sequence_id', scn=SCENARIO_ID)
     return cur.fetchall()
 
 
@@ -144,7 +163,9 @@ def build_fbdi(cur, out_path):
                     st = stg_of[x.object]
                     have = set(table_columns(cur, st))
                     cols = list(dict.fromkeys([key] + [c for c in colmap if c and c in have]))
-                    per_obj[x.object] = [dict(zip(cols, r)) for r in object_rows(cur, st, cols, x.row_filter)]
+                    ks = LINK_KEYS.get(fname, (None, None))[1] if x.object == drv_obj else None
+                    per_obj[x.object] = [dict(zip(cols + ([KEY] if ks else []), r))
+                                         for r in object_rows(cur, st, cols, x.row_filter, ks)]
                 lookup = {o: {r[key]: r for r in rows} for o, rows in per_obj.items() if o != drv_obj}
                 rows = []
                 for d in per_obj[drv_obj]:
@@ -159,13 +180,18 @@ def build_fbdi(cur, out_path):
                 cols = [c for c in colmap if c and c in have]
                 if not cols:
                     continue
-                rows = [dict(zip(cols, r)) for r in object_rows(cur, st, cols, first.row_filter)]
+                ks = LINK_KEYS.get(fname, (None, None))[1]
+                rows = [dict(zip(cols + ([KEY] if ks else []), r))
+                        for r in object_rows(cur, st, cols, first.row_filter, ks)]
             if not rows:
                 continue
             buf = io.StringIO()
             w = csv.writer(buf, lineterminator='\n', quoting=csv.QUOTE_ALL)
             for r in rows:
-                w.writerow([fmt(r.get(c), first.date_mask) if c else '' for c in colmap])
+                key_slot = LINK_KEYS.get(fname, (None, None))[0]
+                w.writerow([fmt(r.get(KEY)) if i == key_slot else
+                            (fmt(r.get(c), first.date_mask) if c else '')
+                            for i, c in enumerate(colmap, 1)])
             z.writestr(fname, buf.getvalue())
             written.append((', '.join(x.object for x in entries), fname, len(rows), len(colmap)))
     return written

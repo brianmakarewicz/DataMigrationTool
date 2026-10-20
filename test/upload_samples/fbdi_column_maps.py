@@ -61,7 +61,7 @@ MAPS = {}
 
 # ---------------- GL Balances (GlInterface.csv) ----------------
 # 149 emitted fields; slot 53 = RECON_KEY (transform-only, dropped by seeder).
-gl = [None] * 152
+gl = [None] * 149                             # the generator writes 149 fields
 gl[0] = 'JOURNAL_STATUS'
 gl[2] = 'ACCOUNTING_DATE'
 gl[3] = 'USER_JE_SOURCE_NAME'
@@ -888,15 +888,36 @@ MAPS['GMS_AWD_TERMS'] = ('GmsAwardTermsInterface.csv', gms_terms)
 # row_filter / driver are used only by the test-file builder (build_regression_zips.py):
 # which scenario rows go into the file (:scn = the scenario id), and, for a file fed by two
 # objects, (driver object, join column): one file row per driver row, joined to the other.
-FbdiFile = namedtuple('FbdiFile', 'file object cols load_order distinct date_mask row_filter driver')
+FbdiFile = namedtuple('FbdiFile', 'file object cols load_order distinct date_mask row_filter driver link')
+# link (backlog #793): how an uploaded child row finds its parent within the same upload.
+#   column    -- the child staging column that receives the parent link
+#   key_pos   -- the child file slot holding the key Oracle links it by
+#   then EITHER parent_file + parent_key_pos + parent_value_pos (the link is a slot of the
+#   matching row of a parent file in the same zip) OR parent_object + parent_key_column
+#   (the link is the STG_SEQUENCE_ID of the parent staging row uploaded to the scenario).
+# The upload appends the resolved value at slot len(cols) + 1 (LINK_POSITION) and rejects
+# a row whose parent is not in the upload.
+FbdiLink = namedtuple('FbdiLink', 'column key_pos parent_file parent_key_pos parent_value_pos '
+                                  'parent_object parent_key_column')
 YMD = 'YYYY/MM/DD HH24:MI:SS'
 MDY = 'MM/DD/YYYY HH24:MI:SS'
 _PO_STYLE = ("INTERFACE_HEADER_KEY IN (SELECT INTERFACE_HEADER_KEY FROM DMT_PO_HEADERS_INT_STG_TBL "
              "WHERE SCENARIO_ID = :scn AND STYLE_DISPLAY_NAME = '{}')")
 
 
-def _f(file, obj, cols, load_order=1, distinct=False, date_mask=YMD, row_filter=None, driver=None):
-    return FbdiFile(file, obj, cols, load_order, distinct, date_mask, row_filter, driver)
+def _f(file, obj, cols, load_order=1, distinct=False, date_mask=YMD, row_filter=None, driver=None,
+       link=None):
+    return FbdiFile(file, obj, cols, load_order, distinct, date_mask, row_filter, driver, link)
+
+
+# Assets distributions: slot 1 MASS_ADDITION_ID = slot 1 of the asset's FaMassAdditions.csv
+# row, whose slot 4 is the ASSET_NUMBER the distribution staging row is linked by.
+FA_DIST_LINK = FbdiLink('ASSET_NUMBER', 1, 'FaMassAdditions.csv', 1, 4, None, None)
+# MiscReceipts lots / serials: slot 1 = the parent transaction's INV_LOTSERIAL_INTERFACE_NUM;
+# staging links them by SOURCE_ID = the parent transaction's STG_SEQUENCE_ID (as the
+# MiscReceipts transform reads it).
+INV_CHILD_LINK = FbdiLink('SOURCE_ID', 1, None, None, None, 'INV_TRX', 'INV_LOTSERIAL_INTERFACE_NUM')
+_LINKS = {'INV_TRX_LOTS': INV_CHILD_LINK, 'INV_TRX_SERIALS': INV_CHILD_LINK}
 
 
 FILES = []
@@ -907,13 +928,14 @@ for _oc, (_fn, _cols) in MAPS.items():
         FILES.append(_f(_fn, _oc, _cols, row_filter=_PO_STYLE.format('Purchase Order')))
     else:
         FILES.append(_f(_fn, _oc, _cols,
-                        date_mask=MDY if _oc.startswith('GMS_AWD_') or _oc == 'PJB_BILL_EVENTS' else YMD))
+                        date_mask=MDY if _oc.startswith('GMS_AWD_') or _oc == 'PJB_BILL_EVENTS' else YMD,
+                        link=_LINKS.get(_oc)))
 FILES += [
     _f('FaMassAdditions.csv', 'FA_ASSET_HDR', fa_add, load_order=1, distinct=True,
        driver=('FA_ASSET_BOOK', 'ASSET_NUMBER')),
     _f('FaMassAdditions.csv', 'FA_ASSET_BOOK', fa_add, load_order=2,
        driver=('FA_ASSET_BOOK', 'ASSET_NUMBER')),
-    _f('FaMassaddDistributions.csv', 'FA_ASSET_ASSIGN', fa_dist),
+    _f('FaMassaddDistributions.csv', 'FA_ASSET_ASSIGN', fa_dist, link=FA_DIST_LINK),
     _f('PoHeadersInterfaceBlanket.csv', 'PO_HEADERS_INT', bpa_h,
        row_filter="STYLE_DISPLAY_NAME = 'Blanket Purchase Agreement'"),
     _f('PoLinesInterfaceBlanket.csv', 'PO_LINES_INT', bpa_l,

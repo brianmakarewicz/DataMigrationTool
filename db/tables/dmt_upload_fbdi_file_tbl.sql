@@ -19,6 +19,13 @@ begin
 	"LOAD_ORDER" NUMBER DEFAULT 1 NOT NULL ENABLE,
 	"DISTINCT_ROWS_FLAG" VARCHAR2(1) DEFAULT ''N'' NOT NULL ENABLE,
 	"DATE_MASK" VARCHAR2(30) DEFAULT ''YYYY/MM/DD HH24:MI:SS'' NOT NULL ENABLE,
+	"LINK_POSITION" NUMBER,
+	"LINK_KEY_POSITION" NUMBER,
+	"PARENT_FBDI_FILENAME" VARCHAR2(100),
+	"PARENT_KEY_POSITION" NUMBER,
+	"PARENT_VALUE_POSITION" NUMBER,
+	"PARENT_OBJECT_CODE" VARCHAR2(50),
+	"PARENT_KEY_COLUMN" VARCHAR2(128),
 	"CREATED_DATE" TIMESTAMP (6) DEFAULT SYSTIMESTAMP,
 	 CONSTRAINT "DMT_UPLOAD_FBDI_FILE_PK" PRIMARY KEY ("FBDI_FILE_ID") USING INDEX ENABLE,
 	 CONSTRAINT "DMT_UPLOAD_FBDI_FILE_UK1" UNIQUE ("FBDI_CSV_FILENAME", "OBJECT_CODE") USING INDEX ENABLE,
@@ -27,6 +34,43 @@ begin
    ) ';
 exception when others then
   if sqlcode not in (-955) then raise; end if;
+end;
+/
+
+-- Backlog #793: parent-link columns (converges a table created by #792; the
+-- CREATE above already carries them for a fresh install).
+declare
+  procedure add_col(p_col in varchar2, p_type in varchar2) is
+    l_n pls_integer;
+  begin
+    select count(*) into l_n from user_tab_columns
+    where  table_name = 'DMT_UPLOAD_FBDI_FILE_TBL' and column_name = p_col;
+    if l_n = 0 then
+      execute immediate 'ALTER TABLE "DMT_UPLOAD_FBDI_FILE_TBL" ADD ("' || p_col || '" ' || p_type || ')';
+    end if;
+  end add_col;
+begin
+  add_col('LINK_POSITION', 'NUMBER');
+  add_col('LINK_KEY_POSITION', 'NUMBER');
+  add_col('PARENT_FBDI_FILENAME', 'VARCHAR2(100)');
+  add_col('PARENT_KEY_POSITION', 'NUMBER');
+  add_col('PARENT_VALUE_POSITION', 'NUMBER');
+  add_col('PARENT_OBJECT_CODE', 'VARCHAR2(50)');
+  add_col('PARENT_KEY_COLUMN', 'VARCHAR2(128)');
+end;
+/
+
+-- A link is either to a parent FILE of the same zip or to a parent STAGING object.
+begin
+  execute immediate 'ALTER TABLE "DMT_UPLOAD_FBDI_FILE_TBL" ADD CONSTRAINT "DMT_UPLOAD_FBDI_FILE_CK3" CHECK (
+      LINK_POSITION IS NULL
+      OR (LINK_KEY_POSITION IS NOT NULL
+          AND ((PARENT_FBDI_FILENAME IS NOT NULL AND PARENT_KEY_POSITION IS NOT NULL
+                AND PARENT_VALUE_POSITION IS NOT NULL AND PARENT_OBJECT_CODE IS NULL)
+            OR (PARENT_OBJECT_CODE IS NOT NULL AND PARENT_KEY_COLUMN IS NOT NULL
+                AND PARENT_FBDI_FILENAME IS NULL)))) ENABLE';
+exception when others then
+  if sqlcode not in (-2264) then raise; end if;
 end;
 /
 
@@ -51,3 +95,10 @@ COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."OBJECT_CODE" IS 'Upload object (DM
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."LOAD_ORDER" IS 'Order in which the staging objects fed by the same file are loaded (parent first).';
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."DISTINCT_ROWS_FLAG" IS 'Y = load one staging row per distinct set of mapped values (a parent repeated on every child row of a joined file, e.g. the asset header in FaMassAdditions.csv).';
 COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."DATE_MASK" IS 'Format the file''s generator writes dates in; every DATE column is parsed with it, TIMESTAMP columns with it plus .FF.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."LINK_POSITION" IS 'Backlog #793: slot the resolved parent link is appended at before loading (mapped in DMT_UPLOAD_FBDI_POS_TBL to the child''s link column). NULL = the file has no parent link.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."LINK_KEY_POSITION" IS 'Slot of this file holding the key Oracle links the row to its parent by (e.g. MASS_ADDITION_ID, INV_LOTSERIAL_INTERFACE_NUM).';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_FBDI_FILENAME" IS 'Parent file in the same zip: the link value is its PARENT_VALUE_POSITION slot on the row whose PARENT_KEY_POSITION slot equals the key.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_KEY_POSITION" IS 'Key slot in PARENT_FBDI_FILENAME.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_VALUE_POSITION" IS 'Slot in PARENT_FBDI_FILENAME whose value becomes the link.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_OBJECT_CODE" IS 'Parent staging object loaded from the same upload: the link value is the STG_SEQUENCE_ID of its latest row in the scenario whose PARENT_KEY_COLUMN equals the key.';
+COMMENT ON COLUMN "DMT_UPLOAD_FBDI_FILE_TBL"."PARENT_KEY_COLUMN" IS 'Key column of the PARENT_OBJECT_CODE staging table.';

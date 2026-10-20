@@ -1388,6 +1388,247 @@ AS
     END fbdi_load_from_blob;
 
     -- ============================================================
+    -- FBDI parent links (backlog #793)
+    -- ============================================================
+    -- Some FBDI child files carry their parent only through the key
+    -- Oracle links them by, which is not a staging column:
+    --   * Assets FaMassaddDistributions.csv slot 1 = MASS_ADDITION_ID,
+    --     the slot-1 key of the asset's FaMassAdditions.csv row (whose
+    --     slot 4 is the ASSET_NUMBER the distribution staging row needs);
+    --   * MiscReceipts lots/serials slot 1 = the parent transaction's
+    --     INV_LOTSERIAL_INTERFACE_NUM; staging links a lot/serial to its
+    --     parent by SOURCE_ID = the parent's STG_SEQUENCE_ID.
+    -- DMT_UPLOAD_FBDI_FILE_TBL says how: LINK_KEY_POSITION (the child's
+    -- key slot), then either a parent FILE in the same zip
+    -- (PARENT_FBDI_FILENAME / PARENT_KEY_POSITION / PARENT_VALUE_POSITION)
+    -- or a parent STAGING object already loaded from the same upload
+    -- (PARENT_OBJECT_CODE / PARENT_KEY_COLUMN, value = its STG_SEQUENCE_ID,
+    -- latest row of the scenario). Before the child file is loaded, every
+    -- row is rewritten with the resolved parent value appended at
+    -- LINK_POSITION (which DMT_UPLOAD_FBDI_POS_TBL maps to the child's link
+    -- column); a row whose parent is not in the upload is rejected into
+    -- DMT_UPLOAD_ERROR_TBL and not staged. The positional loader itself is
+    -- unchanged.
+    -- ============================================================
+
+    -- The content of the zip member named p_name (any folder, any case);
+    -- NULL when the zip has no such member.
+    FUNCTION zip_member (p_zip_blob IN BLOB, p_name IN VARCHAR2) RETURN BLOB
+    IS
+        l_files APEX_ZIP.T_FILES := APEX_ZIP.GET_FILES(p_zipped_blob => p_zip_blob);
+    BEGIN
+        FOR i IN 1 .. l_files.COUNT LOOP
+            IF UPPER(SUBSTR(l_files(i), INSTR(l_files(i), '/', -1) + 1)) = UPPER(p_name) THEN
+                RETURN APEX_ZIP.GET_FILE_CONTENT(p_zipped_blob => p_zip_blob, p_file_name => l_files(i));
+            END IF;
+        END LOOP;
+        RETURN NULL;
+    END zip_member;
+
+    -- Rewrites p_blob (one FBDI child file) with each row's parent link
+    -- appended at the file's LINK_POSITION; rows with no parent in the
+    -- upload are logged to DMT_UPLOAD_ERROR_TBL and dropped. No-op for a
+    -- file without a link.
+    PROCEDURE link_fbdi_parents (
+        p_fbdi_file_id IN            NUMBER,
+        p_zip_blob     IN            BLOB,
+        p_scenario_id  IN            NUMBER,
+        p_log_id       IN            NUMBER,
+        x_blob         IN OUT NOCOPY BLOB,
+        x_rejected     OUT           NUMBER
+    )
+    IS
+        TYPE t_cur IS REF CURSOR;
+        l_cur        t_cur;
+        l_reg        DMT_UPLOAD_FBDI_FILE_TBL%ROWTYPE;
+        l_link_col   VARCHAR2(128);
+        l_parent_stg VARCHAR2(128);
+        l_parent     BLOB;
+        l_row_expr   VARCHAR2(32767);
+        l_lookup     VARCHAR2(4000);
+        l_sql        VARCHAR2(32767);
+        l_line       NUMBER;
+        l_text       VARCHAR2(32767);
+        l_key        VARCHAR2(4000);
+        l_value      VARCHAR2(4000);
+        l_out        CLOB;
+        l_kept       PLS_INTEGER := 0;
+        l_where      VARCHAR2(400);
+        l_step       VARCHAR2(400);
+        l_dest_off   INTEGER := 1;
+        l_src_off    INTEGER := 1;
+        l_lang       INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        l_warn       INTEGER;
+        c_parse      CONSTANT VARCHAR2(200) :=
+            ' FROM TABLE(APEX_DATA_PARSER.PARSE(p_content => :blob, p_file_name => ''upload.csv'', p_skip_rows => 0))';
+    BEGIN
+        x_rejected := 0;
+        l_step := 'reading the link registry for FBDI file id ' || p_fbdi_file_id;
+        SELECT * INTO l_reg FROM DMT_UPLOAD_FBDI_FILE_TBL WHERE FBDI_FILE_ID = p_fbdi_file_id;
+        IF l_reg.LINK_POSITION IS NULL THEN
+            RETURN;
+        END IF;
+
+        l_step := 'reading the link column of ' || l_reg.FBDI_CSV_FILENAME;
+        SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(COLUMN_NAME) INTO l_link_col
+        FROM   DMT_UPLOAD_FBDI_POS_TBL
+        WHERE  FBDI_FILE_ID = p_fbdi_file_id AND FBDI_POSITION = l_reg.LINK_POSITION;
+
+        -- The row text: every slot before the link slot, re-quoted.
+        FOR n IN 1 .. LEAST(l_reg.LINK_POSITION - 1, 299) LOOP
+            l_row_expr := l_row_expr || CASE WHEN n > 1 THEN ' || '','' || ' END
+                       || '''"'' || REPLACE(c.COL' || LPAD(n, 3, '0') || ', ''"'', ''""'') || ''"''';
+        END LOOP;
+
+        -- Section-7 carve-out (see STANDARDS NOTE at top of body): the
+        -- parent staging table and key column are registry data,
+        -- SIMPLE_SQL_NAME-checked; both blobs and the scenario id are bound.
+        IF l_reg.PARENT_FBDI_FILENAME IS NOT NULL THEN
+            l_step := 'reading parent file ' || l_reg.PARENT_FBDI_FILENAME || ' from the zip';
+            l_parent := zip_member(p_zip_blob, l_reg.PARENT_FBDI_FILENAME);
+            IF l_parent IS NULL OR DBMS_LOB.GETLENGTH(l_parent) = 0 THEN
+                -- No parent file in the zip: nothing matches, every row is rejected.
+                l_lookup := '(SELECT CAST(NULL AS VARCHAR2(4000)) k, CAST(NULL AS VARCHAR2(4000)) v'
+                         || ' FROM DUAL WHERE :pblob IS NULL AND 1 = 0)';
+            ELSE
+                l_lookup := '(SELECT COL' || LPAD(l_reg.PARENT_KEY_POSITION, 3, '0') || ' k, MAX(COL'
+                         || LPAD(l_reg.PARENT_VALUE_POSITION, 3, '0') || ') v' || REPLACE(c_parse, ':blob', ':pblob')
+                         || ' GROUP BY COL' || LPAD(l_reg.PARENT_KEY_POSITION, 3, '0') || ')';
+            END IF;
+            l_where  := 'a ' || l_reg.PARENT_FBDI_FILENAME || ' row (slot ' || l_reg.PARENT_KEY_POSITION
+                     || ') in this upload';
+        ELSE
+            l_step := 'resolving parent object ' || l_reg.PARENT_OBJECT_CODE;
+            SELECT DBMS_ASSERT.SIMPLE_SQL_NAME(STAGING_TABLE) INTO l_parent_stg
+            FROM   DMT_UPLOAD_OBJECT_TBL WHERE OBJECT_CODE = l_reg.PARENT_OBJECT_CODE;
+            l_lookup := '(SELECT TO_CHAR(' || DBMS_ASSERT.SIMPLE_SQL_NAME(l_reg.PARENT_KEY_COLUMN)
+                     || ') k, TO_CHAR(MAX(STG_SEQUENCE_ID)) v FROM ' || l_parent_stg
+                     || ' WHERE SCENARIO_ID = :scn GROUP BY TO_CHAR('
+                     || DBMS_ASSERT.SIMPLE_SQL_NAME(l_reg.PARENT_KEY_COLUMN) || '))';
+            l_where  := 'a ' || l_reg.PARENT_OBJECT_CODE || ' row (' || l_reg.PARENT_KEY_COLUMN
+                     || ') uploaded to this scenario';
+        END IF;
+
+        l_sql := 'SELECT c.LINE_NUMBER, ' || l_row_expr || ', c.COL' || LPAD(l_reg.LINK_KEY_POSITION, 3, '0')
+              || ', p.v' || c_parse || ' c LEFT JOIN ' || l_lookup
+              || ' p ON p.k = c.COL' || LPAD(l_reg.LINK_KEY_POSITION, 3, '0') || ' ORDER BY c.LINE_NUMBER';
+
+        l_step := 'linking ' || l_reg.FBDI_CSV_FILENAME || ' rows to their parent';
+        IF l_reg.PARENT_FBDI_FILENAME IS NOT NULL THEN
+            OPEN l_cur FOR l_sql USING x_blob, l_parent;
+        ELSE
+            OPEN l_cur FOR l_sql USING x_blob, p_scenario_id;
+        END IF;
+        DBMS_LOB.CREATETEMPORARY(l_out, TRUE);
+        LOOP
+            FETCH l_cur INTO l_line, l_text, l_key, l_value;
+            EXIT WHEN l_cur%NOTFOUND;
+            IF l_value IS NULL THEN
+                x_rejected := x_rejected + 1;
+                log_row_error(
+                    p_log_id        => p_log_id,
+                    p_row_number    => l_line,
+                    p_column_name   => l_link_col,
+                    p_error_type    => 'PARENT_NOT_FOUND',
+                    p_error_message => 'Row ' || l_line || ' of ' || l_reg.FBDI_CSV_FILENAME
+                                       || ' was not staged: its parent key '
+                                       || NVL('''' || l_key || '''', '(empty)') || ' (slot '
+                                       || l_reg.LINK_KEY_POSITION || ') matches no ' || SUBSTR(l_where, 3)
+                                       || ', so ' || l_link_col || ' cannot be set. Upload the parent file in the same zip.',
+                    p_raw_value     => SUBSTR(l_key, 1, 4000));
+            ELSE
+                l_kept := l_kept + 1;
+                l_text := l_text || ',"' || REPLACE(l_value, '"', '""') || '"' || CHR(10);
+                DBMS_LOB.WRITEAPPEND(l_out, LENGTH(l_text), l_text);
+            END IF;
+        END LOOP;
+        CLOSE l_cur;
+
+        l_step := 'rebuilding ' || l_reg.FBDI_CSV_FILENAME || ' with the parent links';
+        DBMS_LOB.CREATETEMPORARY(x_blob, TRUE);
+        IF l_kept > 0 THEN
+            DBMS_LOB.CONVERTTOBLOB(
+                dest_lob     => x_blob,
+                src_clob     => l_out,
+                amount       => DBMS_LOB.LOBMAXSIZE,
+                dest_offset  => l_dest_off,
+                src_offset   => l_src_off,
+                blob_csid    => DBMS_LOB.DEFAULT_CSID,
+                lang_context => l_lang,
+                warning      => l_warn);
+        END IF;
+        DMT_UTIL_PKG.LOG(
+            p_message   => 'FBDI parent links for ' || l_reg.FBDI_CSV_FILENAME || ': ' || l_kept
+                           || ' rows linked, ' || x_rejected || ' rejected (no parent in the upload)',
+            p_package   => C_PKG,
+            p_procedure => 'link_fbdi_parents');
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF l_cur%ISOPEN THEN CLOSE l_cur; END IF;
+            DMT_UTIL_PKG.LOG_ERROR(
+                p_message   => 'FBDI parent link failed while ' || l_step || '. SQL: ' || SUBSTR(l_sql, 1, 500),
+                p_sqlerrm   => SQLERRM,
+                p_package   => C_PKG,
+                p_procedure => 'link_fbdi_parents');
+            RAISE;
+    END link_fbdi_parents;
+
+    -- The positional FBDI load of one (file, object) pair, after its
+    -- parent links are resolved (link_fbdi_parents). Rows rejected for a
+    -- missing parent count as errored rows of the file.
+    PROCEDURE fbdi_load_linked (
+        p_blob          IN  BLOB,
+        p_zip_blob      IN  BLOB,
+        p_scenario_id   IN  NUMBER,
+        p_file_label    IN  VARCHAR2,
+        p_fbdi_file_id  IN  NUMBER,
+        p_object_code   IN  VARCHAR2,
+        p_staging_table IN  VARCHAR2,
+        p_batch_id      IN  NUMBER,
+        p_log_id        IN  NUMBER,
+        p_rows_loaded   OUT NUMBER,
+        p_rows_errored  OUT NUMBER,
+        p_error_msg     OUT VARCHAR2
+    )
+    IS
+        l_blob     BLOB := p_blob;
+        l_rejected NUMBER := 0;
+    BEGIN
+        p_rows_loaded  := 0;
+        p_rows_errored := 0;
+        link_fbdi_parents(
+            p_fbdi_file_id => p_fbdi_file_id,
+            p_zip_blob     => p_zip_blob,
+            p_scenario_id  => p_scenario_id,
+            p_log_id       => p_log_id,
+            x_blob         => l_blob,
+            x_rejected     => l_rejected);
+        IF DBMS_LOB.GETLENGTH(l_blob) > 0 THEN
+            fbdi_load_from_blob(
+                p_blob          => l_blob,
+                p_file_label    => p_file_label,
+                p_fbdi_file_id  => p_fbdi_file_id,
+                p_object_code   => p_object_code,
+                p_staging_table => p_staging_table,
+                p_batch_id      => p_batch_id,
+                p_log_id        => p_log_id,
+                p_rows_loaded   => p_rows_loaded,
+                p_rows_errored  => p_rows_errored,
+                p_error_msg     => p_error_msg);
+        END IF;
+        p_rows_errored := NVL(p_rows_errored, 0) + l_rejected;
+        IF l_rejected > 0 THEN
+            p_error_msg := SUBSTR(CASE WHEN p_error_msg IS NOT NULL THEN p_error_msg || '; ' END
+                                  || l_rejected || ' row(s) rejected: no parent in this upload'
+                                  || ' (see the upload errors)', 1, 4000);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            p_error_msg    := 'FBDI parent link failed: ' || SQLERRM;
+            p_rows_errored := GREATEST(NVL(p_rows_errored, 0), 1);
+    END fbdi_load_linked;
+
+    -- ============================================================
     -- UPLOAD_FBDI_ZIP_FROM_BLOB
     -- ============================================================
     PROCEDURE UPLOAD_FBDI_ZIP_FROM_BLOB (
@@ -1411,6 +1652,7 @@ AS
         l_file_error     VARCHAR2(4000);
         l_summary        CLOB;
         l_matched        BOOLEAN;
+        l_reg_count      PLS_INTEGER;
         l_log_id         NUMBER;
         l_scenario_id    NUMBER;
         l_scn_err        NUMBER;
@@ -1441,6 +1683,9 @@ AS
         l_files := APEX_ZIP.GET_FILES(p_zipped_blob => p_zip_blob);
         DBMS_LOB.CREATETEMPORARY(l_summary, TRUE);
 
+        -- Pass 1 loads every file; pass 2 the child files whose parent link is
+        -- resolved against parent rows staged by pass 1 (backlog #793).
+        FOR l_pass IN 1 .. 2 LOOP
         FOR i IN 1 .. l_files.COUNT LOOP
             l_file_name := l_files(i);
             -- Skip directories and hidden files
@@ -1461,6 +1706,7 @@ AS
                 JOIN   DMT_UPLOAD_OBJECT_TBL o ON o.OBJECT_CODE = f.OBJECT_CODE
                 WHERE  UPPER(f.FBDI_CSV_FILENAME) = UPPER(l_file_name)
                 AND    o.IS_ACTIVE = 'Y'
+                AND    DECODE(f.PARENT_OBJECT_CODE, NULL, 1, 2) = l_pass
                 ORDER BY f.LOAD_ORDER, o.DISPLAY_ORDER
             ) LOOP
                 l_matched       := TRUE;
@@ -1484,9 +1730,11 @@ AS
                         INTO l_max_seq_before;
                 END IF;
 
-                -- Load using positional FBDI loader
-                fbdi_load_from_blob(
+                -- Load using positional FBDI loader, parent links first (#793)
+                fbdi_load_linked(
                     p_blob          => l_file_blob,
+                    p_zip_blob      => p_zip_blob,
+                    p_scenario_id   => l_scenario_id,
                     p_file_label    => l_file_name,
                     p_fbdi_file_id  => m.FBDI_FILE_ID,
                     p_object_code   => l_object_code,
@@ -1535,10 +1783,18 @@ AS
                 END;
             END LOOP;
 
-            IF NOT l_matched THEN
-                DECLARE l_msg VARCHAR2(500) := 'SKIPPED: ' || l_file_name || ' (no FBDI filename match)' || CHR(10);
-                BEGIN DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg); END;
+            IF NOT l_matched AND l_pass = 2 THEN
+                SELECT COUNT(*) INTO l_reg_count
+                FROM   DMT_UPLOAD_FBDI_FILE_TBL f
+                JOIN   DMT_UPLOAD_OBJECT_TBL o ON o.OBJECT_CODE = f.OBJECT_CODE
+                WHERE  UPPER(f.FBDI_CSV_FILENAME) = UPPER(l_file_name)
+                AND    o.IS_ACTIVE = 'Y';
+                IF l_reg_count = 0 THEN
+                    DECLARE l_msg VARCHAR2(500) := 'SKIPPED: ' || l_file_name || ' (no FBDI filename match)' || CHR(10);
+                    BEGIN DBMS_LOB.WRITEAPPEND(l_summary, LENGTH(l_msg), l_msg); END;
+                END IF;
             END IF;
+        END LOOP;
         END LOOP;
 
         p_summary := l_summary;
@@ -1834,8 +2090,10 @@ AS
                             INTO l_max_seq_before;
                     END IF;
 
-                    fbdi_load_from_blob(
+                    fbdi_load_linked(
                         p_blob          => l_file_blob,
+                        p_zip_blob      => p_zip_blob,
+                        p_scenario_id   => l_scenario_id,
                         p_file_label    => l_file_name,
                         p_fbdi_file_id  => l_plan(i).fbdi_file_id,
                         p_object_code   => l_object_code,

@@ -23,6 +23,13 @@ registered by #792, uploads it into a third NEW scenario, and asserts that for e
 against the generators themselves, not against our own map. Dates are compared as
 dates (several generators write the date part only).
 
+Parent links (backlog #793): every uploaded Assets distribution, MiscReceipts lot and
+MiscReceipts serial must be linked to the same parent as its baseline row (the asset
+number; the parent transaction, compared by its INV_LOTSERIAL_INTERFACE_NUM because the
+staging row id differs per scenario), and leg 3 uploads the child files WITHOUT their
+parents into a fourth scenario and asserts every child row is rejected into
+DMT_UPLOAD_ERROR_TBL as PARENT_NOT_FOUND and none is staged.
+
 Staging rows are never deleted (design section 3): each run uses fresh, timestamped
 scenarios and leaves them in place. Never touches the regression baseline.
 
@@ -48,6 +55,7 @@ STAMP = datetime.datetime.now().strftime('%y%m%d%H%M%S')
 PROP_SCN = f'UploadProp-{STAMP}'
 FBDI_SCN = f'UploadFbdi-{STAMP}'
 GEN_SCN = f'UploadGen-{STAMP}'
+ORPHAN_SCN = f'UploadOrphan-{STAMP}'
 
 # Files newly registered by backlog #792 (leg 2 uploads their real generated CSVs).
 NEW_FILES = [
@@ -69,8 +77,12 @@ DERIVED = {('InvTransactionLotsInterface.csv', 'INV_TRX_LOTS'):
 # The TFM rows a generated file actually holds, where FBDI_CSV_ID alone says more:
 # FaMassAdditions.csv is the asset header INNER JOIN the book, so a book whose header
 # is not in the file is not in it either (the generator still stamps the book's id).
+# A distribution is in the upload only with its asset's FaMassAdditions.csv row (backlog #793
+# rejects the others as PARENT_NOT_FOUND); {fa_add} = the FaMassAdditions.csv picked.
 TFM_IN_FILE = {('FaMassAdditions.csv', 'FA_ASSET_BOOK'):
-               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = :id)'}
+               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = :id)',
+               ('FaMassaddDistributions.csv', 'FA_ASSET_ASSIGN'):
+               'ASSET_NUMBER IN (SELECT ASSET_NUMBER FROM DMT_FA_ASSET_HDR_TFM_TBL WHERE FBDI_CSV_ID = {fa_add})'}
 
 
 def connect():
@@ -127,10 +139,75 @@ def file_registry(cur):
     return reg, cols
 
 
-def rows(cur, table, cols, where, binds, distinct=False, date_only=False):
-    sql = (f"select {'distinct ' if distinct else ''}{', '.join(cols)} from {table} where {where}")
+def staged_links(cur):
+    """{fbdi_file_id: (link column, parent staging table, parent key column)} for the files
+    whose link is the parent's staging row id (MiscReceipts lots and serials)."""
+    cur.execute("""select f.fbdi_file_id, p.column_name, o.staging_table, f.parent_key_column
+                   from dmt_upload_fbdi_file_tbl f
+                   join dmt_upload_fbdi_pos_tbl p
+                     on p.fbdi_file_id = f.fbdi_file_id and p.fbdi_position = f.link_position
+                   join dmt_upload_object_tbl o on o.object_code = f.parent_object_code
+                   where f.parent_object_code is not null""")
+    return {r[0]: r[1:] for r in cur.fetchall()}
+
+
+def col_exprs(cols, link):
+    """Column expressions for a comparison: a staged-row-id link column is compared as
+    the parent's key (the parent's staging row id differs per scenario)."""
+    out = []
+    for c in cols:
+        if link and c == link[0]:
+            out.append(f"(select to_char(p.{link[2]}) from {link[1]} p "
+                       f"where p.stg_sequence_id = to_number(t.{c} default null on conversion error))")
+        else:
+            out.append(f"t.{c}")
+    return out
+
+
+def rows(cur, table, cols, where, binds, distinct=False, date_only=False, link=None):
+    sql = (f"select {'distinct ' if distinct else ''}{', '.join(col_exprs(cols, link))} "
+           f"from {table} t where {where}")
     cur.execute(sql, binds)
     return sorted(tuple(norm(v, date_only) for v in r) for r in cur.fetchall())
+
+
+def check_links(cur, failures, sid, base, label):
+    """Every linked child staged in scenario sid points at the same parent as its
+    baseline row, and none is unlinked."""
+    print(f"   parent links ({label}):")
+    checks = [
+        ('FA_ASSET_ASSIGN -> asset', 'dmt_fa_asset_assign_stg_tbl',
+         "t.asset_number is not null and exists (select 1 from dmt_fa_asset_hdr_stg_tbl h "
+         "where h.scenario_id = t.scenario_id and h.asset_number = t.asset_number)",
+         "t.asset_number"),
+        ('INV_TRX_LOTS -> transaction', 'dmt_inv_trx_lots_stg_tbl',
+         "exists (select 1 from dmt_inv_trx_stg_tbl p where p.scenario_id = t.scenario_id "
+         "and p.stg_sequence_id = to_number(t.source_id default null on conversion error))",
+         "(select to_char(p.inv_lotserial_interface_num) || ' ' || p.item_number from dmt_inv_trx_stg_tbl p "
+         "where p.stg_sequence_id = to_number(t.source_id default null on conversion error))"),
+        ('INV_TRX_SERIALS -> transaction', 'dmt_inv_trx_serials_stg_tbl',
+         "exists (select 1 from dmt_inv_trx_stg_tbl p where p.scenario_id = t.scenario_id "
+         "and p.stg_sequence_id = to_number(t.source_id default null on conversion error))",
+         "(select to_char(p.inv_lotserial_interface_num) || ' ' || p.item_number from dmt_inv_trx_stg_tbl p "
+         "where p.stg_sequence_id = to_number(t.source_id default null on conversion error))"),
+    ]
+    for name, tbl, linked, parent in checks:
+        cur.execute(f"select count(*), sum(case when {linked} then 1 else 0 end) from {tbl} t "
+                    f"where t.scenario_id = :1", [sid])
+        total, ok = cur.fetchone()
+        ok = ok or 0
+        same = ''
+        if base is not None:
+            cur.execute(f"select {parent} from {tbl} t where t.scenario_id = :1", [base])
+            a = sorted(str(r[0]) for r in cur.fetchall())
+            cur.execute(f"select {parent} from {tbl} t where t.scenario_id = :1", [sid])
+            b = sorted(str(r[0]) for r in cur.fetchall())
+            same = ', same parents as the baseline' if a == b else f', DIFFERENT parents: base={a} upload={b}'
+            if a != b:
+                failures.append(f"{label} {name}: parents differ from the baseline: base={a} upload={b}")
+        print(f"     {'PASS' if total and ok == total else 'FAIL'}  {name:32} linked {ok}/{total}{same}")
+        if not total or ok != total:
+            failures.append(f"{label} {name}: {ok} of {total} staged rows linked to a parent in the upload")
 
 
 def leg1(cur, conn, failures):
@@ -149,6 +226,7 @@ def leg1(cur, conn, failures):
                 failures.append(f"{path}: {line.strip()}")
     sp, sf = scenario_id(cur, PROP_SCN), scenario_id(cur, FBDI_SCN)
     reg, poscols = file_registry(cur)
+    links = staged_links(cur)
     filt = {(x.file, x.object): x.row_filter for x in FILES}
 
     print(f"   row counts (baseline {base_name} / proprietary / FBDI):")
@@ -167,13 +245,15 @@ def leg1(cur, conn, failures):
         cols = poscols.get(fid, [])
         rf = filt.get((fn, oc))
         where = 'scenario_id = :scn' + (f' and ({rf})' if rf else '')
-        a = rows(cur, st, cols, where, {'scn': base}, dist == 'Y')
-        b = rows(cur, st, cols, where, {'scn': sf}, dist == 'Y')
+        a = rows(cur, st, cols, where, {'scn': base}, dist == 'Y', link=links.get(fid))
+        b = rows(cur, st, cols, where, {'scn': sf}, dist == 'Y', link=links.get(fid))
         ok = a == b and len(a) > 0
         print(f"     {'PASS' if ok else 'FAIL'}  {fn:36} {oc:20} rows={len(b):>2} cols={len(cols)}")
         if not ok:
             diff = [r for r in a if r not in b][:1] + [r for r in b if r not in a][:1]
             failures.append(f"value mismatch {fn}->{oc}: base rows={len(a)} fbdi rows={len(b)} e.g. {diff}")
+
+    check_links(cur, failures, sf, base, 'FBDIFormat.zip')
 
     cur.execute("select ledger_name, period_name from dmt_gl_interface_stg_tbl "
                 "where scenario_id=:1 order by 1, 2", [sf])
@@ -216,6 +296,7 @@ def leg2(cur, conn, failures):
             failures.append(f"generated zip: {line.strip()}")
     sg = scenario_id(cur, GEN_SCN)
     reg, poscols = file_registry(cur)
+    links = staged_links(cur)
     filt = {(x.file, x.object): x.row_filter for x in FILES}
     print("   staged rows vs the TFM rows each generated file carried (every mapped column):")
     for fid, fn, oc, st, dist in reg:
@@ -223,15 +304,21 @@ def leg2(cur, conn, failures):
             continue
         csv_id, run_id, lines = picked[fn]
         tfm = st.replace('_STG_TBL', '_TFM_TBL')
-        cols = [c for c in poscols.get(fid, []) if c not in DERIVED.get((fn, oc), set())]
-        extra = TFM_IN_FILE.get((fn, oc))
+        # A staged-row-id link column (lots/serials SOURCE_ID) has no TFM counterpart;
+        # check_links proves it below.
+        skip = DERIVED.get((fn, oc), set()) | ({links[fid][0]} if fid in links else set())
+        cols = [c for c in poscols.get(fid, []) if c not in skip]
+        extra = TFM_IN_FILE.get((fn, oc), '').format(fa_add=picked.get('FaMassAdditions.csv', (0,))[0])
         a = rows(cur, tfm, cols, 'fbdi_csv_id = :id' + (f' and {extra}' if extra else ''),
                  {'id': csv_id}, dist == 'Y', date_only=True)
         rf = filt.get((fn, oc))   # the shared PO staging tables: this file's style only
         b = rows(cur, st, cols, 'scenario_id = :scn' + (f' and ({rf})' if rf else ''),
                  {'scn': sg}, dist == 'Y', date_only=True)
-        if dist != 'Y' and len(b) != lines:
-            failures.append(f"{fn}->{oc}: file has {lines} rows, staged {len(b)}")
+        if dist != 'Y' and len(b) != len(a):
+            failures.append(f"{fn}->{oc}: file has {lines} rows, staged {len(b)}, expected {len(a)}")
+        if len(a) < lines and dist != 'Y':
+            print(f"           {lines - len(a)} row(s) of the generated file have no parent in it and were "
+                  f"rejected as PARENT_NOT_FOUND (the generator wrote them without their parent)")
         ok = a == b and len(b) > 0
         skipped = sorted(DERIVED.get((fn, oc), set()))
         print(f"     {'PASS' if ok else 'FAIL'}  {fn:36} {oc:20} run {run_id} file rows={lines:>2} "
@@ -239,6 +326,40 @@ def leg2(cur, conn, failures):
         if not ok:
             diff = [r for r in a if r not in b][:1] + [r for r in b if r not in a][:1]
             failures.append(f"generated {fn}->{oc}: tfm rows={len(a)} staged={len(b)} e.g. {diff}")
+    check_links(cur, failures, sg, None, 'generated files')
+
+
+def leg3(cur, conn, failures):
+    """The child files without their parents: every row rejected, none staged."""
+    print("== Leg 3: child files uploaded WITHOUT their parent files (must be rejected, not staged)")
+    src = zipfile.ZipFile(os.path.join(HERE, 'FBDIFormat.zip'))
+    children = ['FaMassaddDistributions.csv', 'InvTransactionLotsInterface.csv', 'InvSerialNumbersInterface.csv']
+    buf = io.BytesIO()
+    expect = {}
+    with zipfile.ZipFile(buf, 'w') as z:
+        for fn in children:
+            data = src.read(fn)
+            expect[fn] = len(list(csv.reader(io.StringIO(data.decode('utf-8')))))
+            z.writestr(fn, data)
+    err, summ = load(cur, conn, buf.getvalue(), 'orphans.zip', ORPHAN_SCN)
+    so = scenario_id(cur, ORPHAN_SCN)
+    for fn, tbl in (('FaMassaddDistributions.csv', 'dmt_fa_asset_assign_stg_tbl'),
+                    ('InvTransactionLotsInterface.csv', 'dmt_inv_trx_lots_stg_tbl'),
+                    ('InvSerialNumbersInterface.csv', 'dmt_inv_trx_serials_stg_tbl')):
+        cur.execute(f"select count(*) from {tbl} where scenario_id = :1", [so])
+        staged = cur.fetchone()[0]
+        cur.execute("""select count(*), max(e.error_message) from dmt_upload_error_tbl e
+                       join dmt_upload_log_tbl l on l.log_id = e.log_id
+                       where l.file_name = :fn and e.error_type = 'PARENT_NOT_FOUND'
+                       and l.batch_id = (select max(batch_id) from dmt_upload_log_tbl where file_name = :fn)""",
+                    fn=fn)
+        rejected, msg = cur.fetchone()
+        ok = staged == 0 and rejected == expect[fn]
+        print(f"     {'PASS' if ok else 'FAIL'}  {fn:36} rows={expect[fn]} staged={staged} rejected={rejected}")
+        if msg:
+            print(f"           e.g. {msg}")
+        if not ok:
+            failures.append(f"orphan {fn}: rows={expect[fn]} staged={staged} rejected={rejected}")
 
 
 def main():
@@ -247,7 +368,8 @@ def main():
     failures = []
     leg1(cur, conn, failures)
     leg2(cur, conn, failures)
-    print(f"\nscenarios left in place: {PROP_SCN}, {FBDI_SCN}, {GEN_SCN}")
+    leg3(cur, conn, failures)
+    print(f"\nscenarios left in place: {PROP_SCN}, {FBDI_SCN}, {GEN_SCN}, {ORPHAN_SCN}")
     if failures:
         print("FAIL:")
         for f in failures:

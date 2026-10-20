@@ -91,12 +91,18 @@ The existing two options remain valid: `UPLOAD_ZIP_BUNDLE` (proprietary only) an
   PurchaseOrders / BlanketPOs / Contracts transforms pick their rows.
 * Each file's `DATE_MASK` is the format its generator writes dates in: Grants and
   Billing Events write `MM/DD/YYYY`, every other generator `YYYY/MM/DD`.
-* **Links the files cannot carry (follow-up):** an uploaded Assets
-  `FaMassaddDistributions.csv` row has no `ASSET_NUMBER` (the generator writes the
-  synthetic `MASS_ADDITION_ID` instead), and uploaded MiscReceipts lot and serial
-  rows have no `SOURCE_ID` link to their parent transaction (the staging link is
-  the parent's staging row id, which a file cannot know). The rows and values
-  load; the parent link must be resolved after upload.
+* **Parent links (backlog #793):** a child file whose parent is linked only by Oracle's
+  key is resolved within the same upload before it loads. An Assets
+  `FaMassaddDistributions.csv` row's `MASS_ADDITION_ID` (slot 1) is matched to slot 1
+  of `FaMassAdditions.csv` in the same zip, and its `ASSET_NUMBER` (slot 4) is staged on
+  the distribution. A MiscReceipts lot or serial row's slot 1 (the parent's
+  `INV_LOTSERIAL_INTERFACE_NUM`) is matched to the transaction staged from the same
+  upload, and its `SOURCE_ID` is set to that transaction's staging row id, the link the
+  MiscReceipts transform reads. The resolved value is appended as one extra field at
+  `LINK_POSITION` (`DMT_UPLOAD_FBDI_FILE_TBL`). A child row whose parent is not in the
+  upload is rejected into `DMT_UPLOAD_ERROR_TBL` as `PARENT_NOT_FOUND` and never staged.
+  Our staging tables link serials to the transaction, not to a lot, so there is no
+  serial-to-lot link to resolve.
 * **Items (`EgpSystemItemsInterface.csv`)**: the generator writes columns out to
   slot 370, but `APEX_DATA_PARSER` exposes only `COL001..COL300`. The FBDI loader
   loads every column up to slot 300 and reports the beyond-300 columns
