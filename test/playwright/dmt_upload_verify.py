@@ -505,7 +505,11 @@ def check_staging(cur, scenario, files, src_by_seq):
         return False, [{"problem": f"scenario {scenario} not found"}], {}
     ok, details, seq_map = True, [], {}
     for m in files:
-        stg, cols = m["stg"], m["columns"]
+        stg = m["stg"]
+        # A link held as the parent's staging row id is different in every scenario;
+        # compare_to_baseline checks it as the parent's key (rt.col_exprs, check_links).
+        link = STAGED_ID_LINKS.get(stg)
+        cols = [c for c in m["columns"] if not (link and c == link[0])]
         cur.execute(f"SELECT STG_SEQUENCE_ID{''.join(', ' + c for c in cols)} FROM {stg} "
                     f"WHERE SCENARIO_ID = :s ORDER BY STG_SEQUENCE_ID", s=sid)
         staged = cur.fetchall()
