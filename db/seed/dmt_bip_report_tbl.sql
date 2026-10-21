@@ -1729,20 +1729,11 @@ using (
            '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
-             || 'Award header tier plus 14 child tiers (V5); every child on its own base row. '
-             || 'Award Batch Import Report fallback for purged-interface rejections. '
-             || 'V2 (2026-10-07): BASE tier keyed on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, '
-             || 'prefix-scoped (FBDI awards carry no request id / sponsor number). '
-             || 'V4 (2026-10-10, backlog #671): the same report also returns the award '
-             || 'keyword, term, certification, CFDA, reference and task burden schedule '
-             || 'rows of the awards it confirms (created during the run''s import job), '
-             || 'each with its own Fusion id; pages by award (PAGE_KEY). '
-             || 'V5 (2026-10-20, backlog #765 / #789): also the personnel, funding, funding '
-             || 'allocation, budget period, org credit, project, funding source and project '
-             || 'funding source rows, each with its own Fusion id; no child is LOADED from an '
-             || 'import-report success line. V6 (2026-10-20, backlog #240 / #768, approved exception): '
-             || 'awards found by AWARD_SOURCE FBDI created in the run''s import job window, never by '
-             || 'prefix. Deployed alongside V1-V5, never overwriting them.' notes,
+             || 'Award header tier plus 14 child tiers, each child LOADED only on its own base row '
+             || 'with its own Fusion id (V4 #671, V5 #765 / #789); the Award Batch Import Report '
+             || 'gives rejections only. V6 (2026-10-20, #240 / #768, approved exception): awards '
+             || 'found by AWARD_SOURCE FBDI created in the run''s import job window, never by prefix. '
+             || 'Deployed alongside V1-V5, never overwriting them.' notes,
            1                                                    contract_version,
            'DMT_GMS_AWD_HEADERS_TFM_TBL'                        tfm_table,
            'FUSION_AWARD_ID'                                    fusion_id_column,
