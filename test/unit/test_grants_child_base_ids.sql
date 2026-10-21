@@ -1,6 +1,7 @@
 -- ============================================================
--- test_grants_child_base_ids.sql -- six Grants award child types are LOADED
--- from their own Fusion base row, each with its own Fusion id (backlog #671).
+-- test_grants_child_base_ids.sql -- the 14 Grants award child types are LOADED
+-- from their own Fusion base row, each with its own Fusion id (backlog #671,
+-- extended to the other eight types by #765 / #789).
 --
 -- What it proves (DMT_DESIGN.html section 5, "How each row's outcome is
 -- resolved": LOADED only on a positive base-table match with the Fusion id;
@@ -20,9 +21,13 @@
 --       report line carrying the SAME Fusion id is not stored again.
 --   B8  a second pass changes nothing (idempotent).
 --   B9  INTERFACE and award-tier rows of the report are ignored here.
+--   B10 the eight V5 types (personnel, funding, funding allocation, budget
+--       period, org credit, project, funding source, project funding source)
+--       are LOADED with their own id; a Fusion-created extra personnel row
+--       (no role) and award-level org credit (no project) match no TFM row.
 --
 -- The report rows are synthetic, in the shape DMT_RECON_CONTRACT_PKG.FETCH_ROWS
--- returns for the Grants recon report V4 (bip/Grants/query.sql).
+-- returns for the Grants recon report V5 (bip/Grants/query.sql).
 --
 -- Isolation. Every row this test writes (one synthetic run and its award TFM
 -- rows) lives in ONE transaction that is ROLLED BACK at the end (and on any
@@ -107,6 +112,23 @@ begin
     values (l_run, -1, 'GENERATED', A, 'InfoEd #', 'RT-INF-1', -1);
     insert into dmt_gms_awd_prj_tsk_brd_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, project_number, task_number, burden_schedule, fbdi_csv_id)
     values (l_run, -1, 'GENERATED', A, 'PRG10008', '1.0', 'Progress US Burden Schedule', -1);
+    -- Award A children of the eight V5 types (backlog #789).
+    insert into dmt_gms_awd_personnel_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, role, person_email, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'Principal Investigator', 'a@b.c', -1);
+    insert into dmt_gms_awd_funding_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, budget_period_name, issue_number, funding_source_name, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'Period 1', 'Base 1', 'State Government', -1);
+    insert into dmt_gms_awd_fund_alloc_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, issue_number, project_number, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'Base 1', 'PRG10008', -1);
+    insert into dmt_gms_awd_bdgt_prds_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, budget_period, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'Period 1', -1);
+    insert into dmt_gms_awd_org_credits_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, project_number, organization, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'PRG10008', 'Maintenance Prg US', -1);
+    insert into dmt_gms_awd_projects_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, project_number, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'PRG10008', -1);
+    insert into dmt_gms_awd_fund_src_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, funding_source_name, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'State Government', -1);
+    insert into dmt_gms_awd_prj_fund_src_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, project_number, funding_source_name, fbdi_csv_id)
+    values (l_run, -1, 'GENERATED', A, 'PRG10008', 'State Government', -1);
     -- Award B child.
     insert into dmt_gms_awd_keywords_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, keyword_name, fbdi_csv_id)
     values (l_run, -1, 'GENERATED', B, 'Genetics', -1);
@@ -123,6 +145,21 @@ begin
     line('Grants.Reference',     A||'~INFOED #~~RT-INF-1',               910005);
     line('Grants.TaskBurden',    A||'~PRG10008~1.0',                     910006);
     line('Grants.Keyword',       B||'~GENETICS~',                        910007);  -- award not LOADED
+    line('Grants.Personnel',     A||'~PRINCIPAL INVESTIGATOR~',          920001);
+    line('Grants.Personnel',     A||'~~',                                920099);  -- Fusion-created extra row
+    line('Grants.Funding',       A||'~PERIOD 1~BASE 1~STATE GOVERNMENT', 920002);
+    line('Grants.FundAllocation', A||'~BASE 1~PRG10008',                 920003);
+    line('Grants.BudgetPeriod',  A||'~PERIOD 1',                         920004);
+    line('Grants.OrgCredit',     A||'~PRG10008~MAINTENANCE PRG US',      920005);
+    line('Grants.OrgCredit',     A||'~~MAINTENANCE PRG US',              920098);  -- award-level credit Fusion made
+    line('Grants.Project',       A||'~PRG10008',                         920006);
+    line('Grants.FundingSource', A||'~STATE GOVERNMENT',                 920007);
+    line('Grants.ProjectFundingSource', A||'~PRG10008~STATE GOVERNMENT', 920008);
+    -- An award another import created in the same job window (report V6, backlog #240):
+    -- returned by the report, but no TFM row of this run has its award number.
+    line('Grants',               'UTGNB-OTHER',                          920090);
+    line('Grants.Project',       'UTGNB-OTHER~PRG10008',                 920091);
+    line('Grants.Personnel',     'UTGNB-OTHER~PRINCIPAL INVESTIGATOR~',  920092);
 
     dmt_grants_results_pkg.apply_award_child_rows(
         p_run_id      => l_run,
@@ -155,7 +192,18 @@ begin
     select tfm_status, fusion_cfda_id into l_st, l_id from dmt_gms_awd_cfdas_tfm_tbl where run_id = l_run and cfda = '47.074';
     ok('B5 a FAILED child is never touched', l_st = 'FAILED' and l_id is null);
 
-    ok('B6/B9 only the six matching child rows changed (template term, award and interface rows ignored)', l_loaded = 6);
+    ok('B6/B9 only the 14 matching child rows changed (template term, extra Fusion rows, another import''s award, award and interface rows ignored)', l_loaded = 14);
+
+    select (select count(*) from dmt_gms_awd_personnel_tfm_tbl    where run_id = l_run and tfm_status = 'LOADED' and fusion_personnel_id = 920001)
+         + (select count(*) from dmt_gms_awd_funding_tfm_tbl      where run_id = l_run and tfm_status = 'LOADED' and fusion_funding_id = 920002)
+         + (select count(*) from dmt_gms_awd_fund_alloc_tfm_tbl   where run_id = l_run and tfm_status = 'LOADED' and fusion_fund_alloc_id = 920003)
+         + (select count(*) from dmt_gms_awd_bdgt_prds_tfm_tbl    where run_id = l_run and tfm_status = 'LOADED' and fusion_budget_period_id = 920004)
+         + (select count(*) from dmt_gms_awd_org_credits_tfm_tbl  where run_id = l_run and tfm_status = 'LOADED' and fusion_org_credit_id = 920005)
+         + (select count(*) from dmt_gms_awd_projects_tfm_tbl     where run_id = l_run and tfm_status = 'LOADED' and fusion_award_project_id = 920006)
+         + (select count(*) from dmt_gms_awd_fund_src_tfm_tbl     where run_id = l_run and tfm_status = 'LOADED' and fusion_funding_source_id = 920007)
+         + (select count(*) from dmt_gms_awd_prj_fund_src_tfm_tbl where run_id = l_run and tfm_status = 'LOADED' and fusion_prj_fund_source_id = 920008)
+      into l_n from dual;
+    ok('B10 the eight V5 child types LOADED with their own ids', l_n = 8);
 
     dmt_grants_results_pkg.apply_award_child_rows(
         p_run_id      => l_run,
@@ -183,10 +231,10 @@ end;
 /
 
 begin
-    if :passed <> 12 then
-        raise_application_error(-20998, 'test_grants_child_base_ids: '||:passed||' of 12 passed');
+    if :passed <> 13 then
+        raise_application_error(-20998, 'test_grants_child_base_ids: '||:passed||' of 13 passed');
     end if;
-    dbms_output.put_line('test_grants_child_base_ids: ALL 12 PASSED');
+    dbms_output.put_line('test_grants_child_base_ids: ALL 13 PASSED');
 end;
 /
 exit

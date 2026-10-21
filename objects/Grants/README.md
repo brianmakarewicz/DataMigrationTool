@@ -125,10 +125,9 @@ schedule, G_19 project funding source, G_25 funding source, G_8 keyword.
   its own stays GENERATED and ends UNACCOUNTED in the shared sweep.
 - **Owner rule 2026-10-19: a success line alone is no longer enough.** A row is LOADED only
   when it carries its own row-grain Fusion id (canonical definition: `docs/DMT_DESIGN.html`,
-  Overview status table, LOADED row). The eight child types above that are still set LOADED from
-  their success line without an id of their own (about 30 rows in the current baseline) are a
-  known gap, not an exception: they do not count as LOADED and Grants does not pass until their
-  ids are captured (backlog #765 for the report work, #789 for the rule).
+  Overview status table, LOADED row). Since 2026-10-20 (backlog #765 / #789) the success lines
+  are not used at all (`APPLY_CHILD_REPORT_SUCCESSES` is retired); all 14 child types are LOADED
+  only from their own base row in report V5 (next sections).
 - **Child rejected under a LOADED award.** It keeps its own `[FUSION_ERROR]`; the award stays
   LOADED and no sibling is quoted (`PROPAGATE_DOCUMENT_ERRORS` skips awards whose header is
   LOADED). Fusion never produced this on the pod: probes 77141 / 77142 (2026-10-09, standalone,
@@ -161,8 +160,7 @@ the V3 award tiers and UNIONs six child tiers into the same nine-column result:
 - **Selection.** The child tables carry no job id. A child row is read only for an award the same
   report confirms (its BASE award tier), and only when Fusion created it between the start and
   end of the run's own import job (`FUSION_ORA_ESS.REQUEST_HISTORY` for `P_IMPORT_ESS_ID`). The
-  prefix never selects a child. (The award tier itself is still found by contract number,
-  backlog #240.)
+  prefix never selects a child. (Since report V6 the award tier is found the same way, below.)
 - **Paging.** PAGE_KEY = the award number; a page is the next BIP_CHUNK_SIZE awards plus every
   row of them (design section 5, header paging).
 - **Apply.** `DMT_GRANTS_RESULTS_PKG.APPLY_AWARD_CHILD_ROWS` runs after the award-header pass:
@@ -188,6 +186,45 @@ the V3 award tiers and UNIONs six child tiers into the same nine-column result:
   reference 300000335128459 and task burden schedule 300000335128471 stored on their own rows and read
   back under that award. Grants 33 LOADED / 23 FAILED with real errors / 0 UNACCOUNTED; harness PASS.
 
+## Awards found by the import job's window (backlog #240 / #768, 2026-10-20)
+Owner-approved exception (design section 5, next to GLBalances): FBDI awards carry no job id
+(`OKC_K_HEADERS_ALL_B.REQUEST_ID`, `GMS_AWARD_HEADERS_B.DC_REQUEST_ID` / `SUMMARY_REQUEST_ID` are
+NULL; `GMS_AWARD_MASS_IMPORT_JOBS` has only job counts). Report `DMT_GRANT_RECON_V6_DM` (alongside
+V1-V5) selects base awards by `AWARD_SOURCE = 'FBDI'` and `CREATION_DATE` inside the run's
+`AwardMassImportJob` window (`FUSION_ORA_ESS.REQUEST_HISTORY`), the window the child tiers already
+use. The contract-number `LIKE :P_PREFIX || '%'` selector is gone; the award number only matches the
+returned award to its TFM row. An award another import made in the same window matches no TFM row,
+so it and its children change nothing.
+
+## Eight more child types from their own base rows (backlog #765 / #789, 2026-10-20)
+Owner rule 2026-10-19: a row is LOADED only with its own row-grain Fusion id. Report
+`bip/Grants/DMT_GRANT_RECON_V5_DM.xdm` (alongside V1-V4, cache off, registry and
+`query.sql` repointed) keeps V4 and UNIONs the other eight child base tables, selected exactly
+like the V4 tiers (through a confirmed award, created during the run's import job, never by prefix):
+| OBJECT_TYPE | Base table . id | RECORD_KEY after the award number | TFM column |
+|---|---|---|---|
+| Grants.Personnel | GMS_AWARD_PERSONNEL.ID | ROLE NAME ~ project number | FUSION_PERSONNEL_ID |
+| Grants.Funding | GMS_AWARD_FUNDINGS_B.ID | BUDGET PERIOD ~ ISSUE NUMBER ~ FUNDING SOURCE NAME | FUSION_FUNDING_ID |
+| Grants.FundAllocation | GMS_AWARD_FUND_ALLOCATIONS.ID | ISSUE NUMBER ~ project number | FUSION_FUND_ALLOC_ID |
+| Grants.BudgetPeriod | GMS_AWARD_BUDGET_PERIODS.ID | BUDGET PERIOD | FUSION_BUDGET_PERIOD_ID |
+| Grants.OrgCredit | GMS_AWARD_DEPARTMENT_CREDITS.ID | project number ~ ORGANIZATION NAME | FUSION_ORG_CREDIT_ID |
+| Grants.Project | GMS_AWARD_PROJECTS.ID | project number | FUSION_AWARD_PROJECT_ID |
+| Grants.FundingSource | GMS_AWARD_FUNDING_SOURCES_B.ID | FUNDING SOURCE NAME | FUSION_FUNDING_SOURCE_ID |
+| Grants.ProjectFundingSource | GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID | project number ~ FUNDING SOURCE NAME | FUSION_PRJ_FUND_SOURCE_ID |
+- Role names come from `GMS_ROLES_V`, funding source names from `GMS_FUNDING_SOURCES_ALL_V`
+  (the `_VL` view returns no name on this pod), organization names from
+  `HR_ORGANIZATION_UNITS_F_TL`. `GMS_AWARD_FUND_ALLOCATIONS.PROJECT_ID` holds the award project
+  link (`GMS_AWARD_PROJECTS.ID`), not the project.
+- **Extra Fusion rows.** One PI row makes Fusion create a second personnel row (internal flag N,
+  the sponsor's party, no role; #671 finding), and a project-level organization credit makes it
+  add an award-level credit. Their keys (`award~~`, `award~~ORG`) match no TFM row and change nothing.
+- `APPLY_AWARD_CHILD_ROWS` stamps all 14 types; `APPLY_CHILD_REPORT_SUCCESSES` is retired, so no
+  row is LOADED from an Award Batch Import Report success line. Rejections still come from that report.
+- The record view (`DMT_RECORD_DETAIL_V`) shows each child's own id as its FUSION_ID (backlog
+  #769); Verify in Fusion still reads the award back (LOOKUP_KEY = award number).
+- Auditor rows `Grants.<Type>` (14) in `DMT_BIP_REPORT_TBL` (backlog #767).
+- Unit tests: `test/unit/test_grants_child_base_ids.sql` (13), `test_grants_child_accounting.sql` (15).
+
 ## Award children in the record views (backlog #567, 2026-10-09)
 Every award child TFM table now has its own lane in `DMT_RECORD_DETAIL_V`,
 `DMT_OBJECT_DETAIL_V`, `DMT_V_CEMLI_TFM_TABLES` and the `DMT_CEMLI_CATALOG_TBL` seed, labelled
@@ -210,12 +247,9 @@ child lane with a LOADED row.
 - ~~BIP reconciliation uses "absence=LOADED" pattern: Fusion purges interface table rows after successful import.~~ **RESOLVED 2026-04-02:** Switched to two-tier BIP (interface + base table). No more absence=LOADED.
 - ~~Per-award rejection errors were unreadable after import (interface purged) — object left UNACCOUNTED.~~ **RESOLVED (run-234 fix):** reconciler now reads the Award Batch Import Report child (see above).
 - **Live section-7 standard violations in Grants code (pre-existing; logged per the "README Known Issues" rule, 2026-10-07):**
-  - Eight award child types (personnel, funding, funding allocation, budget period, org credit,
-    project, funding source, project funding source) are set LOADED on their own success line in the
-    job's Award Batch Import Report (backlog #568), but still without their own `FUSION_*_ID`. Under
-    the owner rule of 2026-10-19 such rows are not LOADED and Grants does not pass until the ids are
-    captured (backlog #789). The other six types store their own id since backlog #671;
-    extending report V4 to the remaining eight base tables is backlog #765.
+  - ~~Eight award child types LOADED on a report success line without their own `FUSION_*_ID`.~~
+    **RESOLVED 2026-10-20 (backlog #765 / #789):** report V5 gives them their own ids (section
+    "Eight more child types from their own base rows" below).
   - `bip/Grants/` holds more than one data model (V1 + V2 recon, `GRANTS_DM`, `GRANTS_CMP_DM`); the contract's
     "one data model per folder" conflicts with the never-overwrite BIP versioning rule (V2 deployed alongside V1).
   - `DMT_GRANTS_RESULTS_PKG.find_report_ess_id` / `apply_award_import_report` are functions with nested

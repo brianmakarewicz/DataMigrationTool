@@ -36,10 +36,12 @@ AS
 -- (= TO_CHAR(SOURCE_LINE_ID) = TO_CHAR(the TFM STG_SEQUENCE_ID)). That coupling is
 -- what makes the join hit.
 --
--- After the transaction tier settles, a lot of a base-confirmed transaction is
--- LOADED with it (found outcome via the parent, not a fabricated verdict), and
--- outcomes stay on the TFM rows (no STG write, backlog #310). Serials prove
--- themselves LOADED through their own base tier.
+-- Lots and serials prove themselves LOADED through their own base tier, each
+-- with its own row-grain Fusion id (owner rule 2026-10-19, backlog #789): a lot
+-- from INV_TRANSACTION_LOT_NUMBERS (FUSION_LOT_ID = TRANSACTION_ID ~ lot
+-- GEN_OBJECT_ID), a serial from INV_SERIAL_NUMBERS (FUSION_SERIAL_ID). No row
+-- is LOADED by inheritance from its transaction. Outcomes stay on the TFM rows
+-- (no STG write, backlog #310).
 --
 -- Then PROPAGATE_DOCUMENT_ERRORS (backlog #167) quotes a rejected transaction's
 -- real Fusion error onto every not-LOADED lot and serial row of that transaction
@@ -59,6 +61,9 @@ AS
 --   2026-10-09  BM  Backlog #552: the lot LOADED cascade and the document
 --                   roll-up both find a child's transaction by the parent TFM
 --                   id the child carries in SOURCE_LINE_ID (one parent link).
+--   2026-10-20  BM  Backlog #789: the lot cascade is retired. A lot is LOADED
+--                   only on its own base row in report V5 (lot tier), with its
+--                   own id in FUSION_LOT_ID.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_MISC_RECEIPT_RESULTS_PKG';
@@ -306,32 +311,54 @@ AS
             END LOOP;
         END IF;
 
-        -- Cascade a base-confirmed transaction to its lot detail. A lot line is
-        -- child detail of an inventory transaction and loads with it in the same
-        -- FBDI, linked to it by the parent's TFM_SEQUENCE_ID the lot carries in
-        -- SOURCE_LINE_ID (backlog #552: the one parent link the generator and
-        -- PROPAGATE_DOCUMENT_ERRORS use too). A lot whose transaction
-        -- is base-confirmed LOADED is LOADED (found outcome via the parent, not a
-        -- fabricated verdict). A lot or serial whose transaction was rejected is
-        -- FAILED by PROPAGATE_DOCUMENT_ERRORS, quoting the transaction's real error.
-        -- A lot line loaded with its parent transaction, so it carries that
-        -- transaction's confirmed Fusion transaction id (backlog #11: a LOADED row
-        -- must store its Fusion base id for the audit trail). FUSION_TRANSACTION_ID
-        -- is stamped from the parent transaction's already-captured FUSION_ID (a
-        -- VARCHAR2 id column converted to the child's NUMBER column), not fabricated.
-        UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
-        SET    l.TFM_STATUS='LOADED',
-               l.FUSION_TRANSACTION_ID=(
-                   SELECT TO_NUMBER(t.FUSION_ID) FROM DMT_INV_TRX_TFM_TBL t
-                   WHERE  t.RUN_ID=p_run_id
-                   AND    t.TFM_SEQUENCE_ID=l.SOURCE_LINE_ID
-                   AND    t.TFM_STATUS='LOADED' AND ROWNUM=1),
-               l.RESULTS_UPDATED_DATE=SYSDATE, l.LAST_UPDATED_DATE=SYSDATE
-        WHERE  l.RUN_ID=p_run_id AND l.TFM_STATUS NOT IN ('LOADED','FAILED')
-        AND    (p_work_queue_id IS NULL OR l.WORK_QUEUE_ID = p_work_queue_id)
-        AND    EXISTS (SELECT 1 FROM DMT_INV_TRX_TFM_TBL t WHERE t.RUN_ID=p_run_id
-                       AND t.TFM_SEQUENCE_ID=l.SOURCE_LINE_ID
-                       AND t.TFM_STATUS='LOADED');
+        -- ===== TIER: LOT detail (OBJECT_TYPE = 'MiscReceipts Lot', backlog #789) =====
+        -- A lot is LOADED only on its OWN Fusion base row (owner rule 2026-10-19:
+        -- a row is LOADED only with its own row-grain Fusion id; the retired lot
+        -- cascade set every lot of a LOADED transaction LOADED with the
+        -- transaction's id). Report V5 returns each lot Fusion received on a
+        -- transaction of this load (INV_TRANSACTION_LOT_NUMBERS), keyed by the
+        -- transaction's SOURCE_LINE_ID ~ LOT_NUMBER, with FUSION_ID =
+        -- TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID. The lot TFM row is found
+        -- through its parent transaction (the lot's SOURCE_LINE_ID is the parent's
+        -- TFM_SEQUENCE_ID, backlog #552) whose RECON_KEY is that SOURCE_LINE_ID and
+        -- which is already LOADED; one Fusion lot row sets ONE lot TFM row (lowest
+        -- TFM_SEQUENCE_ID still waiting) and a Fusion id is never stored twice.
+        -- FUSION_TRANSACTION_ID keeps the transaction id (first segment) for the
+        -- Verify lookup. A lot with no Fusion row of its own stays GENERATED for
+        -- the unaccounted sweep; a lot of a rejected transaction is FAILED by
+        -- PROPAGATE_DOCUMENT_ERRORS. Runs after the loop so every transaction of
+        -- the fetch is already settled. Static UPDATE.
+        FOR i IN 1 .. l_rows.COUNT LOOP
+            IF l_rows(i).OBJECT_TYPE = 'MiscReceipts Lot'
+               AND l_rows(i).SOURCE_TYPE = 'BASE'
+               AND l_rows(i).FUSION_STATUS = 'SUCCESS'
+               AND l_rows(i).FUSION_ID IS NOT NULL
+               AND l_rows(i).RECORD_KEY IS NOT NULL THEN
+                UPDATE DMT_INV_TRX_LOTS_TFM_TBL l
+                SET    l.TFM_STATUS            = 'LOADED',
+                       l.FUSION_LOT_ID         = l_rows(i).FUSION_ID,
+                       l.FUSION_TRANSACTION_ID = TO_NUMBER(
+                           REGEXP_SUBSTR(l_rows(i).FUSION_ID, '^[0-9]+') DEFAULT NULL ON CONVERSION ERROR),
+                       l.RESULTS_UPDATED_DATE  = SYSDATE,
+                       l.LAST_UPDATED_DATE     = SYSDATE
+                WHERE  l.RUN_ID = p_run_id
+                AND    l.TFM_SEQUENCE_ID = (
+                           SELECT MIN(c.TFM_SEQUENCE_ID)
+                           FROM   DMT_INV_TRX_LOTS_TFM_TBL c
+                           JOIN   DMT_INV_TRX_TFM_TBL t
+                                  ON  t.RUN_ID          = c.RUN_ID
+                                  AND t.TFM_SEQUENCE_ID = c.SOURCE_LINE_ID
+                           WHERE  c.RUN_ID = p_run_id
+                           AND    (p_work_queue_id IS NULL OR c.WORK_QUEUE_ID = p_work_queue_id)
+                           AND    c.TFM_STATUS NOT IN ('LOADED', 'FAILED')
+                           AND    t.TFM_STATUS = 'LOADED'
+                           AND    t.RECON_KEY || '~' || c.LOT_NUMBER = l_rows(i).RECORD_KEY)
+                AND    NOT EXISTS (SELECT 1 FROM DMT_INV_TRX_LOTS_TFM_TBL x
+                                   WHERE  x.RUN_ID = p_run_id
+                                   AND    x.FUSION_LOT_ID = l_rows(i).FUSION_ID);
+                l_loaded := l_loaded + SQL%ROWCOUNT;
+            END IF;
+        END LOOP;
 
         -- Outcomes stay on the TFM rows only. Nothing is copied back to STG (backlog #310):
         -- a FAILED-mode rerun finds these rows through DMT_UTIL_PKG.FAILED_RETRY_SELECTED.
@@ -341,7 +368,7 @@ AS
             p_message   => C_PROC || ' complete. Report rows: ' || l_rows.COUNT
                            || ' | LOADED: ' || l_loaded
                            || ' | FAILED: ' || l_failed
-                           || ' | lots of LOADED transactions marked LOADED.',
+                           || ' (LOADED counts transactions, serials and lots, each on its own base row).',
             p_package   => C_PKG,
             p_procedure => C_PROC);
 

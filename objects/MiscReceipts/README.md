@@ -78,15 +78,25 @@ failed (the rows carry no cost). A reconcile-only rerun left every TFM row byte-
 regression harness 0 failures (its only review items are the pre-existing "no REST lookup
 configured" notes for this object); Playwright click-through PASS.
 
-## Known gap: lots and serials without their own Fusion id (owner rule 2026-10-19, backlog #789)
+## Lots and serials carry their own Fusion id (owner rule 2026-10-19, backlog #789)
 
 A row is LOADED only when it carries its own row-grain Fusion id (canonical definition:
-`docs/DMT_DESIGN.html`, Overview status table, LOADED row). Confirmation from the import report
-or from the parent transaction's id is not enough. The upload test of 2026-10-19 (backlog #786,
-`docs/findings/upload_tests_786.md`) found two MiscReceipts rows in the current baseline, one lot
-and one serial, that are LOADED without a Fusion id of their own. Under the rule those rows are
-not LOADED and MiscReceipts does not pass until the reconciler captures a real id for each lot
-and serial row, or leaves the row not LOADED. This is a gap to fix, not an exception.
+`docs/DMT_DESIGN.html`, Overview status table, LOADED row). The upload test of 2026-10-19
+(backlog #786) found the lot row LOADED by inheritance from its transaction and the serial row
+showing no id in the record view. Fixed 2026-10-20:
+
+- **Lots.** Recon report `DMT_INV_TRX_RECON_V5_DM` (alongside V1-V4) adds the tier
+  `MiscReceipts Lot`: each lot Fusion received on a transaction of this load, from
+  `INV_TRANSACTION_LOT_NUMBERS` (one row per transaction and lot, no surrogate key) joined to the
+  lot master `INV_LOT_NUMBERS`. `RECORD_KEY` = the transaction's `SOURCE_LINE_ID ~ LOT_NUMBER`,
+  `FUSION_ID` = `TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID`, stored in the new
+  `DMT_INV_TRX_LOTS_TFM_TBL.FUSION_LOT_ID`. The lot cascade (every lot of a LOADED transaction set
+  LOADED with the transaction's id) is retired; a lot with no Fusion row of its own stays
+  GENERATED and ends UNACCOUNTED.
+- **Serials.** They already stored `INV_SERIAL_NUMBERS.GEN_OBJECT_ID` in `FUSION_SERIAL_ID`; the
+  record view now shows it as the row's Fusion id.
+- Auditor rows `MiscReceipts.Lot` / `MiscReceipts.Serial` in `DMT_BIP_REPORT_TBL` let
+  `scripts/dmt_fusion_id_audit.sql` prove every LOADED lot and serial has a unique own id.
 
 ## Rejected transaction carries its error to its lots and serials (2026-10-08, backlog #167)
 

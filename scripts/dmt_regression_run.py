@@ -16,6 +16,9 @@ Checks performed after the run:
          BAD-row outcomes -> must be FAILED (never counted good-failed)
        - all other rows                                   -> must be LOADED
        - every FAILED row must have non-empty ERROR_TEXT
+       - every GOOD LOADED row must carry its own Fusion id (FUSION_ID in
+         DMT_RECORD_DETAIL_V; owner rule 2026-10-19, backlog #789: an
+         import-report success line or the parent's id is not enough)
        - rows the scenario lists in scripts/regression_scenario.json
          "expected_outcomes" are judged against that list instead of the
          key markers: LOADED, FAILED (own error), or FAILED_WITH_DOCUMENT
@@ -525,7 +528,7 @@ def evaluate(run_id, baseline_arg):
     # ---- 2. record-level verdicts ---------------------------------------
     cur.execute("""SELECT CEMLI_CODE, SUB_OBJECT, DISPLAY_KEY, TFM_STATUS,
                           DBMS_LOB.SUBSTR(ERROR_TEXT, 300, 1), STG_SEQUENCE_ID,
-                          NVL(DBMS_LOB.INSTR(ERROR_TEXT, :marker), 0)
+                          NVL(DBMS_LOB.INSTR(ERROR_TEXT, :marker), 0), FUSION_ID
                    FROM DMT_RECORD_DETAIL_V WHERE RUN_ID = :run_id""", {"run_id": run_id, "marker": DOC_ERROR_MARKER})
     records = cur.fetchall()
     spec = load_expected_outcomes(scenario)
@@ -543,12 +546,13 @@ def evaluate(run_id, baseline_arg):
         result['failures'].append(f"expected row not in run: {m}")
     expect_fail = {}
     per_obj = {}
-    for cemli, sub, key, status, err, stg_seq, doc_pos in records:
+    for cemli, sub, key, status, err, stg_seq, doc_pos, fusion_id in records:
         s = per_obj.setdefault(sub, {'cemli': cemli, 'LOADED': 0, 'FAILED': 0, 'OTHER': 0,
                                      'good_loaded': 0, 'good_failed': 0,
                                      'bad_loaded': 0, 'bad_failed': 0,
                                      'bad_loaded_keys': {}, 'good_failed_keys': {},
-                                     'no_error_keys': {}, 'other_keys': {}})
+                                     'no_error_keys': {}, 'other_keys': {},
+                                     'no_id_keys': {}})
         err_txt = ' '.join(str(err or '').split())  # collapse newlines
         exp = expected.get((sub, stg_seq))
         if exp:
@@ -574,6 +578,10 @@ def evaluate(run_id, baseline_arg):
             s['bad_loaded' if bad else 'good_loaded'] += 1
             if bad:
                 s['bad_loaded_keys'][key] = s['bad_loaded_keys'].get(key, 0) + 1
+            elif not fusion_id:
+                # Owner rule 2026-10-19 (backlog #789): LOADED only with the row's
+                # own Fusion id; a GOOD row LOADED without one fails the test.
+                s['no_id_keys'][key] = s['no_id_keys'].get(key, 0) + 1
         elif status == 'FAILED':
             s['FAILED'] += 1
             s['bad_failed' if bad else 'good_failed'] += 1
@@ -597,6 +605,8 @@ def evaluate(run_id, baseline_arg):
             flags.append(f"{s['bad_loaded']} BAD-LOADED")
         if s['no_error_keys']:
             flags.append(f"{sum(s['no_error_keys'].values())} no-error-text")
+        if s['no_id_keys']:
+            flags.append(f"{sum(s['no_id_keys'].values())} LOADED-without-own-Fusion-id")
         marker = 'FAIL ' if flags else '     '
         print(f"    {marker}{sub:35s} {s['LOADED']}L/{s['FAILED']}F"
               + (f"/{s['OTHER']}other" if s['OTHER'] else '')
@@ -627,6 +637,9 @@ def evaluate(run_id, baseline_arg):
         if s['no_error_keys']:
             result['failures'].append(
                 f"FAILED rows with EMPTY error text: {sub}: {sample(s['no_error_keys'])}")
+        if s['no_id_keys']:
+            result['failures'].append(
+                f"GOOD rows LOADED without their own Fusion id: {sub}: {sample(s['no_id_keys'])}")
         for key, status in s['other_keys'].items():
             result['failures'].append(f"row in non-terminal status {status}: {sub} / {key}")
     result['record_rollup'] = {
