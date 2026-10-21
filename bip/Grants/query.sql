@@ -1,4 +1,20 @@
 -- ============================================================
+-- Grants reconciliation data model V6 (2026-10-20, backlog #240 /
+-- #768). Owner-approved exception (2026-10-20, design section 5):
+-- an FBDI award carries no job id (OKC_K_HEADERS_ALL_B.REQUEST_ID,
+-- GMS_AWARD_HEADERS_B.DC_REQUEST_ID and SUMMARY_REQUEST_ID are NULL;
+-- GMS_AWARD_MASS_IMPORT_JOBS holds only job-level counts), so the
+-- award tier is selected like the V4/V5 child tiers: AWARD_SOURCE =
+-- 'FBDI' and created between PROCESSSTART and PROCESSEND of the
+-- run's own import job (P_IMPORT_ESS_ID). The contract-number prefix
+-- selector is gone; the award number is only the RECORD_KEY that
+-- matches a returned award to its TFM row. An award another import
+-- created in the same window is returned but matches no TFM row of
+-- this run, so it (and its children) changes nothing. Everything
+-- else is V5 unchanged.
+-- ============================================================
+-- (V5 history follows.)
+-- ============================================================
 -- Grants reconciliation data model V5 (2026-10-20, backlog #765 /
 -- #789). Owner rule 2026-10-19: a row is LOADED only with its own
 -- row-grain Fusion id; a success line in the Award Batch Import
@@ -99,8 +115,9 @@ WITH import_job AS (
     WHERE  h.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
 ),
 award_base AS (
-    -- Awards that reached GMS_AWARD_HEADERS_B, found by their (prefixed)
-    -- contract number (selection unchanged from V2/V3, backlog #240).
+    -- Awards that reached GMS_AWARD_HEADERS_B, created by FBDI while the
+    -- run's own import job ran (V6, backlog #240 / #768). The contract
+    -- number is read only as the award number that matches the TFM row.
     SELECT b.id               AS award_id,
            k.contract_number  AS award_number,
            b.award_source     AS award_source,
@@ -109,8 +126,10 @@ award_base AS (
     JOIN   okc_k_headers_all_b k
            ON  k.id           = b.id
            AND k.version_type = 'C'
-    WHERE  k.contract_number LIKE :P_PREFIX || '%'
-    AND    b.award_source    = 'FBDI'
+    CROSS JOIN import_job j
+    WHERE  b.award_source    = 'FBDI'
+    AND    b.creation_date  >= j.job_start
+    AND    (j.job_end IS NULL OR b.creation_date <= j.job_end)
 ),
 recon_rows AS (
     -- Tier: BASE award.

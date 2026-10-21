@@ -155,6 +155,11 @@ begin
     line('Grants.Project',       A||'~PRG10008',                         920006);
     line('Grants.FundingSource', A||'~STATE GOVERNMENT',                 920007);
     line('Grants.ProjectFundingSource', A||'~PRG10008~STATE GOVERNMENT', 920008);
+    -- An award another import created in the same job window (report V6, backlog #240):
+    -- returned by the report, but no TFM row of this run has its award number.
+    line('Grants',               'UTGNB-OTHER',                          920090);
+    line('Grants.Project',       'UTGNB-OTHER~PRG10008',                 920091);
+    line('Grants.Personnel',     'UTGNB-OTHER~PRINCIPAL INVESTIGATOR~',  920092);
 
     dmt_grants_results_pkg.apply_award_child_rows(
         p_run_id      => l_run,
@@ -187,7 +192,7 @@ begin
     select tfm_status, fusion_cfda_id into l_st, l_id from dmt_gms_awd_cfdas_tfm_tbl where run_id = l_run and cfda = '47.074';
     ok('B5 a FAILED child is never touched', l_st = 'FAILED' and l_id is null);
 
-    ok('B6/B9 only the 14 matching child rows changed (template term, extra Fusion rows, award and interface rows ignored)', l_loaded = 14);
+    ok('B6/B9 only the 14 matching child rows changed (template term, extra Fusion rows, another import''s award, award and interface rows ignored)', l_loaded = 14);
 
     select (select count(*) from dmt_gms_awd_personnel_tfm_tbl    where run_id = l_run and tfm_status = 'LOADED' and fusion_personnel_id = 920001)
          + (select count(*) from dmt_gms_awd_funding_tfm_tbl      where run_id = l_run and tfm_status = 'LOADED' and fusion_funding_id = 920002)

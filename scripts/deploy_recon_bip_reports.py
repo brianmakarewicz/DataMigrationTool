@@ -303,6 +303,9 @@ REPORTS = [
     # Grants V5 (2026-10-20, backlog #765 / #789): V4 plus the eight remaining
     # award child tiers, each with its own Fusion id. Alongside V1-V4.
     ("Grants",                  "DMT_GRANT_RECON_V5_DM",                 "DMT_GRANT_RECON_V5_RPT"),
+    # Grants V6 (2026-10-20, backlog #240 / #768): awards found by the import job's
+    # window (AWARD_SOURCE FBDI), never by prefix. Alongside V1-V5.
+    ("Grants",                  "DMT_GRANT_RECON_V6_DM",                 "DMT_GRANT_RECON_V6_RPT"),
     ("Items",                  "DMT_ITEM_RECON_V5_DM",                  "DMT_ITEM_RECON_V5_RPT"),
     ("Lookups",                 "DMT_LOOKUP_RECON_V2_DM",                "DMT_LOOKUP_RECON_V2_RPT"),
     ("MiscReceipts",            "DMT_INV_TRX_RECON_V4_DM",               "DMT_INV_TRX_RECON_V4_RPT"),

@@ -35,7 +35,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1712,7 +1712,9 @@ commit;
 --                   stores. V1 keyed on SPONSOR_AWARD_NUMBER and scoped by
 --                   DC_REQUEST_ID; both are NULL on FBDI-created awards
 --                   (docs/findings/known_good_Grants.md), so V1 could never find a
---                   loaded award. V2 scopes by CONTRACT_NUMBER LIKE prefix||'%'.
+--                   loaded award. V2 scoped by CONTRACT_NUMBER LIKE prefix||'%'; V6 (backlog #240 /
+--                   #768, approved exception 2026-10-20) selects FBDI awards created inside
+--                   the run's import job window instead (the award number only matches).
 -- Grants loads on the demo pod when submitted as PPM_IMPL (interface options row
 -- 57 carries the per-object user). Real per-award rejection messages come from
 -- Fusion's Award Batch Import Report (interface table is purged after import);
@@ -1723,8 +1725,8 @@ using (
     select 100000007                                            bip_report_id,
            'Grants'                                             cemli_code,
            'Grant/Award'                                        object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
              || 'Award header tier plus 14 child tiers (V5); every child on its own base row. '
@@ -1738,7 +1740,9 @@ using (
              || 'V5 (2026-10-20, backlog #765 / #789): also the personnel, funding, funding '
              || 'allocation, budget period, org credit, project, funding source and project '
              || 'funding source rows, each with its own Fusion id; no child is LOADED from an '
-             || 'import-report success line. Deployed alongside V1-V4, never overwriting them.' notes,
+             || 'import-report success line. V6 (2026-10-20, backlog #240 / #768, approved exception): '
+             || 'awards found by AWARD_SOURCE FBDI created in the run''s import job window, never by '
+             || 'prefix. Deployed alongside V1-V5, never overwriting them.' notes,
            1                                                    contract_version,
            'DMT_GMS_AWD_HEADERS_TFM_TBL'                        tfm_table,
            'FUSION_AWARD_ID'                                    fusion_id_column,
@@ -3670,8 +3674,8 @@ using (
     select 100000067                                            bip_report_id,
            'Grants.Keyword'                                  cemli_code,
            'Award Keyword'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Keyword award keyword tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3718,8 +3722,8 @@ using (
     select 100000068                                            bip_report_id,
            'Grants.Term'                                  cemli_code,
            'Award Term'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Term award term tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3766,8 +3770,8 @@ using (
     select 100000069                                            bip_report_id,
            'Grants.Certification'                                  cemli_code,
            'Award Certification'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Certification award certification tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3814,8 +3818,8 @@ using (
     select 100000070                                            bip_report_id,
            'Grants.Cfda'                                  cemli_code,
            'Award CFDA'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Cfda award CFDA tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3862,8 +3866,8 @@ using (
     select 100000071                                            bip_report_id,
            'Grants.Reference'                                  cemli_code,
            'Award Reference'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Reference award reference tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3910,8 +3914,8 @@ using (
     select 100000072                                            bip_report_id,
            'Grants.TaskBurden'                                  cemli_code,
            'Award Project Task Burden Schedule'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.TaskBurden task burden schedule tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -3958,8 +3962,8 @@ using (
     select 100000073                                            bip_report_id,
            'Grants.Personnel'                                  cemli_code,
            'Award Personnel'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Personnel award personnel tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4006,8 +4010,8 @@ using (
     select 100000074                                            bip_report_id,
            'Grants.Funding'                                  cemli_code,
            'Award Funding'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Funding award funding tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4054,8 +4058,8 @@ using (
     select 100000075                                            bip_report_id,
            'Grants.FundAllocation'                                  cemli_code,
            'Award Funding Allocation'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.FundAllocation funding allocation tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4102,8 +4106,8 @@ using (
     select 100000076                                            bip_report_id,
            'Grants.BudgetPeriod'                                  cemli_code,
            'Award Budget Period'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.BudgetPeriod budget period tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4150,8 +4154,8 @@ using (
     select 100000077                                            bip_report_id,
            'Grants.OrgCredit'                                  cemli_code,
            'Award Organization Credit'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.OrgCredit organization credit tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4198,8 +4202,8 @@ using (
     select 100000078                                            bip_report_id,
            'Grants.Project'                                  cemli_code,
            'Award Project'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.Project award project tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4246,8 +4250,8 @@ using (
     select 100000079                                            bip_report_id,
            'Grants.FundingSource'                                  cemli_code,
            'Award Funding Source'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.FundingSource award funding source tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
@@ -4294,8 +4298,8 @@ using (
     select 100000080                                            bip_report_id,
            'Grants.ProjectFundingSource'                                  cemli_code,
            'Award Project Funding Source'                                  object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V6_RPT.xdo'      report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                                  interface_table,
            'Grants.ProjectFundingSource project funding source tier -- AUDITOR registration only (backlog #767 / #789). '
              || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '

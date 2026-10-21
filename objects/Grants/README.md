@@ -160,8 +160,7 @@ the V3 award tiers and UNIONs six child tiers into the same nine-column result:
 - **Selection.** The child tables carry no job id. A child row is read only for an award the same
   report confirms (its BASE award tier), and only when Fusion created it between the start and
   end of the run's own import job (`FUSION_ORA_ESS.REQUEST_HISTORY` for `P_IMPORT_ESS_ID`). The
-  prefix never selects a child. (The award tier itself is still found by contract number,
-  backlog #240.)
+  prefix never selects a child. (Since report V6 the award tier is found the same way, below.)
 - **Paging.** PAGE_KEY = the award number; a page is the next BIP_CHUNK_SIZE awards plus every
   row of them (design section 5, header paging).
 - **Apply.** `DMT_GRANTS_RESULTS_PKG.APPLY_AWARD_CHILD_ROWS` runs after the award-header pass:
@@ -186,6 +185,16 @@ the V3 award tiers and UNIONs six child tiers into the same nine-column result:
   300000335128458, term 300000335128463, certification 300000335128460, CFDA 300000335128464,
   reference 300000335128459 and task burden schedule 300000335128471 stored on their own rows and read
   back under that award. Grants 33 LOADED / 23 FAILED with real errors / 0 UNACCOUNTED; harness PASS.
+
+## Awards found by the import job's window (backlog #240 / #768, 2026-10-20)
+Owner-approved exception (design section 5, next to GLBalances): FBDI awards carry no job id
+(`OKC_K_HEADERS_ALL_B.REQUEST_ID`, `GMS_AWARD_HEADERS_B.DC_REQUEST_ID` / `SUMMARY_REQUEST_ID` are
+NULL; `GMS_AWARD_MASS_IMPORT_JOBS` has only job counts). Report `DMT_GRANT_RECON_V6_DM` (alongside
+V1-V5) selects base awards by `AWARD_SOURCE = 'FBDI'` and `CREATION_DATE` inside the run's
+`AwardMassImportJob` window (`FUSION_ORA_ESS.REQUEST_HISTORY`), the window the child tiers already
+use. The contract-number `LIKE :P_PREFIX || '%'` selector is gone; the award number only matches the
+returned award to its TFM row. An award another import made in the same window matches no TFM row,
+so it and its children change nothing.
 
 ## Eight more child types from their own base rows (backlog #765 / #789, 2026-10-20)
 Owner rule 2026-10-19: a row is LOADED only with its own row-grain Fusion id. Report

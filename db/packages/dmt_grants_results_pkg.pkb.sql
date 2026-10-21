@@ -8,7 +8,7 @@ AS
 -- Award headers are reconciled through the ONE shared Contract v1 fetch
 -- (DMT_RECON_CONTRACT_PKG.FETCH_ROWS), the same multi-tier template proven on
 -- Requisitions (PR #364) and Workers. A single FETCH_ROWS call runs the
--- nine-column Grants recon report (DMT_GRANT_RECON_V4_DM.xdm) over BIP and returns
+-- nine-column Grants recon report (DMT_GRANT_RECON_V6_DM.xdm) over BIP and returns
 -- the parsed rows; the APPLY is STATIC SQL against the compile-time-known award
 -- header TFM table (Option A, owner decision on PR #248 -- no dynamic SQL here).
 --
@@ -93,6 +93,9 @@ AS
 --                   APPLY_AWARD_CHILD_ROWS stores their own ids. The report
 --                   success lines (APPLY_CHILD_REPORT_SUCCESSES) are retired:
 --                   no row is LOADED from an import-report line any more.
+--                   Report V6 (backlog #240 / #768, approved exception): awards are
+--                   found by the import job's window, never by prefix; an award of
+--                   another import in that window matches no TFM row.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_GRANTS_RESULTS_PKG';
