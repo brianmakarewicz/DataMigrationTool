@@ -1,4 +1,23 @@
 -- ============================================================
+-- DMT_INV_TRX_RECON_V5_DM (2026-10-20, backlog #789), deployed
+-- ALONGSIDE V1-V4 (never overwritten). One change from V3/V4: a lot
+-- tier. Owner rule 2026-10-19: a row is LOADED only with its own
+-- row-grain Fusion id. A lot row used to be LOADED by inheritance from
+-- its transaction, with only the transaction's id. V5 returns each lot
+-- Fusion received on a transaction of this load, read from
+-- INV_TRANSACTION_LOT_NUMBERS (one row per transaction and lot; the
+-- table has no surrogate key) joined to the lot master
+-- INV_LOT_NUMBERS for the lot's own id:
+--   OBJECT_TYPE 'MiscReceipts Lot'
+--   RECORD_KEY  the transaction's SOURCE_LINE_ID ~ LOT_NUMBER
+--   FUSION_ID   TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID
+--               (row grain: this lot on this transaction)
+-- Lots are selected only through a transaction of this load (load job
+-- id), never by prefix. FUSION_ID is a string on every tier now (the
+-- lot id is a composite), so the other tiers return TO_CHAR(id).
+-- ============================================================
+-- (V3 history follows.)
+-- ============================================================
 -- DMT_INV_TRX_RECON_V3_DM (2026-10-09), deployed ALONGSIDE V1 and V2
 -- (never overwritten). One change from V2: HEADER PAGING (owner
 -- decision 2026-10-09, design section 5 "Reconciliation fetches page
@@ -76,7 +95,7 @@ WITH recon_rows AS (
         TO_CHAR(t.source_line_id)            AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        t.transaction_id                     AS fusion_id,
+        TO_CHAR(t.transaction_id)            AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         t.load_request_id                    AS load_request_id,
         t.transaction_reference              AS source_ref,
@@ -95,7 +114,7 @@ WITH recon_rows AS (
         TO_CHAR(t.source_line_id)            AS record_key,
         'INTERFACE'                          AS source_type,
         'ERROR'                              AS fusion_status,
-        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(200))          AS fusion_id,
         CASE WHEN (NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation) IS NOT NULL
              THEN '[TXN] ' || NVL2(t.error_code, t.error_code || ': ', NULL) || t.error_explanation END
                                              AS error_message,
@@ -120,7 +139,7 @@ WITH recon_rows AS (
         s.serial_number                      AS record_key,
         'BASE'                               AS source_type,
         'SUCCESS'                            AS fusion_status,
-        s.gen_object_id                      AS fusion_id,
+        TO_CHAR(s.gen_object_id)             AS fusion_id,
         CAST(NULL AS VARCHAR2(4000))         AS error_message,
         t.load_request_id                    AS load_request_id,
         s.serial_number                      AS source_ref,
@@ -128,6 +147,33 @@ WITH recon_rows AS (
         TO_CHAR(t.source_line_id)            AS page_key
     FROM   inv_serial_numbers s
     JOIN   inv_material_txns  t ON t.transaction_id = s.last_transaction_id
+    WHERE  t.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
+
+    UNION ALL
+
+    -- BASE / lots (backlog #789) -- a lot received on a transaction of
+    -- this load. INV_TRANSACTION_LOT_NUMBERS holds one row per
+    -- transaction and lot; INV_LOT_NUMBERS gives the lot its own id.
+    -- RECORD_KEY = the transaction's SOURCE_LINE_ID ~ LOT_NUMBER;
+    -- FUSION_ID = TRANSACTION_ID ~ the lot's GEN_OBJECT_ID.
+    SELECT
+        'MiscReceipts Lot'                   AS object_type,
+        TO_CHAR(t.source_line_id) || '~' || tl.lot_number
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        TO_CHAR(tl.transaction_id) || '~' || TO_CHAR(ln.gen_object_id)
+                                             AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        t.load_request_id                    AS load_request_id,
+        tl.lot_number                        AS source_ref,
+        tl.lot_number                        AS dmt_reference,
+        TO_CHAR(t.source_line_id)            AS page_key
+    FROM   inv_transaction_lot_numbers tl
+    JOIN   inv_material_txns  t  ON t.transaction_id = tl.transaction_id
+    JOIN   inv_lot_numbers    ln ON ln.lot_number        = tl.lot_number
+                                AND ln.inventory_item_id = tl.inventory_item_id
+                                AND ln.organization_id   = tl.organization_id
     WHERE  t.load_request_id = TO_NUMBER(:P_LOAD_REQUEST_ID)
 ),
 -- V3 header keyset (backlog #689). The page's headers are the next

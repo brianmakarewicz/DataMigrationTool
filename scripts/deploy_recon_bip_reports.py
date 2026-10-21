@@ -300,9 +300,15 @@ REPORTS = [
     # tiers, each with its own Fusion id; pages by award (PAGE_KEY). Deployed
     # alongside V1-V3 (never overwritten).
     ("Grants",                  "DMT_GRANT_RECON_V4_DM",                 "DMT_GRANT_RECON_V4_RPT"),
-    ("Items",                   "DMT_ITEM_RECON_V5_DM",                  "DMT_ITEM_RECON_V5_RPT"),
+    # Grants V5 (2026-10-20, backlog #765 / #789): V4 plus the eight remaining
+    # award child tiers, each with its own Fusion id. Alongside V1-V4.
+    ("Grants",                  "DMT_GRANT_RECON_V5_DM",                 "DMT_GRANT_RECON_V5_RPT"),
+    ("Items",                  "DMT_ITEM_RECON_V5_DM",                  "DMT_ITEM_RECON_V5_RPT"),
     ("Lookups",                 "DMT_LOOKUP_RECON_V2_DM",                "DMT_LOOKUP_RECON_V2_RPT"),
     ("MiscReceipts",            "DMT_INV_TRX_RECON_V4_DM",               "DMT_INV_TRX_RECON_V4_RPT"),
+    # MiscReceipts V5 (2026-10-20, backlog #789): V4 plus a lot tier, each lot with
+    # its own row-grain Fusion id. Alongside V1-V4.
+    ("MiscReceipts",            "DMT_INV_TRX_RECON_V5_DM",               "DMT_INV_TRX_RECON_V5_RPT"),
     ("PayrollRelationships",    "DMT_PAYROLLRELATIONSHIPS_RECON_V2_DM",  "DMT_PAYROLLRELATIONSHIPS_RECON_V2_RPT"),
     ("ProjectBudgets",          "DMT_PRJ_BUDGET_RECON_V5_DM",            "DMT_PRJ_BUDGET_RECON_V5_RPT"),
     ("Projects",                "DMT_PROJECT_RECON_V4_DM",               "DMT_PROJECT_RECON_V4_RPT"),

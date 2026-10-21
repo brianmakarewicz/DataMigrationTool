@@ -39,8 +39,8 @@
     -- the caller supplies (backlog #568; transport and parse are separable,
     -- design section 7). Applies an Award Batch Import Report XML to this run's
     -- TFM rows exactly as the reconcile does after its base-table pass: child
-    -- and award rejections FAILED with their own error, children of LOADED
-    -- awards LOADED only on their own success line, then the whole-document
+    -- and award rejections FAILED with their own error (no row is ever set
+    -- LOADED from a success line, backlog #789), then the whole-document
     -- quote onto the other rows of each rejected award. Used by the unit test
     -- test/unit/test_grants_child_accounting.sql. NO COMMIT.
     -- x_error_code = DMT_UTIL_PKG.C_SUCCESS / C_ERROR (failure logged).
@@ -52,9 +52,12 @@
         x_error_code  OUT NUMBER
     );
     -- APPLY_AWARD_CHILD_ROWS -- the child-tier half of the reconcile (backlog
-    -- #671). Takes the parsed Grants recon report rows (V4) and, for every
-    -- BASE / SUCCESS row of the six child tiers (Grants.Keyword, Grants.Term,
-    -- Grants.Certification, Grants.Cfda, Grants.Reference, Grants.TaskBurden),
+    -- #671 / #765 / #789). Takes the parsed Grants recon report rows (V5) and,
+    -- for every BASE / SUCCESS row of the 14 child tiers (Grants.Keyword,
+    -- Grants.Term, Grants.Certification, Grants.Cfda, Grants.Reference,
+    -- Grants.TaskBurden, Grants.Personnel, Grants.Funding, Grants.FundAllocation,
+    -- Grants.BudgetPeriod, Grants.OrgCredit, Grants.Project,
+    -- Grants.FundingSource, Grants.ProjectFundingSource),
     -- sets ONE child TFM row of this run LOADED and stores the row's own Fusion
     -- id in its FUSION_*_ID column. The row is matched on the award number plus
     -- the business key DMT sent (the same '~'-joined key the report builds), is

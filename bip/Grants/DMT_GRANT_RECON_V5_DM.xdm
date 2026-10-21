@@ -1,0 +1,583 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DMT_GRANT_RECON_V5_DM (2026-10-20, backlog #765 / #789): V4 unchanged plus the eight remaining award child tiers (personnel, funding, funding allocation, budget period, organization credit, project, funding source, project funding source), read from their base tables only for awards this report confirms and only for rows Fusion created while the run import job ran, each with its own Fusion id. Deployed alongside V1-V4, which are never overwritten; the report wrapper is deployed with BIP data caching off. -->
+<dataModel xmlns="http://xmlns.oracle.com/oxp/xmlp" version="2.1"
+           defaultDataSourceRef="ApplicationDB_FSCM">
+  <dataProperties>
+    <property name="include_parameters" value="true"/>
+    <property name="include_null_Element" value="true"/>
+    <property name="include_rowsettag" value="false"/>
+    <property name="xml_tag_case" value="upper"/>
+  </dataProperties>
+  <dataSets>
+    <dataSet name="grant_recon_results" type="complex">
+      <sql dataSourceRef="ApplicationDB_FSCM"><![CDATA[
+-- ============================================================
+-- Grants reconciliation data model V5 (2026-10-20, backlog #765 /
+-- #789). Owner rule 2026-10-19: a row is LOADED only with its own
+-- row-grain Fusion id; a success line in the Award Batch Import
+-- Report is not enough. V5 keeps V4 unchanged and UNIONs the eight
+-- remaining award child base tables, selected exactly like the V4
+-- child tiers (through an award this report confirms, created while
+-- the run's import job ran, never by prefix):
+--   BASE Grants.Personnel            GMS_AWARD_PERSONNEL.ID
+--        award~ROLE NAME~project number
+--   BASE Grants.Funding              GMS_AWARD_FUNDINGS_B.ID
+--        award~BUDGET PERIOD~ISSUE NUMBER~FUNDING SOURCE NAME
+--   BASE Grants.FundAllocation       GMS_AWARD_FUND_ALLOCATIONS.ID
+--        award~ISSUE NUMBER~project number
+--   BASE Grants.BudgetPeriod         GMS_AWARD_BUDGET_PERIODS.ID
+--        award~BUDGET PERIOD
+--   BASE Grants.OrgCredit            GMS_AWARD_DEPARTMENT_CREDITS.ID
+--        award~project number~ORGANIZATION NAME
+--   BASE Grants.Project              GMS_AWARD_PROJECTS.ID
+--        award~project number
+--   BASE Grants.FundingSource        GMS_AWARD_FUNDING_SOURCES_B.ID
+--        award~FUNDING SOURCE NAME
+--   BASE Grants.ProjectFundingSource GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID
+--        award~project number~FUNDING SOURCE NAME
+-- (names upper-cased). Fusion can create base rows no CSV row sent
+-- (a second personnel row for one PI, backlog #671; an award-level
+-- organization credit for a project credit); their keys match no
+-- TFM row and change nothing.
+-- ============================================================
+-- (V4 history follows.)
+-- ============================================================
+-- Grants reconciliation data model V4 -- BIP reconciliation report
+-- contract v1 (nine columns plus PAGE_KEY, header paging, the six
+-- standard parameters). Deployed ALONGSIDE V1, V2 and V3, never
+-- overwriting them. bip/Grants/query.sql is a byte-for-byte copy of
+-- this SQL text (section 7: repo query must exactly match the
+-- deployed query).
+--
+-- WHY V4 (backlog #671, owner direction 2026-10-10): six award child
+-- types (terms, keywords, certifications, CFDAs, references, task
+-- burden schedules) have no success group in Fusion's Award Batch
+-- Import Report, so they could never be LOADED, and no child row got
+-- its own Fusion id. V4 keeps the award tiers of V3 unchanged and
+-- UNIONs the six child base tables into the same report. A child row
+-- is selected ONLY through an award this same report confirms (the
+-- award_base rows below), and only when Fusion created it while this
+-- run's import job (P_IMPORT_ESS_ID) was running. It is never
+-- selected by the prefix. The child tables carry no job id of their
+-- own (verified 2026-10-09 / 2026-10-10: no request-id column).
+--
+-- AWARD tier selection is unchanged from V2/V3: an FBDI award carries
+-- no request id (GMS_AWARD_HEADERS_B.DC_REQUEST_ID, SUMMARY_REQUEST_ID
+-- and OKC_K_HEADERS_ALL_B.REQUEST_ID are NULL), so the award is found
+-- by its contract number (backlog #240, still open).
+--
+-- NINE response columns, in contract order, then PAGE_KEY:
+--   OBJECT_TYPE, RECORD_KEY, SOURCE_TYPE, FUSION_STATUS,
+--   FUSION_ID, ERROR_MESSAGE, LOAD_REQUEST_ID, SOURCE_REF,
+--   DMT_REFERENCE, PAGE_KEY.
+-- SIX parameters: P_RUN_ID, P_LOAD_REQUEST_ID, P_IMPORT_ESS_ID,
+--   P_PREFIX, P_CHUNK_SIZE, P_AFTER_KEY.
+--
+-- Tiers (SOURCE_TYPE / OBJECT_TYPE):
+--   BASE      Grants                award in GMS_AWARD_HEADERS_B.
+--                                   FUSION_ID = GMS_AWARD_HEADERS_B.ID.
+--   INTERFACE Grants                award-header rejection left in
+--                                   GMS_AWARD_HEADERS_INT (normally zero
+--                                   rows: Fusion purges it after import;
+--                                   the real messages come from the Award
+--                                   Batch Import Report).
+--   BASE      Grants.Keyword        GMS_AWARD_KEYWORDS.ID
+--   BASE      Grants.Term           GMS_AWARD_TERMS_B.ID
+--   BASE      Grants.Certification  GMS_AWARD_CERTS_B.ID
+--   BASE      Grants.Cfda           GMS_AWARD_CFDAS.ID
+--   BASE      Grants.Reference      GMS_AWARD_REFERENCES_B.ID
+--   BASE      Grants.TaskBurden     GMS_AWD_PRJ_TSK_BRD_SCHEDULES.ID
+-- A child's RECORD_KEY is the award number followed by the business
+-- key DMT sent in the CSV, joined with '~' (names upper-cased):
+--   keyword        award~KEYWORD NAME~project number
+--   term           award~TERM CATEGORY NAME~TERM NAME
+--   certification  award~CERTIFICATION NAME~project number
+--   cfda           award~cfda
+--   reference      award~REFERENCE TYPE NAME~project number~value
+--   task burden    award~project number~task number
+-- DMT_GRANTS_RESULTS_PKG builds the same key from the child TFM row
+-- and stores FUSION_ID in that row's own FUSION_*_ID column.
+--
+-- Header paging (design section 5, "Reconciliation fetches page on
+-- header boundaries"): PAGE_KEY is the award number. A page is the next
+-- P_CHUNK_SIZE award numbers after P_AFTER_KEY (BINARY order) plus every
+-- row of those awards, children included. No row cap.
+-- ============================================================
+WITH import_job AS (
+    -- The run's own import job: its start and end bound the child rows
+    -- Fusion created for this load.
+    SELECT h.processstart AS job_start,
+           h.processend   AS job_end
+    FROM   fusion_ora_ess.request_history h
+    WHERE  h.requestid = TO_NUMBER(:P_IMPORT_ESS_ID)
+),
+award_base AS (
+    -- Awards that reached GMS_AWARD_HEADERS_B, found by their (prefixed)
+    -- contract number (selection unchanged from V2/V3, backlog #240).
+    SELECT b.id               AS award_id,
+           k.contract_number  AS award_number,
+           b.award_source     AS award_source,
+           b.attribute1       AS attribute1
+    FROM   gms_award_headers_b b
+    JOIN   okc_k_headers_all_b k
+           ON  k.id           = b.id
+           AND k.version_type = 'C'
+    WHERE  k.contract_number LIKE :P_PREFIX || '%'
+    AND    b.award_source    = 'FBDI'
+),
+recon_rows AS (
+    -- Tier: BASE award.
+    SELECT
+        'Grants'                             AS object_type,
+        a.award_number                       AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        a.award_id                           AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        a.award_source                       AS source_ref,
+        a.attribute1                         AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+
+    UNION ALL
+
+    -- Tier: INTERFACE award-header rejections left behind (normally zero
+    -- rows; Fusion purges the interface table after import).
+    SELECT
+        'Grants'                             AS object_type,
+        h.award_number                       AS record_key,
+        'INTERFACE'                          AS source_type,
+        'ERROR'                              AS fusion_status,
+        CAST(NULL AS NUMBER)                 AS fusion_id,
+        CASE WHEN NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                '') IS NOT NULL
+             THEN '[AWARD] ' || NULLIF(
+                h.processed_message
+                || CASE WHEN h.message_user_details IS NOT NULL
+                        THEN ' | ' || h.message_user_details ELSE '' END
+                || CASE WHEN h.message_user_action IS NOT NULL
+                        THEN ' | Action: ' || h.message_user_action ELSE '' END,
+                '')
+        END                                  AS error_message,
+        h.load_request_id                    AS load_request_id,
+        h.award_number                       AS source_ref,
+        h.attribute1                         AS dmt_reference,
+        h.award_number                       AS page_key
+    FROM   gms_award_headers_int h
+    WHERE  h.load_request_id = :P_LOAD_REQUEST_ID
+    AND    NVL(UPPER(h.processed_status),'X') NOT IN ('SUCCESS','S','PROCESSED')
+
+    UNION ALL
+
+    -- Tier: BASE award keyword (award level, or one award project).
+    SELECT
+        'Grants.Keyword'                     AS object_type,
+        a.award_number || '~' || UPPER(kv.keyword_name) || '~' || p.segment1
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        kv.keyword_name                      AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_keywords c        ON c.award_id = a.award_id
+    JOIN   gms_keywords_vl kv          ON kv.keyword_id = c.keyword
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award term.
+    SELECT
+        'Grants.Term'                        AS object_type,
+        a.award_number || '~' || UPPER(tc.term_category_name) || '~' || UPPER(tv.term_name)
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        tv.term_name                         AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_terms_b c         ON c.award_id = a.award_id
+    JOIN   gms_terms_vl tv             ON tv.term_id = c.term_id
+    JOIN   gms_term_categories_vl tc   ON tc.term_category_id = c.term_category_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award certification (award level, or one award project).
+    SELECT
+        'Grants.Certification'               AS object_type,
+        a.award_number || '~' || UPPER(cv.certification_name) || '~' || p.segment1
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        cv.certification_name                AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_certs_b c         ON c.award_id = a.award_id
+    JOIN   gms_certifications_vl cv    ON cv.certification_id = c.certification_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award CFDA (Assistance Listing number).
+    SELECT
+        'Grants.Cfda'                        AS object_type,
+        a.award_number || '~' || UPPER(c.cfda)
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.cfda                               AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_cfdas c           ON c.award_id = a.award_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award reference (award level, or one award project).
+    SELECT
+        'Grants.Reference'                   AS object_type,
+        a.award_number || '~' || UPPER(rv.reference_name) || '~' || p.segment1
+            || '~' || c.reference_value      AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        rv.reference_name                    AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_references_b c    ON c.award_id = a.award_id
+    JOIN   gms_references_vl rv        ON rv.reference_id = c.reference_type
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award project task burden schedule.
+    SELECT
+        'Grants.TaskBurden'                  AS object_type,
+        a.award_number || '~' || p.segment1 || '~' || e.element_number
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        e.element_number                     AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_awd_prj_tsk_brd_schedules c ON c.award_id = a.award_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
+    LEFT JOIN pjf_proj_elements_b e    ON e.proj_element_id = c.task_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+
+    UNION ALL
+
+    -- Tier: BASE award personnel (backlog #765 / #789). One CSV row
+    -- can make Fusion create a second personnel row (for example the
+    -- sponsor contact, internal flag N, no role); it carries no role,
+    -- so its key matches no TFM row.
+    SELECT
+        'Grants.Personnel'                   AS object_type,
+        a.award_number || '~' || UPPER((SELECT MAX(r.project_role_name) FROM gms_roles_v r
+                                        WHERE r.project_role_id = c.role_id))
+            || '~' || p.segment1             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.internal_flag                      AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_personnel c       ON c.award_id = a.award_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding (one issue of one budget period from
+    -- one funding source).
+    SELECT
+        'Grants.Funding'                     AS object_type,
+        a.award_number || '~' || UPPER(bp.budget_period) || '~' || UPPER(c.issue_number)
+            || '~' || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                             WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.issue_number                       AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_fundings_b c      ON c.award_id = a.award_id
+    LEFT JOIN gms_award_budget_periods bp ON bp.id = c.budget_period_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding allocation (one funding issue to one
+    -- award project). Its PROJECT_ID holds the award project link
+    -- (GMS_AWARD_PROJECTS.ID, verified 2026-10-20), not the project.
+    SELECT
+        'Grants.FundAllocation'              AS object_type,
+        a.award_number || '~' || UPPER(f.issue_number) || '~' || p.segment1
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        f.issue_number                       AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_fund_allocations c ON c.award_id = a.award_id
+    LEFT JOIN gms_award_fundings_b f   ON f.id = c.funding_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.project_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award budget period.
+    SELECT
+        'Grants.BudgetPeriod'                AS object_type,
+        a.award_number || '~' || UPPER(c.budget_period)
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.budget_period                      AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_budget_periods c  ON c.award_id = a.award_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award organization credit (award level, or one award
+    -- project). Fusion also creates an award-level credit of its own
+    -- for a project credit; its key (no project) matches no TFM row
+    -- that names a project.
+    SELECT
+        'Grants.OrgCredit'                   AS object_type,
+        a.award_number || '~' || p.segment1 || '~'
+            || UPPER((SELECT MAX(h.name) FROM hr_organization_units_f_tl h
+                      WHERE h.organization_id = c.organization_id
+                      AND   h.language = USERENV('LANG')))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        TO_CHAR(c.department_credit)         AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_department_credits c ON c.award_id = a.award_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award project.
+    SELECT
+        'Grants.Project'                     AS object_type,
+        a.award_number || '~' || p.segment1  AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        p.segment1                           AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_projects c        ON c.award_id = a.award_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding source.
+    SELECT
+        'Grants.FundingSource'               AS object_type,
+        a.award_number || '~' || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                                        WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        TO_CHAR(c.funding_source_id)         AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_funding_sources_b c ON c.award_id = a.award_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award project funding source.
+    SELECT
+        'Grants.ProjectFundingSource'        AS object_type,
+        a.award_number || '~' || p.segment1 || '~'
+            || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                      WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.awd_prj_fund_source_id             AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        p.segment1                           AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_awd_prj_fnd_sources c   ON c.award_id = a.award_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+),
+-- Header keyset: the page's awards are the next :P_CHUNK_SIZE distinct
+-- award numbers after :P_AFTER_KEY. An empty P_AFTER_KEY (first page)
+-- binds to NULL in BIP, so NULL means "from the start". Compared and
+-- ordered as BINARY so the cursor and the order agree.
+page_headers AS (
+    SELECT page_key
+    FROM  (SELECT DISTINCT page_key
+           FROM   recon_rows
+           WHERE  page_key IS NOT NULL
+           AND    (:P_AFTER_KEY IS NULL
+                   OR NLSSORT(page_key, 'NLS_SORT=BINARY') > NLSSORT(:P_AFTER_KEY, 'NLS_SORT=BINARY')))
+    ORDER BY NLSSORT(page_key, 'NLS_SORT=BINARY')
+    FETCH FIRST :P_CHUNK_SIZE ROWS ONLY
+)
+-- Every row of every page award: the award and all of its children.
+SELECT
+    r.object_type, r.record_key, r.source_type, r.fusion_status,
+    r.fusion_id, r.error_message, r.load_request_id, r.source_ref, r.dmt_reference,
+    r.page_key
+FROM   recon_rows r
+JOIN   page_headers h
+       ON h.page_key = r.page_key
+ORDER BY NLSSORT(r.page_key, 'NLS_SORT=BINARY'), NLSSORT(r.record_key, 'NLS_SORT=BINARY')
+      ]]></sql>
+    </dataSet>
+  </dataSets>
+  <output rootName="DATA_DS" uniqueRowName="false">
+    <nodeList name="data-structure">
+      <dataStructure tagName="DATA_DS">
+        <group name="G_1" label="G_1" source="grant_recon_results">
+          <element name="OBJECT_TYPE"     value="OBJECT_TYPE"     dataType="xsd:string"  tagName="OBJECT_TYPE"/>
+          <element name="RECORD_KEY"      value="RECORD_KEY"      dataType="xsd:string"  tagName="RECORD_KEY"/>
+          <element name="SOURCE_TYPE"     value="SOURCE_TYPE"     dataType="xsd:string"  tagName="SOURCE_TYPE"/>
+          <element name="FUSION_STATUS"   value="FUSION_STATUS"   dataType="xsd:string"  tagName="FUSION_STATUS"/>
+          <element name="FUSION_ID"       value="FUSION_ID"       dataType="xsd:integer" tagName="FUSION_ID"/>
+          <element name="ERROR_MESSAGE"   value="ERROR_MESSAGE"   dataType="xsd:string"  tagName="ERROR_MESSAGE"/>
+          <element name="LOAD_REQUEST_ID" value="LOAD_REQUEST_ID" dataType="xsd:integer" tagName="LOAD_REQUEST_ID"/>
+          <element name="SOURCE_REF"      value="SOURCE_REF"      dataType="xsd:string"  tagName="SOURCE_REF"/>
+          <element name="DMT_REFERENCE"   value="DMT_REFERENCE"   dataType="xsd:string"  tagName="DMT_REFERENCE"/>
+          <element name="PAGE_KEY"        value="PAGE_KEY"        dataType="xsd:string"  tagName="PAGE_KEY"/>
+        </group>
+      </dataStructure>
+    </nodeList>
+  </output>
+  <eventTriggers/>
+  <lexicals/>
+  <parameters>
+    <parameter name="P_RUN_ID" dataType="character" rowPlacement="1"
+               labelID="P_RUN_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_LOAD_REQUEST_ID" dataType="character" rowPlacement="1"
+               labelID="P_LOAD_REQUEST_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_IMPORT_ESS_ID" dataType="character" rowPlacement="1"
+               labelID="P_IMPORT_ESS_ID" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_PREFIX" dataType="character" rowPlacement="1"
+               labelID="P_PREFIX" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <!-- Header paging: page size (awards per page) + cursor. The reconciler
+         calls with an empty P_AFTER_KEY first, then passes the last PAGE_KEY
+         (award number) received on each next call, until a page returns
+         fewer awards than the page size. -->
+    <parameter name="P_CHUNK_SIZE" dataType="integer" rowPlacement="1"
+               labelID="P_CHUNK_SIZE" defaultValue="5000" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+    <parameter name="P_AFTER_KEY" dataType="character" rowPlacement="1"
+               labelID="P_AFTER_KEY" defaultValue="" nvp="false"
+               refreshParamOnChange="false" useNullForAll="false"/>
+  </parameters>
+  <valueSets/>
+  <bursting/>
+</dataModel>

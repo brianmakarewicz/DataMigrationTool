@@ -1,4 +1,34 @@
 -- ============================================================
+-- Grants reconciliation data model V5 (2026-10-20, backlog #765 /
+-- #789). Owner rule 2026-10-19: a row is LOADED only with its own
+-- row-grain Fusion id; a success line in the Award Batch Import
+-- Report is not enough. V5 keeps V4 unchanged and UNIONs the eight
+-- remaining award child base tables, selected exactly like the V4
+-- child tiers (through an award this report confirms, created while
+-- the run's import job ran, never by prefix):
+--   BASE Grants.Personnel            GMS_AWARD_PERSONNEL.ID
+--        award~ROLE NAME~project number
+--   BASE Grants.Funding              GMS_AWARD_FUNDINGS_B.ID
+--        award~BUDGET PERIOD~ISSUE NUMBER~FUNDING SOURCE NAME
+--   BASE Grants.FundAllocation       GMS_AWARD_FUND_ALLOCATIONS.ID
+--        award~ISSUE NUMBER~project number
+--   BASE Grants.BudgetPeriod         GMS_AWARD_BUDGET_PERIODS.ID
+--        award~BUDGET PERIOD
+--   BASE Grants.OrgCredit            GMS_AWARD_DEPARTMENT_CREDITS.ID
+--        award~project number~ORGANIZATION NAME
+--   BASE Grants.Project              GMS_AWARD_PROJECTS.ID
+--        award~project number
+--   BASE Grants.FundingSource        GMS_AWARD_FUNDING_SOURCES_B.ID
+--        award~FUNDING SOURCE NAME
+--   BASE Grants.ProjectFundingSource GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID
+--        award~project number~FUNDING SOURCE NAME
+-- (names upper-cased). Fusion can create base rows no CSV row sent
+-- (a second personnel row for one PI, backlog #671; an award-level
+-- organization credit for a project credit); their keys match no
+-- TFM row and change nothing.
+-- ============================================================
+-- (V4 history follows.)
+-- ============================================================
 -- Grants reconciliation data model V4 -- BIP reconciliation report
 -- contract v1 (nine columns plus PAGE_KEY, header paging, the six
 -- standard parameters). Deployed ALONGSIDE V1, V2 and V3, never
@@ -265,6 +295,202 @@ recon_rows AS (
     JOIN   gms_awd_prj_tsk_brd_schedules c ON c.award_id = a.award_id
     LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
     LEFT JOIN pjf_proj_elements_b e    ON e.proj_element_id = c.task_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+
+    UNION ALL
+
+    -- Tier: BASE award personnel (backlog #765 / #789). One CSV row
+    -- can make Fusion create a second personnel row (for example the
+    -- sponsor contact, internal flag N, no role); it carries no role,
+    -- so its key matches no TFM row.
+    SELECT
+        'Grants.Personnel'                   AS object_type,
+        a.award_number || '~' || UPPER((SELECT MAX(r.project_role_name) FROM gms_roles_v r
+                                        WHERE r.project_role_id = c.role_id))
+            || '~' || p.segment1             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.internal_flag                      AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_personnel c       ON c.award_id = a.award_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding (one issue of one budget period from
+    -- one funding source).
+    SELECT
+        'Grants.Funding'                     AS object_type,
+        a.award_number || '~' || UPPER(bp.budget_period) || '~' || UPPER(c.issue_number)
+            || '~' || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                             WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.issue_number                       AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_fundings_b c      ON c.award_id = a.award_id
+    LEFT JOIN gms_award_budget_periods bp ON bp.id = c.budget_period_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding allocation (one funding issue to one
+    -- award project). Its PROJECT_ID holds the award project link
+    -- (GMS_AWARD_PROJECTS.ID, verified 2026-10-20), not the project.
+    SELECT
+        'Grants.FundAllocation'              AS object_type,
+        a.award_number || '~' || UPPER(f.issue_number) || '~' || p.segment1
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        f.issue_number                       AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_fund_allocations c ON c.award_id = a.award_id
+    LEFT JOIN gms_award_fundings_b f   ON f.id = c.funding_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.project_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award budget period.
+    SELECT
+        'Grants.BudgetPeriod'                AS object_type,
+        a.award_number || '~' || UPPER(c.budget_period)
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        c.budget_period                      AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_budget_periods c  ON c.award_id = a.award_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award organization credit (award level, or one award
+    -- project). Fusion also creates an award-level credit of its own
+    -- for a project credit; its key (no project) matches no TFM row
+    -- that names a project.
+    SELECT
+        'Grants.OrgCredit'                   AS object_type,
+        a.award_number || '~' || p.segment1 || '~'
+            || UPPER((SELECT MAX(h.name) FROM hr_organization_units_f_tl h
+                      WHERE h.organization_id = c.organization_id
+                      AND   h.language = USERENV('LANG')))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        TO_CHAR(c.department_credit)         AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_department_credits c ON c.award_id = a.award_id
+    LEFT JOIN gms_award_projects ap    ON ap.id = c.awd_project_lnk_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = ap.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award project.
+    SELECT
+        'Grants.Project'                     AS object_type,
+        a.award_number || '~' || p.segment1  AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        p.segment1                           AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_projects c        ON c.award_id = a.award_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award funding source.
+    SELECT
+        'Grants.FundingSource'               AS object_type,
+        a.award_number || '~' || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                                        WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.id                                 AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        TO_CHAR(c.funding_source_id)         AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_award_funding_sources_b c ON c.award_id = a.award_id
+    CROSS JOIN import_job j
+    WHERE  c.creation_date >= j.job_start
+    AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)
+
+    UNION ALL
+
+    -- Tier: BASE award project funding source.
+    SELECT
+        'Grants.ProjectFundingSource'        AS object_type,
+        a.award_number || '~' || p.segment1 || '~'
+            || UPPER((SELECT MAX(fs.funding_source_name) FROM gms_funding_sources_all_v fs
+                      WHERE fs.funding_source_id = c.funding_source_id))
+                                             AS record_key,
+        'BASE'                               AS source_type,
+        'SUCCESS'                            AS fusion_status,
+        c.awd_prj_fund_source_id             AS fusion_id,
+        CAST(NULL AS VARCHAR2(4000))         AS error_message,
+        TO_NUMBER(:P_IMPORT_ESS_ID)          AS load_request_id,
+        p.segment1                           AS source_ref,
+        CAST(NULL AS VARCHAR2(240))          AS dmt_reference,
+        a.award_number                       AS page_key
+    FROM   award_base a
+    JOIN   gms_awd_prj_fnd_sources c   ON c.award_id = a.award_id
+    LEFT JOIN pjf_projects_all_b p     ON p.project_id = c.project_id
     CROSS JOIN import_job j
     WHERE  c.creation_date >= j.job_start
     AND    (j.job_end IS NULL OR c.creation_date <= j.job_end)

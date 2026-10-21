@@ -35,7 +35,7 @@ exception when dup_val_on_index then null;
 end;
 /
 begin
-  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
+  insert into "DMT_BIP_REPORT_TBL" ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH","REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES","DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE") values (100000007,'Grants','Grant/Award','/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm','/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo','GMS_AWARD_HEADERS_INT',to_date('2026-04-02 18:25:35','YYYY-MM-DD HH24:MI:SS'),'Grants award-header import reconciliation (Contract v1, nine-column)',NULL,NULL);
 exception when dup_val_on_index then null;
 end;
 /
@@ -1701,8 +1701,9 @@ commit;
 -- (2026-10-10, backlog #671) the same report also returns six award child tiers
 -- (Grants.Keyword / .Term / .Certification / .Cfda / .Reference / .TaskBurden),
 -- reached only through the awards it confirms; DMT_GRANTS_RESULTS_PKG stores each
--- child's own Fusion id. The other children are LOADED on their own success line
--- in the Award Batch Import Report (backlog #568), never by inheritance. Header tier:
+-- child's own Fusion id. Since V5 (2026-10-20, backlog #765 / #789) the other eight
+-- child types come from their base tables the same way; no child is LOADED from a
+-- success line in the Award Batch Import Report. Header tier:
 --   OBJECT_TYPE     'Grants'
 --   TFM_TABLE       DMT_GMS_AWD_HEADERS_TFM_TBL
 --   FUSION_ID       FUSION_AWARD_ID  (= GMS_AWARD_HEADERS_B.ID on the BASE tier)
@@ -1722,19 +1723,22 @@ using (
     select 100000007                                            bip_report_id,
            'Grants'                                             cemli_code,
            'Grant/Award'                                        object_type,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_DM.xdm'         dm_catalog_path,
-           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V4_RPT.xdo'        report_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'         dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'        report_catalog_path,
            'GMS_AWARD_HEADERS_INT'                              interface_table,
            'Grants award-header import reconciliation (Contract v1, nine-column). '
-             || 'Award header tier plus six child tiers (V4); every child on its own evidence. '
+             || 'Award header tier plus 14 child tiers (V5); every child on its own base row. '
              || 'Award Batch Import Report fallback for purged-interface rejections. '
              || 'V2 (2026-10-07): BASE tier keyed on OKC_K_HEADERS_ALL_B.CONTRACT_NUMBER, '
              || 'prefix-scoped (FBDI awards carry no request id / sponsor number). '
              || 'V4 (2026-10-10, backlog #671): the same report also returns the award '
              || 'keyword, term, certification, CFDA, reference and task burden schedule '
              || 'rows of the awards it confirms (created during the run''s import job), '
-             || 'each with its own Fusion id; pages by award (PAGE_KEY). Deployed '
-             || 'alongside V1-V3, never overwriting them.' notes,
+             || 'each with its own Fusion id; pages by award (PAGE_KEY). '
+             || 'V5 (2026-10-20, backlog #765 / #789): also the personnel, funding, funding '
+             || 'allocation, budget period, org credit, project, funding source and project '
+             || 'funding source rows, each with its own Fusion id; no child is LOADED from an '
+             || 'import-report success line. Deployed alongside V1-V4, never overwriting them.' notes,
            1                                                    contract_version,
            'DMT_GMS_AWD_HEADERS_TFM_TBL'                        tfm_table,
            'FUSION_AWARD_ID'                                    fusion_id_column,
@@ -1851,12 +1855,14 @@ commit;
 merge into "DMT_BIP_REPORT_TBL" t
 using (
     select 'MiscReceipts'                                          cemli_code,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V4_DM.xdm' dm_catalog_path,
-           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V4_RPT.xdo' report_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_DM.xdm' dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_RPT.xdo' report_catalog_path,
            'Miscellaneous receiving receipt import reconciliation (Contract v1, single-tier). '
            || 'V2 (2026-10-07): rows found only by the work item''s Fusion load job id '
            || '(LOAD_REQUEST_ID on the posted transaction and the rejected interface row), never by '
-           || 'the run id. Deployed alongside V1, never overwriting it.' notes,
+           || 'the run id. V5 (2026-10-20, backlog #789): also a lot tier, each lot with its own '
+           || 'row-grain id (TRANSACTION_ID ~ lot GEN_OBJECT_ID). Deployed alongside V1-V4, never '
+           || 'overwriting them.' notes,
            1                                                        contract_version,
            'DMT_INV_TRX_TFM_TBL'                                   tfm_table,
            'FUSION_ID'                                             fusion_id_column,
@@ -3531,6 +3537,774 @@ using (
            'DMT_PJC_TXN_CONTROLS_TFM_TBL'                                          tfm_table,
            'FUSION_TXN_CONTROL_ID'                                          fusion_id_column,
            'project-txn-control RECON_KEY (report RECORD_KEY, reconciler OBJECT_TYPE=''TxnControls'') -- FUSION_TXN_CONTROL_ID holds the base-table TXN_CONTROL_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- MiscReceipts.Lot (100000065) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_MISC_RECEIPT_RESULTS_PKG stamps FUSION_LOT_ID on DMT_INV_TRX_LOTS_TFM_TBL with INV_TRANSACTION_LOT_NUMBERS.TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000065                                            bip_report_id,
+           'MiscReceipts.Lot'                                  cemli_code,
+           'Misc Receipt Lot'                                  object_type,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_RPT.xdo'      report_catalog_path,
+           'INV_TRANSACTIONS_LOTS_INTERFACE'                                  interface_table,
+           'MiscReceipts.Lot transaction lot tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_MISC_RECEIPT_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the transaction lot grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED transaction lot row carries a populated, unique own-grain Fusion id (INV_TRANSACTION_LOT_NUMBERS.TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID).'   notes,
+           null                                             contract_version,
+           'DMT_INV_TRX_LOTS_TFM_TBL'                                  tfm_table,
+           'FUSION_LOT_ID'                                  fusion_id_column,
+           'transaction lot report RECORD_KEY (OBJECT_TYPE=MiscReceipts.Lot) -- FUSION_LOT_ID holds INV_TRANSACTION_LOT_NUMBERS.TRANSACTION_ID ~ INV_LOT_NUMBERS.GEN_OBJECT_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- MiscReceipts.Serial (100000066) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_MISC_RECEIPT_RESULTS_PKG stamps FUSION_SERIAL_ID on DMT_INV_TRX_SERIALS_TFM_TBL with INV_SERIAL_NUMBERS.GEN_OBJECT_ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000066                                            bip_report_id,
+           'MiscReceipts.Serial'                                  cemli_code,
+           'Misc Receipt Serial'                                  object_type,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/MiscReceipts/DMT_INV_TRX_RECON_V5_RPT.xdo'      report_catalog_path,
+           'INV_SERIAL_NUMBERS_INTERFACE'                                  interface_table,
+           'MiscReceipts.Serial transaction serial tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_MISC_RECEIPT_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the transaction serial grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED transaction serial row carries a populated, unique own-grain Fusion id (INV_SERIAL_NUMBERS.GEN_OBJECT_ID).'   notes,
+           null                                             contract_version,
+           'DMT_INV_TRX_SERIALS_TFM_TBL'                                  tfm_table,
+           'FUSION_SERIAL_ID'                                  fusion_id_column,
+           'transaction serial report RECORD_KEY (OBJECT_TYPE=MiscReceipts.Serial) -- FUSION_SERIAL_ID holds INV_SERIAL_NUMBERS.GEN_OBJECT_ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Keyword (100000067) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_KEYWORD_ID on DMT_GMS_AWD_KEYWORDS_TFM_TBL with GMS_AWARD_KEYWORDS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000067                                            bip_report_id,
+           'Grants.Keyword'                                  cemli_code,
+           'Award Keyword'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Keyword award keyword tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award keyword grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award keyword row carries a populated, unique own-grain Fusion id (GMS_AWARD_KEYWORDS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_KEYWORDS_TFM_TBL'                                  tfm_table,
+           'FUSION_KEYWORD_ID'                                  fusion_id_column,
+           'award keyword report RECORD_KEY (OBJECT_TYPE=Grants.Keyword) -- FUSION_KEYWORD_ID holds GMS_AWARD_KEYWORDS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Term (100000068) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_TERM_ID on DMT_GMS_AWD_TERMS_TFM_TBL with GMS_AWARD_TERMS_B.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000068                                            bip_report_id,
+           'Grants.Term'                                  cemli_code,
+           'Award Term'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Term award term tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award term grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award term row carries a populated, unique own-grain Fusion id (GMS_AWARD_TERMS_B.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_TERMS_TFM_TBL'                                  tfm_table,
+           'FUSION_TERM_ID'                                  fusion_id_column,
+           'award term report RECORD_KEY (OBJECT_TYPE=Grants.Term) -- FUSION_TERM_ID holds GMS_AWARD_TERMS_B.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Certification (100000069) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_CERT_ID on DMT_GMS_AWD_CERTS_TFM_TBL with GMS_AWARD_CERTS_B.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000069                                            bip_report_id,
+           'Grants.Certification'                                  cemli_code,
+           'Award Certification'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Certification award certification tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award certification grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award certification row carries a populated, unique own-grain Fusion id (GMS_AWARD_CERTS_B.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_CERTS_TFM_TBL'                                  tfm_table,
+           'FUSION_CERT_ID'                                  fusion_id_column,
+           'award certification report RECORD_KEY (OBJECT_TYPE=Grants.Certification) -- FUSION_CERT_ID holds GMS_AWARD_CERTS_B.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Cfda (100000070) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_CFDA_ID on DMT_GMS_AWD_CFDAS_TFM_TBL with GMS_AWARD_CFDAS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000070                                            bip_report_id,
+           'Grants.Cfda'                                  cemli_code,
+           'Award CFDA'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Cfda award CFDA tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award CFDA grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award CFDA row carries a populated, unique own-grain Fusion id (GMS_AWARD_CFDAS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_CFDAS_TFM_TBL'                                  tfm_table,
+           'FUSION_CFDA_ID'                                  fusion_id_column,
+           'award CFDA report RECORD_KEY (OBJECT_TYPE=Grants.Cfda) -- FUSION_CFDA_ID holds GMS_AWARD_CFDAS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Reference (100000071) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_REFERENCE_ID on DMT_GMS_AWD_REFERENCES_TFM_TBL with GMS_AWARD_REFERENCES_B.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000071                                            bip_report_id,
+           'Grants.Reference'                                  cemli_code,
+           'Award Reference'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Reference award reference tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award reference grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award reference row carries a populated, unique own-grain Fusion id (GMS_AWARD_REFERENCES_B.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_REFERENCES_TFM_TBL'                                  tfm_table,
+           'FUSION_REFERENCE_ID'                                  fusion_id_column,
+           'award reference report RECORD_KEY (OBJECT_TYPE=Grants.Reference) -- FUSION_REFERENCE_ID holds GMS_AWARD_REFERENCES_B.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.TaskBurden (100000072) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_TASK_BURDEN_ID on DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL with GMS_AWD_PRJ_TSK_BRD_SCHEDULES.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000072                                            bip_report_id,
+           'Grants.TaskBurden'                                  cemli_code,
+           'Award Project Task Burden Schedule'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.TaskBurden task burden schedule tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the task burden schedule grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED task burden schedule row carries a populated, unique own-grain Fusion id (GMS_AWD_PRJ_TSK_BRD_SCHEDULES.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_PRJ_TSK_BRD_TFM_TBL'                                  tfm_table,
+           'FUSION_TASK_BURDEN_ID'                                  fusion_id_column,
+           'task burden schedule report RECORD_KEY (OBJECT_TYPE=Grants.TaskBurden) -- FUSION_TASK_BURDEN_ID holds GMS_AWD_PRJ_TSK_BRD_SCHEDULES.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Personnel (100000073) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_PERSONNEL_ID on DMT_GMS_AWD_PERSONNEL_TFM_TBL with GMS_AWARD_PERSONNEL.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000073                                            bip_report_id,
+           'Grants.Personnel'                                  cemli_code,
+           'Award Personnel'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Personnel award personnel tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award personnel grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award personnel row carries a populated, unique own-grain Fusion id (GMS_AWARD_PERSONNEL.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_PERSONNEL_TFM_TBL'                                  tfm_table,
+           'FUSION_PERSONNEL_ID'                                  fusion_id_column,
+           'award personnel report RECORD_KEY (OBJECT_TYPE=Grants.Personnel) -- FUSION_PERSONNEL_ID holds GMS_AWARD_PERSONNEL.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Funding (100000074) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_FUNDING_ID on DMT_GMS_AWD_FUNDING_TFM_TBL with GMS_AWARD_FUNDINGS_B.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000074                                            bip_report_id,
+           'Grants.Funding'                                  cemli_code,
+           'Award Funding'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Funding award funding tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award funding grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award funding row carries a populated, unique own-grain Fusion id (GMS_AWARD_FUNDINGS_B.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_FUNDING_TFM_TBL'                                  tfm_table,
+           'FUSION_FUNDING_ID'                                  fusion_id_column,
+           'award funding report RECORD_KEY (OBJECT_TYPE=Grants.Funding) -- FUSION_FUNDING_ID holds GMS_AWARD_FUNDINGS_B.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.FundAllocation (100000075) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_FUND_ALLOC_ID on DMT_GMS_AWD_FUND_ALLOC_TFM_TBL with GMS_AWARD_FUND_ALLOCATIONS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000075                                            bip_report_id,
+           'Grants.FundAllocation'                                  cemli_code,
+           'Award Funding Allocation'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.FundAllocation funding allocation tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the funding allocation grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED funding allocation row carries a populated, unique own-grain Fusion id (GMS_AWARD_FUND_ALLOCATIONS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_FUND_ALLOC_TFM_TBL'                                  tfm_table,
+           'FUSION_FUND_ALLOC_ID'                                  fusion_id_column,
+           'funding allocation report RECORD_KEY (OBJECT_TYPE=Grants.FundAllocation) -- FUSION_FUND_ALLOC_ID holds GMS_AWARD_FUND_ALLOCATIONS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.BudgetPeriod (100000076) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_BUDGET_PERIOD_ID on DMT_GMS_AWD_BDGT_PRDS_TFM_TBL with GMS_AWARD_BUDGET_PERIODS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000076                                            bip_report_id,
+           'Grants.BudgetPeriod'                                  cemli_code,
+           'Award Budget Period'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.BudgetPeriod budget period tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the budget period grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED budget period row carries a populated, unique own-grain Fusion id (GMS_AWARD_BUDGET_PERIODS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_BDGT_PRDS_TFM_TBL'                                  tfm_table,
+           'FUSION_BUDGET_PERIOD_ID'                                  fusion_id_column,
+           'budget period report RECORD_KEY (OBJECT_TYPE=Grants.BudgetPeriod) -- FUSION_BUDGET_PERIOD_ID holds GMS_AWARD_BUDGET_PERIODS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.OrgCredit (100000077) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_ORG_CREDIT_ID on DMT_GMS_AWD_ORG_CREDITS_TFM_TBL with GMS_AWARD_DEPARTMENT_CREDITS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000077                                            bip_report_id,
+           'Grants.OrgCredit'                                  cemli_code,
+           'Award Organization Credit'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.OrgCredit organization credit tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the organization credit grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED organization credit row carries a populated, unique own-grain Fusion id (GMS_AWARD_DEPARTMENT_CREDITS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_ORG_CREDITS_TFM_TBL'                                  tfm_table,
+           'FUSION_ORG_CREDIT_ID'                                  fusion_id_column,
+           'organization credit report RECORD_KEY (OBJECT_TYPE=Grants.OrgCredit) -- FUSION_ORG_CREDIT_ID holds GMS_AWARD_DEPARTMENT_CREDITS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.Project (100000078) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_AWARD_PROJECT_ID on DMT_GMS_AWD_PROJECTS_TFM_TBL with GMS_AWARD_PROJECTS.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000078                                            bip_report_id,
+           'Grants.Project'                                  cemli_code,
+           'Award Project'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.Project award project tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award project grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award project row carries a populated, unique own-grain Fusion id (GMS_AWARD_PROJECTS.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_PROJECTS_TFM_TBL'                                  tfm_table,
+           'FUSION_AWARD_PROJECT_ID'                                  fusion_id_column,
+           'award project report RECORD_KEY (OBJECT_TYPE=Grants.Project) -- FUSION_AWARD_PROJECT_ID holds GMS_AWARD_PROJECTS.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.FundingSource (100000079) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_FUNDING_SOURCE_ID on DMT_GMS_AWD_FUND_SRC_TFM_TBL with GMS_AWARD_FUNDING_SOURCES_B.ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000079                                            bip_report_id,
+           'Grants.FundingSource'                                  cemli_code,
+           'Award Funding Source'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.FundingSource award funding source tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the award funding source grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED award funding source row carries a populated, unique own-grain Fusion id (GMS_AWARD_FUNDING_SOURCES_B.ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_FUND_SRC_TFM_TBL'                                  tfm_table,
+           'FUSION_FUNDING_SOURCE_ID'                                  fusion_id_column,
+           'award funding source report RECORD_KEY (OBJECT_TYPE=Grants.FundingSource) -- FUSION_FUNDING_SOURCE_ID holds GMS_AWARD_FUNDING_SOURCES_B.ID' recon_key_sql
+    from dual
+) s
+on (t."CEMLI_CODE" = s.cemli_code)
+when matched then update set
+    t."OBJECT_TYPE"         = s.object_type,
+    t."DM_CATALOG_PATH"     = s.dm_catalog_path,
+    t."REPORT_CATALOG_PATH" = s.report_catalog_path,
+    t."INTERFACE_TABLE"     = s.interface_table,
+    t."NOTES"               = s.notes,
+    t."CONTRACT_VERSION"    = s.contract_version,
+    t."TFM_TABLE"           = s.tfm_table,
+    t."FUSION_ID_COLUMN"    = s.fusion_id_column,
+    t."RECON_KEY_SQL"       = s.recon_key_sql
+when not matched then insert
+    ("BIP_REPORT_ID","CEMLI_CODE","OBJECT_TYPE","DM_CATALOG_PATH",
+     "REPORT_CATALOG_PATH","INTERFACE_TABLE","CREATED_DATE","NOTES",
+     "DEEP_LINK_OBJ_TYPE","DEEP_LINK_KEY_TEMPLATE",
+     "CONTRACT_VERSION","TFM_TABLE","FUSION_ID_COLUMN","RECON_KEY_SQL")
+    values (s.bip_report_id, s.cemli_code, s.object_type, s.dm_catalog_path,
+            s.report_catalog_path, s.interface_table, sysdate, s.notes,
+            null, null,
+            s.contract_version, s.tfm_table, s.fusion_id_column, s.recon_key_sql);
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- Grants.ProjectFundingSource (100000080) -- child-tier auditor registration (backlog #767 / #789).
+-- DMT_GRANTS_RESULTS_PKG stamps FUSION_PRJ_FUND_SOURCE_ID on DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL with GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID,
+-- the row's own row-grain Fusion id. AUDIT metadata only; CONTRACT_VERSION left
+-- NULL so FETCH_ROWS never treats it as reconcilable. Both identifiers are single
+-- plain SQL names, so scripts/dmt_fusion_id_audit.sql audits the tier.
+-- ---------------------------------------------------------------------------
+merge into "DMT_BIP_REPORT_TBL" t
+using (
+    select 100000080                                            bip_report_id,
+           'Grants.ProjectFundingSource'                                  cemli_code,
+           'Award Project Funding Source'                                  object_type,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_DM.xdm'       dm_catalog_path,
+           '/Custom/DMT2/Grants/DMT_GRANT_RECON_V5_RPT.xdo'      report_catalog_path,
+           'GMS_AWARD_HEADERS_INT'                                  interface_table,
+           'Grants.ProjectFundingSource project funding source tier -- AUDITOR registration only (backlog #767 / #789). '
+             || 'Not a pipeline/reconcile object; DMT_GRANTS_RESULTS_PKG applies all tiers statically. '
+             || 'Registers the project funding source grain so scripts/dmt_fusion_id_audit.sql proves every '
+             || 'LOADED project funding source row carries a populated, unique own-grain Fusion id (GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID).'   notes,
+           null                                             contract_version,
+           'DMT_GMS_AWD_PRJ_FUND_SRC_TFM_TBL'                                  tfm_table,
+           'FUSION_PRJ_FUND_SOURCE_ID'                                  fusion_id_column,
+           'project funding source report RECORD_KEY (OBJECT_TYPE=Grants.ProjectFundingSource) -- FUSION_PRJ_FUND_SOURCE_ID holds GMS_AWD_PRJ_FND_SOURCES.AWD_PRJ_FUND_SOURCE_ID' recon_key_sql
     from dual
 ) s
 on (t."CEMLI_CODE" = s.cemli_code)

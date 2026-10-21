@@ -9,13 +9,15 @@
 --   G2  shape (c), child rejected under a LOADED award: the child is FAILED
 --       with its OWN Fusion error and is not quoted as a document rejection;
 --       the award header stays LOADED with no error added.
---   G3  a child of a LOADED award is LOADED only on its own success line
---       (personnel, budget period).
+--   G3  a child's success line in the report alone never makes it LOADED
+--       (owner rule 2026-10-19, backlog #789: LOADED needs the row's own
+--       Fusion id, which only the recon report's base tier gives it;
+--       personnel, budget period stay GENERATED here).
 --   G4  a child of a LOADED award with NO success line of its own stays
 --       GENERATED (funding with no line; keyword, a record type Fusion's
 --       report has no success group for) -- never LOADED by inheritance.
---   G5  two identical child rows and one success line: exactly one LOADED,
---       the other stays GENERATED.
+--   G5  two identical child rows and one success line: both stay
+--       GENERATED (no success line sets LOADED, backlog #789).
 --   G6  the LOADED award's siblings are not given the rejected child's error.
 --   G7  shape (b), child rejected and the award rejected with it: the child
 --       keeps its own error; header and sibling FAILED quoting it ("Rejected
@@ -136,12 +138,12 @@ begin
 
     -- Award A: header already LOADED by the base-table pass.
     hdr(A, 'LOADED');
-    pers(A, C_EMAIL, null);              -- success line -> LOADED
+    pers(A, C_EMAIL, null);              -- success line only -> stays GENERATED (#789)
     pers(A, null, '99999999');           -- rejected under the LOADED award
     proj(A, 'PRG10008');                 -- two identical rows, one success line
     proj(A, 'PRG10008');
     insert into dmt_gms_awd_bdgt_prds_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, budget_period, fbdi_csv_id)
-    values (l_run, -1, 'GENERATED', A, 'Period 1', -1);                 -- success line -> LOADED
+    values (l_run, -1, 'GENERATED', A, 'Period 1', -1);                 -- success line only -> GENERATED (#789)
     insert into dmt_gms_awd_funding_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, issue_number, fbdi_csv_id)
     values (l_run, -1, 'GENERATED', A, 'Base 1', -1);                   -- no line -> GENERATED
     insert into dmt_gms_awd_keywords_tfm_tbl (run_id, stg_sequence_id, tfm_status, award_number, keyword_name, fbdi_csv_id)
@@ -195,9 +197,10 @@ begin
     ok('G2b the award header stays LOADED with no error added', l_st = 'LOADED' and l_err is null);
 
     l_st := status_of('PERS', A, C_EMAIL);
-    ok('G3a personnel with its own success line LOADED', l_st = 'LOADED');
+    ok('G3a personnel with only a success line stays GENERATED', l_st = 'GENERATED' and l_err is null);
     l_st := status_of('BP', A, null);
-    ok('G3b budget period with its own success line LOADED', l_st = 'LOADED');
+    ok('G3b budget period with only a success line stays GENERATED', l_st = 'GENERATED' and l_err is null);
+    ok('G3c no child LOADED from the report', l_loaded = 0);
 
     l_st := status_of('FUND', A, null);
     ok('G4a funding with no success line stays GENERATED', l_st = 'GENERATED' and l_err is null);
@@ -208,8 +211,8 @@ begin
            count(case when tfm_status = 'GENERATED' then 1 end)
       into l_n, l_failed
       from dmt_gms_awd_projects_tfm_tbl where run_id = l_run and award_number = A;
-    ok('G5 two identical project rows, one success line: one LOADED, one GENERATED',
-       l_n = 1 and l_failed = 1);
+    ok('G5 two identical project rows, one success line: none LOADED, both GENERATED',
+       l_n = 0 and l_failed = 2);
 
     select count(*) into l_n from (
         select error_text from dmt_gms_awd_projects_tfm_tbl  where run_id = l_run and award_number = A
@@ -260,10 +263,10 @@ end;
 /
 
 begin
-    if :passed <> 14 then
-        raise_application_error(-20998, 'test_grants_child_accounting: '||:passed||' of 14 passed');
+    if :passed <> 15 then
+        raise_application_error(-20998, 'test_grants_child_accounting: '||:passed||' of 15 passed');
     end if;
-    dbms_output.put_line('test_grants_child_accounting: ALL 14 PASSED');
+    dbms_output.put_line('test_grants_child_accounting: ALL 15 PASSED');
 end;
 /
 exit
