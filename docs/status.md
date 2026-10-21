@@ -1,5 +1,11 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-20 — #797 started: retry the Assets PrepareMassAdditions log (owner approved), before the regression
+
+**Diagnosis.** Re-downloaded the output of PrepareMassAdditions 10138729 (ATP run 190) and 10135384 (local run 420) with downloadESSJobExecutionDetails as fin_impl: both still return only the summary .txt and no .log, about an hour and about 13 hours after the jobs ended. Passing jobs 10131583 (run 416) and 10137173 (run 423) return the .log. So the log did not arrive late, and a retry may not be enough. The retry is being built as approved: the Assets reconciler re-runs the reconcile later through NEXT_POLL_AFTER (6 tries, 2 minutes apart, in DMT_CONFIG_TBL), then falls back to today's result with a log line naming the missing .log. Branch fix/797-assets-log-retry; local only, no ATP promotion.
+
+**Owner decisions pending.** (1) The owner's approval file (docs/.design_change_approved) is needed to promote the four upload rows of the design document to normal styling. (2) Since the log is never written for these jobs, whether to add a second source for the per-asset error when the .log is missing (for example the mass additions interface rows of the import job), as #797 already suggests.
+
 ## 2026-10-20 — local gate for #795/#794/#796 (main 25b5ddd): run 420 failed on Assets (Fusion wrote no import log), rerun
 
 **Local regression run 420 (prefix 93447): FAIL.** The only failures are the 8 rows of the cross-document Assets test batch, which ended UNACCOUNTED. Fusion's PrepareMassAdditions job 10135384 ended ERROR as usual, but returned only its summary file and no .log, so no row could be given its own error. Passing run 416's job returned the log. This bundle does not touch the Assets pipeline. Logged as backlog #797. The local regression is being rerun with a new prefix before any promotion.
