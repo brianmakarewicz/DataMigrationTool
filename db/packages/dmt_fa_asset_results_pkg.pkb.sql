@@ -48,6 +48,9 @@
 --                   quote its error naming the asset ('Rejected with document:
 --                   asset <num>: ...'). Backlog #650: a header/book-file
 --                   rejection is mapped to its row counting line breaks.
+--   2026-10-20  BM  Backlog #797: PrepareMassAdditions ERROR whose output names
+--                   no asset defers the reconcile (DEFER_RECONCILE), bounded by
+--                   ASSET_PREPARE_LOG_RETRIES / _RETRY_SECONDS.
 -- ============================================================
 
     C_PKG   CONSTANT VARCHAR2(50) := 'DMT_FA_ASSET_RESULTS_PKG';
@@ -962,6 +965,14 @@
     -- and FAILED rows are never touched. Downloads the log only when the job
     -- ended ERROR/WARNING (a reconcile-time read, like the SQL*Loader log in
     -- ACCOUNT_ALL_OR_NOTHING). STATIC SQL; NO COMMIT.
+    -- Backlog #797: Fusion sometimes returns only the job's summary .txt and
+    -- no .log (runs 420 and ATP 190). When the job ended ERROR, the output
+    -- was downloaded (no SOAP fault: a fault is never retried) but names no
+    -- asset, and headers of this work item are still open, the reconcile is
+    -- deferred through DMT_QUEUE_WORKER_PKG.DEFER_RECONCILE: up to
+    -- ASSET_PREPARE_LOG_RETRIES re-reads, ASSET_PREPARE_LOG_RETRY_SECONDS
+    -- apart (DMT_CONFIG_TBL). Once they are used up the rows are left for the
+    -- unaccounted sweep as before, with a WARN log naming the missing log.
     -- --------------------------------------------------------
     PROCEDURE APPLY_PREPARE_ERRORS (
         p_run_id        IN NUMBER,
@@ -985,6 +996,11 @@
         l_summary VARCHAR2(1000);
         l_marker  VARCHAR2(30) := DMT_UTIL_PKG.C_DOC_ERROR_MARKER;
         l_named   NUMBER := 0;
+        l_read_ok BOOLEAN := TRUE;
+        l_open    NUMBER;
+        l_retries NUMBER;
+        l_secs    NUMBER;
+        l_try     NUMBER;
     BEGIN
         -- The import job: the recorded id, else the load's own PrepareMassAdditions child.
         BEGIN
@@ -1007,6 +1023,7 @@
             l_log := DMT_ESS_UTIL_PKG.GET_ESS_OUTPUT_TEXT(p_request_id => l_req, p_cemli_code => C_CEMLI);
         EXCEPTION WHEN OTHERS THEN
             l_log := NULL;
+            l_read_ok := FALSE;
             DMT_UTIL_PKG.LOG(p_run_id, C_PROC || ': could not read the log of import job '
                 || l_req || ': ' || SUBSTR(SQLERRM, 1, 300), DMT_UTIL_PKG.C_LOG_WARN, C_PKG, C_PROC);
         END;
@@ -1036,6 +1053,41 @@
                 l_buf := SUBSTR(LTRIM(l_buf || ' ' || l_line), 1, 3800);
             END IF;
         END LOOP;
+
+        -- Backlog #797: an ERROR job whose output names no asset is not settled
+        -- yet; ask for a later re-read while retries remain.
+        IF l_state = 'ERROR' AND l_read_ok AND l_msgs.COUNT = 0 AND p_work_queue_id IS NOT NULL THEN
+            SELECT COUNT(*) INTO l_open
+            FROM   DMT_FA_ASSET_HDR_TFM_TBL
+            WHERE  RUN_ID = p_run_id
+            AND    WORK_QUEUE_ID = p_work_queue_id
+            AND    TFM_STATUS NOT IN ('LOADED', 'FAILED');
+            IF l_open > 0 THEN
+                l_retries := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG(p_key => 'ASSET_PREPARE_LOG_RETRIES'), '6')
+                                       DEFAULT 6 ON CONVERSION ERROR);
+                l_secs    := TO_NUMBER(NVL(DMT_UTIL_PKG.GET_CONFIG(p_key => 'ASSET_PREPARE_LOG_RETRY_SECONDS'), '120')
+                                       DEFAULT 120 ON CONVERSION ERROR);
+                l_try := DMT_QUEUE_WORKER_PKG.DEFER_RECONCILE(
+                    p_queue_id    => p_work_queue_id,
+                    p_reason      => 'PrepareMassAdditions job ' || l_req || ' ended ERROR but its output '
+                                     || 'has no .log naming the failed assets (' || l_open
+                                     || ' header(s) open); downloading it again later.',
+                    p_max_retries => l_retries,
+                    p_delay_sec   => l_secs);
+                IF l_try > 0 THEN
+                    RETURN;
+                END IF;
+                DMT_UTIL_PKG.LOG(
+                    p_run_id    => p_run_id,
+                    p_message   => C_PROC || ': import job ' || l_req || ' ended ERROR and its output still '
+                                   || 'has no .log naming the failed assets after ' || l_retries
+                                   || ' retries' || CASE WHEN l_summary IS NOT NULL THEN ' (' || l_summary || ')' END
+                                   || '; ' || l_open || ' header(s) left for the unaccounted sweep.',
+                    p_log_type  => DMT_UTIL_PKG.C_LOG_WARN,
+                    p_package   => C_PKG,
+                    p_procedure => C_PROC);
+            END IF;
+        END IF;
 
         -- Each named, still-unaccounted header of this work item gets its real errors.
         l_asset := l_msgs.FIRST;

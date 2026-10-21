@@ -29,6 +29,11 @@ AS
     C_HDL_RECON_DELAY_SEC     CONSTANT PLS_INTEGER := 30;   -- base (first) delay
     C_HDL_RECON_MAX_DELAY_SEC CONSTANT PLS_INTEGER := 120;  -- backoff ceiling
 
+    -- Backlog #797: set by DEFER_RECONCILE when a reconciler asked for a later
+    -- re-run of this reconcile; RECONCILE_ONE resets it before the reconciler
+    -- runs and returns early (no sweep, no gate) when it is set afterwards.
+    g_reconcile_deferred BOOLEAN := FALSE;
+
     -- ============================================================
     -- get_dispatch — read the object's dispatch registration from
     -- DMT_PIPELINE_DEF_TBL (the section-12 one-row-per-object
@@ -1225,6 +1230,7 @@ AS
 
         -- Attribution (backlog #30): stamp run + work-item id for this child job.
         DMT_UTIL_PKG.SET_LOG_CONTEXT(l_rec.RUN_ID, p_queue_id);
+        g_reconcile_deferred := FALSE;  -- backlog #797
 
         DMT_UTIL_PKG.LOG(l_rec.RUN_ID,
             'Reconciling ' || l_rec.CEMLI_CODE ||
@@ -1287,6 +1293,20 @@ AS
                 p_work_queue_id => p_queue_id,
                 x_keys          => l_ignore_keys);
         END IF;
+
+        -- Backlog #797: the reconciler asked to re-run later (DEFER_RECONCILE set
+        -- NEXT_POLL_AFTER and the sentinel). Keep what it settled, skip the sweep
+        -- and the gate; dispatch_reconcile re-spawns this reconcile after the delay.
+        IF g_reconcile_deferred THEN
+            g_reconcile_deferred := FALSE;
+            COMMIT;
+            RETURN;
+        END IF;
+        -- Not deferred this pass: clear a sentinel left by an earlier deferral.
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    ERROR_MESSAGE = NULL
+        WHERE  QUEUE_ID = p_queue_id
+        AND    REGEXP_LIKE(ERROR_MESSAGE, '^\[RECONCILE_DEFER [0-9]+\]');
 
         -- Items categories: the secondary DMT_EGP_ITEM_CAT_RESULTS_PKG call that
         -- used to follow here is retired (run 236 findings). Folding category
@@ -1619,6 +1639,61 @@ AS
                 END IF;
             END;
     END RECONCILE_ONE;
+
+    -- ============================================================
+    -- DEFER_RECONCILE (backlog #797) -- see spec. The attempt count lives in
+    -- the reconcile-owned sentinel '[RECONCILE_DEFER n]' in ERROR_MESSAGE (the
+    -- same idiom as '[HDL_BASE_RETRY n]'; POLL_COUNT still holds the AWAITING
+    -- poll history). Only a RECONCILING item is deferred, so the loader's
+    -- inline reconcile path is never delayed. Does NOT commit.
+    -- ============================================================
+    FUNCTION DEFER_RECONCILE (
+        p_queue_id    IN NUMBER,
+        p_reason      IN VARCHAR2,
+        p_max_retries IN NUMBER,
+        p_delay_sec   IN NUMBER
+    ) RETURN NUMBER IS
+        C_PROC    CONSTANT VARCHAR2(30) := 'DEFER_RECONCILE';
+        l_run_id  NUMBER;
+        l_cemli   DMT_WORK_QUEUE_TBL.CEMLI_CODE%TYPE;
+        l_attempt NUMBER;
+        l_delay   NUMBER := GREATEST(NVL(p_delay_sec, 0), 0);
+    BEGIN
+        IF p_queue_id IS NULL OR NVL(p_max_retries, 0) <= 0 THEN
+            RETURN 0;
+        END IF;
+        BEGIN
+            SELECT RUN_ID, CEMLI_CODE,
+                   NVL(TO_NUMBER(REGEXP_SUBSTR(ERROR_MESSAGE,
+                       '^\[RECONCILE_DEFER ([0-9]+)\]', 1, 1, NULL, 1)), 0)
+            INTO   l_run_id, l_cemli, l_attempt
+            FROM   DMT_WORK_QUEUE_TBL
+            WHERE  QUEUE_ID = p_queue_id
+            AND    WORK_STATUS = 'RECONCILING';
+        EXCEPTION WHEN NO_DATA_FOUND THEN
+            RETURN 0;
+        END;
+        IF l_attempt >= p_max_retries THEN
+            RETURN 0;
+        END IF;
+
+        l_attempt := l_attempt + 1;
+        UPDATE DMT_WORK_QUEUE_TBL
+        SET    ERROR_MESSAGE   = SUBSTR('[RECONCILE_DEFER ' || l_attempt || '] ' || p_reason, 1, 4000),
+               NEXT_POLL_AFTER = SYS_EXTRACT_UTC(SYSTIMESTAMP) + NUMTODSINTERVAL(l_delay, 'SECOND')
+        WHERE  QUEUE_ID = p_queue_id;
+        g_reconcile_deferred := TRUE;
+
+        DMT_UTIL_PKG.LOG(
+            p_run_id    => l_run_id,
+            p_message   => C_PROC || ': ' || l_cemli || ' work item ' || p_queue_id
+                           || ' reconcile retry ' || l_attempt || ' of ' || p_max_retries
+                           || ' in ' || l_delay || 's: ' || SUBSTR(p_reason, 1, 3000),
+            p_log_type  => 'INFO',
+            p_package   => C_PKG,
+            p_procedure => C_PROC);
+        RETURN l_attempt;
+    END DEFER_RECONCILE;
 
     -- ============================================================
     -- RECONCILE_VIA_REGISTRY — the ONE reconcile dispatch shared by
