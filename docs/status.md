@@ -1,5 +1,9 @@
 # DMT2 -- Session Status Log
 
+## 2026-10-20 — #789 own Fusion ids (Grants child types, MiscReceipts lots and serials), owner approved
+
+**Before any local deploy or regression.** Branch fix/789-own-fusion-ids (with #765, #767, #769). MiscReceipts lots get their own row-grain id from INV_TRANSACTION_LOT_NUMBERS (recon report V5) and serials surface the INV_SERIAL_NUMBERS id they already store; Grants recon report V5 reads the eight remaining award child base tables through confirmed awards, and the Award Batch Import Report success lines no longer set any row LOADED. The regression and the upload test fail any GOOD row LOADED without its own id. Plan: deploy local (twice, 0 invalid), MiscReceipts and Grants proof runs with a new synced prefix, then the full local gate. No ATP deploy from this work; the owner promotes.
+
 ## 2026-10-20 — local gate for #795/#794/#796 (main 25b5ddd): run 420 failed on Assets (Fusion wrote no import log), rerun
 
 **Local regression run 420 (prefix 93447): FAIL.** The only failures are the 8 rows of the cross-document Assets test batch, which ended UNACCOUNTED. Fusion's PrepareMassAdditions job 10135384 ended ERROR as usual, but returned only its summary file and no .log, so no row could be given its own error. Passing run 416's job returned the log. This bundle does not touch the Assets pipeline. Logged as backlog #797. The local regression is being rerun with a new prefix before any promotion.
