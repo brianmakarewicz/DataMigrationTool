@@ -19,6 +19,23 @@ AS
     -- accounting gate (the ONE writer of WORK_STATUS = DONE).
     PROCEDURE RECONCILE_ONE (p_queue_id IN NUMBER);
 
+    -- DEFER_RECONCILE (backlog #797). Called by an object's reconciler while
+    -- RECONCILE_ONE runs it, when a Fusion file the reconcile needs is not
+    -- there yet. If the work item is RECONCILING and fewer than p_max_retries
+    -- deferrals were granted, stamps '[RECONCILE_DEFER n] <p_reason>' in
+    -- ERROR_MESSAGE, sets NEXT_POLL_AFTER p_delay_sec ahead, logs the attempt
+    -- and returns n; RECONCILE_ONE then commits and returns before the
+    -- unaccounted sweep and the accounting gate, and the poller re-spawns the
+    -- reconcile after the delay (no sleep holds a job slot). Returns 0 when
+    -- the retries are used up (or the item is not RECONCILING): the caller
+    -- then settles as it would without a retry. Does NOT commit.
+    FUNCTION DEFER_RECONCILE (
+        p_queue_id    IN NUMBER,
+        p_reason      IN VARCHAR2,
+        p_max_retries IN NUMBER,
+        p_delay_sec   IN NUMBER
+    ) RETURN NUMBER;
+
     -- Poll ESS status for one queue row (single check, no loop).
     -- Advances AWAITING_LOAD → AWAITING_IMPORT or RECONCILING.
     -- Advances AWAITING_IMPORT → RECONCILING.

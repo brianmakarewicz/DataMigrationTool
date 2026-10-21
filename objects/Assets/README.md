@@ -320,3 +320,15 @@ FAILED with their own Prepare errors, books and assignments quoting them, XD-BAD
 keeps its line-break error; SUPREMO US CORP XG-G1/XG-G2 LOADED with XG-BAD failed by validation;
 US CORP G1/G2 LOADED, BAD1 FAILED. 27 Assets rows: 12 LOADED, 15 FAILED, 0 UNACCOUNTED; harness
 PASS on all 38 listed rows (one review item from another session's BIP deploy).
+
+## Missing PrepareMassAdditions log: retry (2026-10-20, backlog #797)
+
+Sometimes Fusion returns only the job's summary `.txt` ("The number of records processed is 8 ...")
+and no `.log` (local run 420 job 10135384, ATP run 190 job 10138729); re-downloading hours later still
+gives no `.log`, so the file is not late, it is never written. When the import job ended ERROR, the
+download worked and names no asset, and headers of the work item are still open, `APPLY_PREPARE_ERRORS`
+asks `DMT_QUEUE_WORKER_PKG.DEFER_RECONCILE` to re-run the reconcile later: up to
+`ASSET_PREPARE_LOG_RETRIES` (6) times, `ASSET_PREPARE_LOG_RETRY_SECONDS` (120) apart, through
+`NEXT_POLL_AFTER` (no sleep). Each retry is logged with its number. After the last one the rows are
+left for the unaccounted sweep as before, and a WARN log names the missing log. Unit test:
+`test/unit/test_assets_prepare_log_retry.sql`.

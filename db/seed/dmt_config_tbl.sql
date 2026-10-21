@@ -304,4 +304,21 @@ using (select 'PREFIX_SYNC_LOCK' config_key, 'LOCK' config_value,
 on (t."CONFIG_KEY" = s.config_key)
 when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
      values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
+-- Backlog #797: PrepareMassAdditions sometimes returns only its summary .txt and no
+-- .log, the only file naming each failed asset. DMT_FA_ASSET_RESULTS_PKG then re-runs
+-- the reconcile later (DMT_QUEUE_WORKER_PKG.DEFER_RECONCILE, NEXT_POLL_AFTER, no sleep)
+-- up to ASSET_PREPARE_LOG_RETRIES times, ASSET_PREPARE_LOG_RETRY_SECONDS apart, before
+-- leaving the rows for the unaccounted sweep. MERGE inserts only when missing, so an
+-- administrator's later value is never overwritten; re-running is a no-op.
+merge into "DMT_CONFIG_TBL" t
+using (select 'ASSET_PREPARE_LOG_RETRIES' config_key, '6' config_value,
+              'Backlog #797. How many times the Assets reconcile is re-run when PrepareMassAdditions ended ERROR and its output has no .log naming the failed assets. Default 6. 0 disables the retry.' description
+       from dual
+       union all
+       select 'ASSET_PREPARE_LOG_RETRY_SECONDS', '120',
+              'Backlog #797. Seconds between those Assets reconcile re-runs (NEXT_POLL_AFTER; the poller re-spawns the reconcile, no job slot is held). Default 120.'
+       from dual) s
+on (t."CONFIG_KEY" = s.config_key)
+when not matched then insert ("CONFIG_KEY","CONFIG_VALUE","DESCRIPTION","LAST_UPDATED_DATE","LAST_UPDATED_BY")
+     values (s.config_key, s.config_value, s.description, sysdate, 'DMT_OWNER');
 commit;
